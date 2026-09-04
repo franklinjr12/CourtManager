@@ -1,0 +1,43 @@
+# Dependencies
+node_modules
+.pnp.*
+
+# Build output
+dist/
+build/
+.aws-sam/
+.serverless/
+
+# Test and coverage output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.template
+
+# TypeScript and tooling caches
+*.tsbuildinfo
+.vite/
+.eslintcache
+.cache/
+.turbo/
+
+# Logs and local debug files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

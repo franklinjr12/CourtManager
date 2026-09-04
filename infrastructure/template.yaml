@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Court Manager serverless API and single-table data store
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 30
+Resources:
+  CourtManagerTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      KeySchema: [{AttributeName: PK, KeyType: HASH}, {AttributeName: SK, KeyType: RANGE}]
+      AttributeDefinitions: [{AttributeName: PK, AttributeType: S}, {AttributeName: SK, AttributeType: S}]
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../apps/api/dist/
+      Handler: lambda.handler
+      FunctionUrlConfig: {AuthType: NONE, Cors: {AllowOrigins: ['*'], AllowMethods: ['GET','POST','PATCH','DELETE','OPTIONS'], AllowHeaders: ['Authorization','Content-Type']}}
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref CourtManagerTable
+          AWS_REGION: !Ref AWS::Region
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:Scan, dynamodb:TransactWriteItems, dynamodb:BatchGetItem, dynamodb:BatchWriteItem]
+              Resource: !GetAtt CourtManagerTable.Arn
+Outputs:
+  ApiUrl:
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl

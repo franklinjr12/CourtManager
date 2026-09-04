@@ -1,0 +1,32 @@
+{
+  "name": "court-manager",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.5",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "build": "corepack pnpm --filter @court-manager/api build && corepack pnpm --filter @court-manager/web build",
+    "bootstrap:owner": "corepack pnpm --filter @court-manager/api bootstrap:owner",
+    "seed:dev": "corepack pnpm --filter @court-manager/api seed:dev",
+    "reset:dev": "node scripts/reset-dev.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.5",
+    "jsdom": "^25.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
