@@ -1,3 +1,4 @@
+import './env.js';
 import { CreateTableCommand, DynamoDBClient, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { EntityType } from '@court-manager/contracts';
