@@ -51,8 +51,25 @@ const days = [
   'SATURDAY',
   'SUNDAY',
 ];
+for (const [sportId, name] of [
+  ['seed-sport-tennis', 'Tennis'],
+  ['seed-sport-beach-volleyball', 'Beach volleyball'],
+] as const) {
+  await repo.put({
+    PK: `ORG#${organizationId}`,
+    SK: `SPORT#${sportId}`,
+    entity: 'sport',
+    sportId,
+    organizationId,
+    name,
+    active: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+}
 for (let i = 1; i <= 4; i++) {
   const courtId = `seed-court-${i}`;
+  const sportId = i % 2 ? 'seed-sport-beach-volleyball' : 'seed-sport-tennis';
   await repo.put({
     PK: `ORG#${organizationId}`,
     SK: `COURT#${courtId}`,
@@ -61,6 +78,7 @@ for (let i = 1; i <= 4; i++) {
     organizationId,
     name: `Court ${i}`,
     sport: i % 2 ? 'Beach volleyball' : 'Tennis',
+    sportId,
     active: true,
     publiclyRequestable: true,
     slotMinutes: 30,

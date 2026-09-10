@@ -101,6 +101,11 @@ export class MemoryRepository implements Repository {
     return filter ? items.filter(filter) : items;
   }
   async transactWrite(writes: Write[]) {
+    if (writes.length > 100)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'A DynamoDB transaction cannot contain more than 100 actions.',
+      );
     let release!: () => void;
     const previous = this.mutex;
     this.mutex = new Promise((r) => {
@@ -248,7 +253,13 @@ export class DynamoRepository implements Repository {
           ),
         }),
       );
-    } catch {
+    } catch (error) {
+      const name = String((error as { name?: unknown }).name ?? '');
+      if (name === 'ValidationException')
+        throw new AppError(
+          'VALIDATION_ERROR',
+          'A DynamoDB transaction cannot contain more than 100 actions.',
+        );
       throw new AppError(
         'SCHEDULE_CONFLICT',
         'Court is no longer available.',

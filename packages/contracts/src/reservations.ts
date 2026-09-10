@@ -1,5 +1,6 @@
 export {
   ReservationInputSchema,
+  RecurringReservationInputSchema,
   ReservationSchema,
   ReservationSourceSchema,
   ReservationStatusSchema,

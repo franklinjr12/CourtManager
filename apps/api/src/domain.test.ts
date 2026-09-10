@@ -8,6 +8,8 @@ import {
   normalizePhone,
   paymentStatus,
   recurrenceDates,
+  dayKeyInTimezone,
+  zonedDateTimeToIso,
 } from './domain.js';
 
 describe('schedule domain', () => {
@@ -57,5 +59,44 @@ describe('schedule domain', () => {
       '2026-01-19',
       '2026-01-26',
     ]);
+  });
+  it('uses the venue timezone for weekday, midnight, offset, and DST boundaries', () => {
+    const hours = {
+      MONDAY: { open: '19:00', close: '20:00' },
+      SUNDAY: { open: '23:00', close: '23:30' },
+    };
+    expect(
+      dayKeyInTimezone('2026-01-06T02:30:00.000Z', 'America/Sao_Paulo'),
+    ).toBe('2026-01-05');
+    expect(
+      isWithinOpeningHours(
+        new Date('2026-01-05T22:00:00.000Z'),
+        new Date('2026-01-05T23:00:00.000Z'),
+        hours,
+        30,
+        'America/Sao_Paulo',
+      ),
+    ).toBe(true);
+    expect(
+      isWithinOpeningHours(
+        new Date('2026-01-06T02:00:00.000Z'),
+        new Date('2026-01-06T02:30:00.000Z'),
+        hours,
+        30,
+        'America/Sao_Paulo',
+      ),
+    ).toBe(false);
+    expect(zonedDateTimeToIso('2026-01-05', '19:00', 'America/Sao_Paulo')).toBe(
+      '2026-01-05T22:00:00.000Z',
+    );
+    expect(zonedDateTimeToIso('2026-07-06', '19:00', 'America/New_York')).toBe(
+      '2026-07-06T23:00:00.000Z',
+    );
+    expect(zonedDateTimeToIso('2026-01-05', '19:00', 'America/New_York')).toBe(
+      '2026-01-06T00:00:00.000Z',
+    );
+    expect(() =>
+      zonedDateTimeToIso('2026-03-08', '02:30', 'America/New_York'),
+    ).toThrow('does not exist');
   });
 });

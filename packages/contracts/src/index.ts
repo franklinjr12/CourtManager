@@ -80,6 +80,7 @@ export const CourtSchema = z.object({
   organizationId: IdentifierSchema,
   name: z.string().min(1).max(100),
   sport: z.string().min(1).max(80),
+  sportId: IdentifierSchema.optional(),
   active: z.boolean(),
   publiclyRequestable: z.boolean(),
   slotMinutes: z.union([z.literal(30), z.literal(60)]),
@@ -89,6 +90,14 @@ export const CourtSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   archivedAt: z.string().optional(),
+});
+export const SportSchema = z.object({
+  sportId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  name: z.string().min(1).max(80),
+  active: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 export const CustomerSchema = z.object({
   customerId: IdentifierSchema,
@@ -251,6 +260,12 @@ export const CourtInputSchema = CourtSchema.omit({
   updatedAt: true,
   archivedAt: true,
 });
+export const SportInputSchema = SportSchema.omit({
+  sportId: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
 export const CustomerInputSchema = CustomerSchema.omit({
   customerId: true,
   organizationId: true,
@@ -267,6 +282,20 @@ export const ReservationInputSchema = z.object({
   endAt: z.string().datetime({ offset: true }),
   expectedAmount: MoneySchema.optional(),
   source: ReservationSourceSchema.default('STAFF'),
+  notes: z.string().max(4000).optional(),
+});
+export const RecurringReservationInputSchema = z.object({
+  courtId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+  untilDate: DateSchema,
+  frequency: z.literal('WEEKLY').default('WEEKLY'),
+  intervalWeeks: z.number().int().min(1).max(52).default(1),
+  expectedAmount: MoneySchema.optional(),
+  source: ReservationSourceSchema.default('STAFF'),
+  preview: z.boolean().default(false),
+  skipConflicts: z.boolean().default(false),
   notes: z.string().max(4000).optional(),
 });
 export const RequestInputSchema = z.object({
@@ -290,9 +319,24 @@ export const PaymentInputSchema = z
     notes: z.string().max(2000).optional(),
   })
   .refine(
-    (v) => v.reservationId || v.classId,
-    'A reservation or class is required',
+    (v) => Boolean(v.reservationId) !== Boolean(v.classId),
+    'Exactly one reservation or class is required',
   );
+export const BlockInputSchema = z.object({
+  courtId: IdentifierSchema,
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+  reason: z.enum([
+    'MAINTENANCE',
+    'CLEANING',
+    'PRIVATE_EVENT',
+    'TOURNAMENT',
+    'WEATHER',
+    'STAFF_USE',
+    'OTHER',
+  ]),
+  notes: z.string().max(2000).optional(),
+});
 export const ExpenseInputSchema = ExpenseSchema.omit({
   expenseId: true,
   organizationId: true,
@@ -303,6 +347,7 @@ export const ExpenseInputSchema = ExpenseSchema.omit({
 export type Organization = z.infer<typeof OrganizationSchema>;
 export type User = z.infer<typeof UserSchema>;
 export type Court = z.infer<typeof CourtSchema>;
+export type Sport = z.infer<typeof SportSchema>;
 export type Customer = z.infer<typeof CustomerSchema>;
 export type Reservation = z.infer<typeof ReservationSchema>;
 export type ReservationRequest = z.infer<typeof RequestSchema>;
@@ -321,6 +366,7 @@ export type EntityType =
   | 'organization'
   | 'user'
   | 'court'
+  | 'sport'
   | 'customer'
   | 'reservation'
   | 'request'

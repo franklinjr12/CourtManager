@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BlockInputSchema,
   collection,
   CourtInputSchema,
   CustomerInputSchema,
+  DateSchema,
   ExpenseInputSchema,
   LoginInputSchema,
   ok,
@@ -10,6 +12,8 @@ import {
   PaymentInputSchema,
   ReservationInputSchema,
   RequestInputSchema,
+  RecurringReservationInputSchema,
+  SportInputSchema,
 } from '@court-manager/contracts';
 import type { AuthContext } from '@court-manager/contracts';
 import { Hono } from 'hono';
@@ -17,6 +21,7 @@ import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z, type ZodType } from 'zod';
 import type { Repository } from './db.js';
+import { dayKeyInTimezone } from './domain.js';
 import { AppError } from './errors.js';
 import { buildServices } from './services/index.js';
 
@@ -36,6 +41,16 @@ const body = async <T>(
   schema: ZodType<T>,
 ) => {
   const parsed = schema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success)
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'Request validation failed.',
+      parsed.error.flatten().fieldErrors,
+    );
+  return parsed.data;
+};
+const queryValue = <T>(value: unknown, schema: ZodType<T>) => {
+  const parsed = schema.safeParse(value);
   if (!parsed.success)
     throw new AppError(
       'VALIDATION_ERROR',
@@ -148,11 +163,16 @@ export const createApp = (repo: Repository) => {
   );
   app.get('/public/venues/:slug/availability', async (c) => {
     const query = c.req.query();
+    const date = queryValue(query.date ?? '', DateSchema);
+    const durationMinutes = queryValue(
+      query.durationMinutes ?? '30',
+      z.coerce.number().int().positive(),
+    );
     const result = await services.requests.publicAvailability(
       c.req.param('slug'),
       query.courtId ?? '',
-      query.date ?? '',
-      Number(query.durationMinutes ?? 30),
+      date,
+      durationMinutes,
     );
     return c.json(ok(result));
   });
@@ -165,6 +185,7 @@ export const createApp = (repo: Repository) => {
   });
   app.use('/organization/*', protectedRoute);
   app.use('/courts/*', protectedRoute);
+  app.use('/sports/*', protectedRoute);
   app.use('/customers/*', protectedRoute);
   app.use('/reservations/*', protectedRoute);
   app.use('/schedule', protectedRoute);
@@ -226,6 +247,34 @@ export const createApp = (repo: Repository) => {
   app.post('/courts/:id/restore', async (c) =>
     c.json(ok(await services.courts.restore(ctx(c), c.req.param('id')))),
   );
+  app.get('/sports', async (c) =>
+    c.json(
+      collection(
+        await services.sports.list(ctx(c), c.req.query('includeInactive') === 'true'),
+      ),
+    ),
+  );
+  app.post('/sports', async (c) =>
+    c.json(ok(await services.sports.create(ctx(c), await body(c, SportInputSchema))), 201),
+  );
+  app.get('/sports/:id', async (c) =>
+    c.json(ok(await services.sports.get(ctx(c), c.req.param('id')))),
+  );
+  app.patch('/sports/:id', async (c) =>
+    c.json(
+      ok(
+        await services.sports.update(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, SportInputSchema.partial()),
+        ),
+      ),
+    ),
+  );
+  app.delete('/sports/:id', async (c) => {
+    await services.sports.remove(ctx(c), c.req.param('id'));
+    return c.json(ok({ deleted: true }));
+  });
   app.get('/customers', async (c) => {
     const q = c.req.query(),
       p = PaginationSchema.parse(q);
@@ -293,7 +342,7 @@ export const createApp = (repo: Repository) => {
       ok(
         await services.reservations.recurring(
           ctx(c),
-          await body(c, z.record(z.unknown())),
+          await body(c, RecurringReservationInputSchema),
         ),
       ),
       201,
@@ -357,22 +406,45 @@ export const createApp = (repo: Repository) => {
         'VALIDATION_ERROR',
         'Schedule range cannot exceed seven days.',
       );
-    const date = q.date ?? q.from ?? new Date().toISOString().slice(0, 10);
-    const courts = await services.courts.list(ctx(c));
-    const reservations = await services.reservations.list(ctx(c), { date });
-    const blocks = await services.blocks.list(ctx(c));
-    return c.json(ok({ date, courts, items: [...reservations, ...blocks] }));
+    const organization = await services.organizations.get(ctx(c));
+    const date =
+      q.date ??
+      q.from ??
+      dayKeyInTimezone(new Date().toISOString(), String(organization.timezone));
+    const reservations = await services.reservations.list(ctx(c), {
+      date,
+    });
+    const scheduledReservations = reservations.filter(
+      (reservation) => reservation.status !== 'CANCELLED',
+    );
+    const blocks = await services.blocks.list(ctx(c), date);
+    const classes = await services.classes.occurrences(ctx(c), date);
+    const items = [...scheduledReservations, ...blocks, ...classes] as {
+      courtId?: string;
+    }[];
+    const allCourts = await services.courts.list(ctx(c), true);
+    const courts = allCourts.filter(
+      (court) =>
+        (court.active === true && !court.archivedAt) ||
+        items.some((item) => item.courtId === court.courtId),
+    );
+    return c.json(ok({ date, courts, items }));
   });
   app.get('/availability', async (c) => {
     const q = c.req.query();
+    const date = queryValue(q.date ?? '', DateSchema);
+    const durationMinutes = queryValue(
+      q.durationMinutes ?? '30',
+      z.coerce.number().int().positive(),
+    );
     const court = await services.courts.get(ctx(c), q.courtId ?? '');
     return c.json(
       ok({
         available: await services.schedule.availability(
           ctx(c),
           court as Parameters<typeof services.schedule.availability>[1],
-          q.date ?? '',
-          Number(q.durationMinutes ?? 30),
+          date,
+          durationMinutes,
         ),
       }),
     );
@@ -382,12 +454,7 @@ export const createApp = (repo: Repository) => {
   );
   app.post('/blocks', async (c) =>
     c.json(
-      ok(
-        await services.blocks.create(
-          ctx(c),
-          await body(c, z.record(z.unknown())),
-        ),
-      ),
+      ok(await services.blocks.create(ctx(c), await body(c, BlockInputSchema))),
       201,
     ),
   );
@@ -499,7 +566,13 @@ export const createApp = (repo: Repository) => {
   );
   app.get('/dashboard', async (c) => {
     const q = c.req.query(),
-      date = q.date ?? new Date().toISOString().slice(0, 10),
+      organization = await services.organizations.get(ctx(c)),
+      date =
+        q.date ??
+        dayKeyInTimezone(
+          new Date().toISOString(),
+          String(organization.timezone),
+        ),
       reservations = await services.reservations.list(ctx(c), { date }),
       requests = await services.requests.list(ctx(c)),
       payments = await services.payments.list(ctx(c));

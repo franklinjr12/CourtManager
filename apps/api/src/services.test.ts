@@ -19,7 +19,7 @@ const hours = {
   SATURDAY: { open: '07:00', close: '23:00' },
   SUNDAY: { open: '07:00', close: '23:00' },
 };
-async function setup() {
+async function setup(timezone = 'UTC') {
   const repo = new MemoryRepository();
   await repo.put({
     PK: 'ORG#org-1',
@@ -28,7 +28,7 @@ async function setup() {
     organizationId: 'org-1',
     name: 'Arena',
     slug: 'arena',
-    timezone: 'UTC',
+    timezone,
     currency: 'BRL',
     active: true,
     features: { classes: false, finance: true },
@@ -148,6 +148,38 @@ describe('reservation workflows', () => {
       ).paymentStatus,
     ).toBe('PARTIAL');
   });
+  it('rejects payments with missing or mismatched associations', async () => {
+    const { services, court, customer } = await setup();
+    const other = await services.customers.create(context, {
+      name: 'Other customer',
+      phone: '41999990001',
+    });
+    const reservation = await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt: '2027-01-06T18:00:00Z',
+      endAt: '2027-01-06T19:00:00Z',
+      source: 'STAFF',
+    });
+    await expect(
+      services.payments.create(context, {
+        reservationId: reservation.reservationId,
+        customerId: other.customerId,
+        amount: 20,
+        method: 'PIX',
+        paidAt: '2027-01-06T18:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    await expect(
+      services.payments.create(context, {
+        reservationId: 'missing-reservation',
+        customerId: customer.customerId,
+        amount: 20,
+        method: 'PIX',
+        paidAt: '2027-01-06T18:00:00Z',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
 });
 
 describe('court archive listing', () => {
@@ -156,5 +188,199 @@ describe('court archive listing', () => {
     await services.courts.archive(context, String(court.courtId));
     expect(await services.courts.list(context)).toHaveLength(0);
     expect(await services.courts.list(context, true)).toHaveLength(1);
+  });
+  it('hides inactive courts and rejects new occupancy on them', async () => {
+    const { services, court, customer } = await setup();
+    await services.courts.update(context, String(court.courtId), {
+      active: false,
+    });
+    expect(await services.courts.list(context)).toHaveLength(0);
+    await expect(
+      services.courts.get(context, String(court.courtId)),
+    ).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    await expect(
+      services.reservations.create(context, {
+        courtId: court.courtId,
+        customerId: customer.customerId,
+        startAt: '2027-01-04T18:00:00Z',
+        endAt: '2027-01-04T19:00:00Z',
+        source: 'STAFF',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it('protects archival when future occupancy exists', async () => {
+    const { services, court, customer } = await setup();
+    await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt: '2027-01-05T18:00:00Z',
+      endAt: '2027-01-05T19:00:00Z',
+      source: 'STAFF',
+    });
+    await expect(
+      services.courts.archive(context, String(court.courtId)),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+  it('uses local venue time for locks and supports longer slot multiples', async () => {
+    const { services, court, customer } = await setup('America/Sao_Paulo');
+    const reservation = await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt: '2027-01-05T22:00:00Z',
+      endAt: '2027-01-06T00:00:00Z',
+      source: 'STAFF',
+    });
+    expect(
+      await services.schedule.locks(
+        context,
+        String(court.courtId),
+        '2027-01-04',
+      ),
+    ).toHaveLength(0);
+    expect(
+      await services.schedule.locks(
+        context,
+        String(court.courtId),
+        '2027-01-05',
+      ),
+    ).toHaveLength(4);
+    expect(reservation.status).toBe('CONFIRMED');
+    expect(
+      await services.schedule.availability(
+        context,
+        court as Parameters<typeof services.schedule.availability>[1],
+        '2027-01-05',
+        120,
+      ),
+    ).not.toContain('19:00');
+  });
+  it('makes classes visible as occupancy and protects non-public courts', async () => {
+    const { services, court } = await setup();
+    const customer = await services.customers.create(context, {
+      name: 'Class customer',
+      phone: '41999990000',
+    });
+    await services.classes.create(context, {
+      name: 'Evening class',
+      sport: 'Tennis',
+      coachId: 'coach-1',
+      courtId: court.courtId,
+      capacity: 10,
+      price: 50,
+      weekday: 1,
+      startTime: '18:00',
+      durationMinutes: 60,
+      startDate: '2027-01-04',
+      endDate: '2027-01-04',
+    });
+    const occurrences = await services.classes.occurrences(
+      context,
+      '2027-01-04',
+    );
+    expect(occurrences[0]).toMatchObject({
+      name: 'Evening class',
+      courtId: court.courtId,
+    });
+    await expect(
+      services.reservations.create(context, {
+        courtId: court.courtId,
+        customerId: customer.customerId,
+        startAt: '2027-01-04T18:00:00Z',
+        endAt: '2027-01-04T19:00:00Z',
+        source: 'STAFF',
+      }),
+    ).rejects.toMatchObject({ code: 'SCHEDULE_CONFLICT' });
+  });
+  it('does not expose a private court through public availability', async () => {
+    const { services } = await setup();
+    const privateCourt = await services.courts.create(context, {
+      name: 'Private',
+      sport: 'Tennis',
+      slotMinutes: 30,
+      defaultHourlyPrice: 80,
+      publiclyRequestable: false,
+      active: true,
+      openingHours: hours,
+    });
+    await expect(
+      services.requests.publicAvailability(
+        'arena',
+        String(privateCourt.courtId),
+        '2027-01-04',
+        120,
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it('does not return dates before today from availability', async () => {
+    const { services, court } = await setup();
+    expect(
+      await services.schedule.availability(
+        context,
+        court as Parameters<typeof services.schedule.availability>[1],
+        '2020-01-01',
+        30,
+      ),
+    ).toEqual([]);
+  });
+  it('does not return elapsed slots for today', async () => {
+    const { services, court } = await setup();
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const currentTime = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
+    const available = await services.schedule.availability(
+      context,
+      court as Parameters<typeof services.schedule.availability>[1],
+      date,
+      30,
+    );
+    expect(available.every((start) => start >= currentTime)).toBe(true);
+  });
+  it('creates long recurring series without exceeding one transaction limit', async () => {
+    const { services, court, customer } = await setup();
+    const result = await services.reservations.recurring(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt: '2027-01-04T18:00:00Z',
+      endAt: '2027-01-04T19:00:00Z',
+      untilDate: '2028-02-28',
+      frequency: 'WEEKLY',
+      intervalWeeks: 1,
+      source: 'STAFF',
+    });
+    const created = result.created as Record<string, unknown>[];
+    expect(created.length).toBeGreaterThan(50);
+    expect(
+      (await services.reservations.list(context, {})).filter(
+        (reservation) => reservation.seriesId === String(result.seriesId),
+      ),
+    ).toHaveLength(created.length);
+  });
+  it('does not leave a customer when request confirmation loses its slot', async () => {
+    const { services, court, customer } = await setup();
+    const startAt = '2028-02-06T18:00:00Z';
+    await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt,
+      endAt: '2028-02-06T19:00:00Z',
+      source: 'STAFF',
+    });
+    const request = await services.requests.createPublic('arena', {
+      courtId: court.courtId,
+      requestedStartAt: startAt,
+      requestedEndAt: '2028-02-06T19:00:00Z',
+      customerName: 'Never created',
+      phone: '41999991111',
+    });
+    await expect(
+      services.requests.confirm(context, String(request.requestId)),
+    ).rejects.toMatchObject({ code: 'SCHEDULE_CONFLICT' });
+    expect(
+      await services.customers.list(context, 'Never created'),
+    ).toHaveLength(0);
   });
 });

@@ -5,6 +5,7 @@ type Session = {
   user: { userId: string; name: string; role: string };
   organization?: {
     name: string;
+    timezone?: string;
     features?: { classes: boolean; finance: boolean };
   };
 };
@@ -24,6 +25,7 @@ type Court = {
   courtId: string;
   name: string;
   sport: string;
+  sportId?: string;
   active: boolean;
   publiclyRequestable: boolean;
   slotMinutes: 30 | 60;
@@ -32,6 +34,11 @@ type Court = {
   notes?: string;
   archivedAt?: string;
 };
+type Sport = {
+  sportId: string;
+  name: string;
+  active: boolean;
+};
 type Customer = {
   customerId: string;
   name: string;
@@ -39,6 +46,7 @@ type Customer = {
   email?: string;
   archived: boolean;
   notes?: string;
+  customerName?: string;
 };
 type Reservation = {
   reservationId: string;
@@ -53,6 +61,8 @@ type Reservation = {
   paidAmount?: number;
   remainingAmount?: number;
   paymentStatus?: string;
+  customerName?: string;
+  courtName?: string;
 };
 type RequestItem = {
   requestId: string;
@@ -92,7 +102,13 @@ type SportClass = {
   active: boolean;
   notes?: string;
 };
-type ScheduleItem = Reservation & { blockId?: string; reason?: string };
+type ScheduleItem = Reservation & {
+  blockId?: string;
+  reason?: string;
+  classId?: string;
+  name?: string;
+  occupancyType?: string;
+};
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8787';
 const root = document.querySelector<HTMLDivElement>('#app');
@@ -118,12 +134,86 @@ const formatMoney = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
     Number(n) || 0,
   );
-const today = () => new Date().toISOString().slice(0, 10);
-const isoFromInputs = (date: string, time: string) =>
-  new Date(`${date}T${time}:00`).toISOString();
-const timeValue = (date: string) =>
-  new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const dateValue = (date: string) => new Date(date).toLocaleDateString();
+const timezone = () => session()?.organization?.timezone ?? 'UTC';
+const today = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone(),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+};
+const localParts = (date: Date, zone = timezone()) => {
+  const values = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  return values;
+};
+const isoFromInputs = (date: string, time: string, zone = timezone()) => {
+  const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
+  const [hour = NaN, minute = NaN] = time.split(':').map(Number);
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  let instant = new Date(wall);
+  for (let i = 0; i < 4; i += 1) {
+    const parts = localParts(instant, zone);
+    const localAsUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+    );
+    const candidate = new Date(wall - (localAsUtc - instant.getTime()));
+    if (candidate.getTime() === instant.getTime())
+      return candidate.toISOString();
+    instant = candidate;
+  }
+  return instant.toISOString();
+};
+const endIsoFromInputs = (
+  date: string,
+  time: string,
+  duration: number,
+  zone = timezone(),
+) => {
+  const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
+  const [hour = NaN, minute = NaN] = time.split(':').map(Number);
+  const local = new Date(
+    Date.UTC(year, month - 1, day, hour, minute) + duration * 60000,
+  );
+  const parts = localParts(local, 'UTC');
+  return isoFromInputs(
+    `${parts.year}-${parts.month}-${parts.day}`,
+    `${parts.hour}:${parts.minute}`,
+    zone,
+  );
+};
+const timeValue = (date: string) => {
+  const value = localParts(new Date(date));
+  return `${value.hour}:${value.minute}`;
+};
+const localDateKey = (date: string) => {
+  const value = localParts(new Date(date));
+  return `${value.year}-${value.month}-${value.day}`;
+};
+const dateValue = (date: string) => {
+  const value = localParts(new Date(date));
+  return `${value.day}/${value.month}/${value.year}`;
+};
 const errorMessage = (error: unknown) => {
   const message = error instanceof Error ? error.message : 'Request failed';
   if (message === 'SCHEDULE_CONFLICT')
@@ -247,8 +337,9 @@ const defaultHours = (): OpeningHours =>
 const hourFields = (hours: OpeningHours) =>
   days
     .map((day) => {
+      const closed = hours[day] === null;
       const value = hours[day] ?? { open: '07:00', close: '23:00' };
-      return `<div class="hour-row"><strong>${day}</strong><label>Open<input name="open-${day}" type="time" value="${escapeText(value.open)}" required></label><label>Close<input name="close-${day}" type="time" value="${escapeText(value.close)}" required></label></div>`;
+      return `<div class="hour-row"><strong>${day}</strong><label>Open<input name="open-${day}" type="time" value="${escapeText(value.open)}" ${closed ? 'disabled' : 'required'}></label><label>Close<input name="close-${day}" type="time" value="${escapeText(value.close)}" ${closed ? 'disabled' : 'required'}></label><label class="check"><input name="closed-${day}" type="checkbox" ${closed ? 'checked' : ''}> Closed</label></div>`;
     })
     .join('');
 const courtForm = (court?: Court) => {
@@ -340,21 +431,39 @@ function openingHoursFrom(form: HTMLFormElement) {
   return Object.fromEntries(
     days.map((day) => [
       day,
-      {
-        open: String(
-          (form.elements.namedItem(`open-${day}`) as HTMLInputElement).value,
-        ),
-        close: String(
-          (form.elements.namedItem(`close-${day}`) as HTMLInputElement).value,
-        ),
-      },
+      (form.elements.namedItem(`closed-${day}`) as HTMLInputElement).checked
+        ? null
+        : {
+            open: String(
+              (form.elements.namedItem(`open-${day}`) as HTMLInputElement)
+                .value,
+            ),
+            close: String(
+              (form.elements.namedItem(`close-${day}`) as HTMLInputElement)
+                .value,
+            ),
+          },
     ]),
   );
 }
 async function openCourtModal(court?: Court) {
   openModal(court ? 'Edit court' : 'Add court', courtForm(court));
   const form = app.querySelector<HTMLFormElement>('#court-form');
+  if (!form) return;
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
+  days.forEach((day) =>
+    (
+      form?.elements.namedItem(`closed-${day}`) as HTMLInputElement | null
+    )?.addEventListener('change', (event: Event) => {
+      const closed = (event.currentTarget as HTMLInputElement).checked;
+      (
+        form.elements.namedItem(`open-${day}`) as HTMLInputElement | null
+      )?.toggleAttribute('disabled', closed);
+      (
+        form.elements.namedItem(`close-${day}`) as HTMLInputElement | null
+      )?.toggleAttribute('disabled', closed);
+    }),
+  );
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     setBusy(form, true);
@@ -383,17 +492,69 @@ async function openCourtModal(court?: Court) {
     }
   });
 }
+async function openSportModal(sport?: Sport) {
+  openModal(
+    sport ? 'Edit sport' : 'Add sport',
+    `<form id="sport-form" class="form-grid"><label class="full">Name<input name="name" required maxlength="80" value="${escapeText(sport?.name)}"></label><label class="check full"><input name="active" type="checkbox" ${sport?.active !== false ? 'checked' : ''}> Active</label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">${sport ? 'Save changes' : 'Add sport'}</button></div></form>`,
+  );
+  const form = app.querySelector<HTMLFormElement>('#sport-form');
+  form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setBusy(form, true);
+    try {
+      const values = formData(form);
+      await request(sport ? `/sports/${sport.sportId}` : '/sports', {
+        method: sport ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          name: values.name,
+          active: values.active === 'on',
+        }),
+      });
+      closeModal();
+      toast(sport ? 'Sport updated.' : 'Sport added.');
+      await renderRoute();
+    } catch (error) {
+      showFormError(form, error);
+      setBusy(form, false);
+    }
+  });
+}
 async function settings() {
   await shell(async () => {
-    const [org, courts] = await Promise.all([
+    const [org, courts, sports] = await Promise.all([
       request<Organization>('/organization'),
       request<Court[]>('/courts?includeArchived=true'),
+      request<Sport[]>('/sports?includeInactive=true'),
     ]);
     setTimeout(wireSettings, 0);
-    return `<div class="toolbar"><div><h2>Settings</h2><p class="muted">Manage organization and courts.</p></div><button class="button primary" id="add-court">Add court</button></div><article class="card"><h3>Organization</h3>${organizationForm(org)}</article><article class="card section-card"><div class="section-head"><div><h3>Courts</h3><p class="muted">${courts.filter((c) => !c.archivedAt).length} active · ${courts.filter((c) => c.archivedAt).length} archived</p></div></div><div class="court-list">${courts.length ? courts.map((c) => `<article class="list-row ${c.archivedAt ? 'archived' : ''}"><div><strong>${escapeText(c.name)}</strong><span>${escapeText(c.sport)} · ${formatMoney(c.defaultHourlyPrice)}/hour · ${c.slotMinutes} min</span><small>${c.archivedAt ? 'Archived' : c.active ? 'Active' : 'Inactive'} · ${c.publiclyRequestable ? 'Public booking enabled' : 'Private'}</small></div><div class="row-actions">${button('Edit', `data-edit-court="${escapeText(c.courtId)}"`)}${c.archivedAt ? button('Restore', `data-restore-court="${escapeText(c.courtId)}"`) : button('Archive', `data-archive-court="${escapeText(c.courtId)}"`)}</div></article>`).join('') : '<p class="empty">No courts yet. Add first court.</p>'}</div></article>`;
+    return `<div class="toolbar"><div><h2>Settings</h2><p class="muted">Manage organization, sports, and courts.</p></div><button class="button primary" id="add-court">Add court</button></div><article class="card"><h3>Organization</h3>${organizationForm(org)}</article><article class="card section-card"><div class="section-head"><div><h3>Sports</h3><p class="muted">${sports.filter((s) => s.active).length} active · ${sports.filter((s) => !s.active).length} inactive</p></div><button class="button" id="add-sport">Add sport</button></div><div class="court-list">${sports.length ? sports.map((sport) => `<article class="list-row ${sport.active ? '' : 'archived'}"><div><strong>${escapeText(sport.name)}</strong><small>${sport.active ? 'Active' : 'Inactive'}</small></div><div class="row-actions">${button('Edit', `data-edit-sport="${escapeText(sport.sportId)}"`)}${button(sport.active ? 'Deactivate' : 'Activate', `data-toggle-sport="${escapeText(sport.sportId)}" data-active="${sport.active ? 'false' : 'true'}"`)}</div></article>`).join('') : '<p class="empty">No sports yet. Add the first sport.</p>'}</div></article><article class="card section-card"><div class="section-head"><div><h3>Courts</h3><p class="muted">${courts.filter((c) => !c.archivedAt).length} active · ${courts.filter((c) => c.archivedAt).length} archived</p></div></div><div class="court-list">${courts.length ? courts.map((c) => `<article class="list-row ${c.archivedAt ? 'archived' : ''}"><div><strong>${escapeText(c.name)}</strong><span>${escapeText(c.sport)} · ${formatMoney(c.defaultHourlyPrice)}/hour · ${c.slotMinutes} min</span><small>${c.archivedAt ? 'Archived' : c.active ? 'Active' : 'Inactive'} · ${c.publiclyRequestable ? 'Public booking enabled' : 'Private'}</small></div><div class="row-actions">${button('Edit', `data-edit-court="${escapeText(c.courtId)}"`)}${c.archivedAt ? button('Restore', `data-restore-court="${escapeText(c.courtId)}"`) : button('Archive', `data-archive-court="${escapeText(c.courtId)}"`)}</div></article>`).join('') : '<p class="empty">No courts yet. Add first court.</p>'}</div></article>`;
   });
 }
 function wireSettings() {
+  app
+    .querySelector('#add-sport')
+    ?.addEventListener('click', () => void openSportModal());
+  app.querySelectorAll<HTMLElement>('[data-edit-sport]').forEach((element) =>
+    element.addEventListener('click', async () => {
+      const sport = await request<Sport>(`/sports/${element.dataset.editSport}`);
+      await openSportModal(sport);
+    }),
+  );
+  app.querySelectorAll<HTMLElement>('[data-toggle-sport]').forEach((element) =>
+    element.addEventListener('click', async () => {
+      try {
+        await request(`/sports/${element.dataset.toggleSport}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ active: element.dataset.active === 'true' }),
+        });
+        toast('Sport status updated.');
+        await renderRoute();
+      } catch (error) {
+        toast(errorMessage(error), 'error');
+      }
+    }),
+  );
   app
     .querySelector<HTMLButtonElement>('#add-court')
     ?.addEventListener('click', () => void openCourtModal(undefined));
@@ -621,9 +782,11 @@ async function openReservationModal(
         String(values.date),
         String(values.startTime),
       );
-      const end = new Date(
-        new Date(start).getTime() + Number(values.durationMinutes) * 60000,
-      ).toISOString();
+      const end = endIsoFromInputs(
+        String(values.date),
+        String(values.startTime),
+        Number(values.durationMinutes),
+      );
       await request('/reservations', {
         method: 'POST',
         body: JSON.stringify({
@@ -683,6 +846,23 @@ async function openReservationDetail(id: string) {
     'Reservation details',
     `<div class="detail-grid"><div><span class="muted">Status</span><strong>${escapeText(reservation.status)}</strong></div><div><span class="muted">Time</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">Expected</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">Paid</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>Date<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>Start<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>End<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Close</button>${reservation.status === 'CONFIRMED' ? '<button class="button primary">Save time</button>' : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button('Complete', 'data-transition="COMPLETED"')}${button('No-show', 'data-transition="NO_SHOW"')}${button('Cancel reservation', 'data-transition="CANCELLED"')}${button('Record payment', `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
   );
+  const detailGrid = app.querySelector<HTMLElement>('.modal .detail-grid');
+  detailGrid?.insertAdjacentHTML(
+    'beforeend',
+    `<div><span class="muted">Payment status</span><strong>${escapeText(reservation.paymentStatus ?? 'UNPAID')}</strong></div>`,
+  );
+  const detailDate = app.querySelector<HTMLInputElement>(
+    '#reservation-edit-form [name="date"]',
+  );
+  const detailStart = app.querySelector<HTMLInputElement>(
+    '#reservation-edit-form [name="start"]',
+  );
+  const detailEnd = app.querySelector<HTMLInputElement>(
+    '#reservation-edit-form [name="end"]',
+  );
+  if (detailDate) detailDate.value = localDateKey(reservation.startAt);
+  if (detailStart) detailStart.value = timeValue(reservation.startAt);
+  if (detailEnd) detailEnd.value = timeValue(reservation.endAt);
   const form = app.querySelector<HTMLFormElement>('#reservation-edit-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {
@@ -733,10 +913,22 @@ async function openReservationDetail(id: string) {
 }
 async function schedule() {
   const date = new URLSearchParams(location.search).get('date') ?? today();
+  let renderedItems: ScheduleItem[] = [];
   await shell(async () => {
     const data = await request<{ courts: Court[]; items: ScheduleItem[] }>(
       `/schedule?date=${encodeURIComponent(date)}`,
     );
+    const displayItems = data.items.map((item) =>
+      item.reservationId
+        ? {
+            ...item,
+            status: `${item.customerName ?? 'Customer'} · ${item.status} · ${item.paymentStatus ?? 'UNPAID'}`,
+          }
+        : item.classId
+          ? { ...item, reason: `Class · ${item.name ?? 'Class'}` }
+          : item,
+    );
+    renderedItems = data.items;
     setTimeout(() => {
       screen()
         ?.querySelector('#new-booking')
@@ -773,7 +965,7 @@ async function schedule() {
     return `<div class="toolbar"><div><h2>Schedule</h2><p class="muted">${escapeText(date)}</p></div><div class="row-actions"><button class="button" id="previous-day">Previous day</button><button class="button" id="today">Today</button><button class="button" id="next-day">Next day</button><button class="button" id="block-court">Block court</button><button class="button primary" id="new-booking">New reservation</button></div></div><div class="schedule-grid">${
       data.courts
         .map((court) => {
-          const items = data.items.filter(
+          const items = displayItems.filter(
             (item) => item.courtId === court.courtId,
           );
           return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Reservation · ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Blocked · ${escapeText(item.reason)}</span>${item.blockId ? button('Cancel', `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : '<p class="empty">Available</p>'}</article>`;
@@ -782,6 +974,16 @@ async function schedule() {
       '<p class="empty">Create a court in Settings to start scheduling.</p>'
     }</div>`;
   });
+  screen()
+    ?.querySelectorAll<HTMLElement>('[data-reservation]')
+    .forEach((element) => {
+      const reservation = renderedItems.find(
+        (item) => item.reservationId === element.dataset.reservation,
+      );
+      const strong = element.querySelector('strong');
+      if (reservation && strong)
+        strong.textContent = `${strong.textContent} — ${reservation.customerName ?? 'Customer'}`;
+    });
   const move = (amount: number) => {
     const next = new Date(`${date}T12:00:00Z`);
     next.setUTCDate(next.getUTCDate() + amount);
@@ -847,6 +1049,83 @@ function wireCustomerList() {
         }
       }),
     );
+  app
+    .querySelectorAll<HTMLElement>('[data-edit-customer]')
+    .forEach((element) => {
+      const actions = element.parentElement;
+      if (actions && !actions.querySelector('[data-customer-history]'))
+        actions.insertAdjacentHTML(
+          'beforeend',
+          button(
+            'History',
+            `data-customer-history="${escapeText(element.dataset.editCustomer)}"`,
+          ),
+        );
+    });
+  app
+    .querySelectorAll<HTMLElement>('[data-customer-history]')
+    .forEach((element) =>
+      element.addEventListener(
+        'click',
+        () => void openCustomerHistory(String(element.dataset.customerHistory)),
+      ),
+    );
+}
+async function openCustomerHistory(customerId: string) {
+  const [customer, reservationsData] = await Promise.all([
+    request<Customer>(`/customers/${customerId}`),
+    request<Reservation[]>(
+      `/reservations?customerId=${encodeURIComponent(customerId)}&limit=100`,
+    ),
+  ]);
+  openModal(
+    `${customer.name} · history`,
+    `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>Date/time</th><th>Status</th><th>Expected</th><th>Payment</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${escapeText(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${escapeText(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">No reservation history.</p>'}`,
+  );
+}
+async function openRecurringReservationModal() {
+  const [courts, customers] = await Promise.all([
+    request<Court[]>('/courts'),
+    request<Customer[]>('/customers?limit=100'),
+  ]);
+  openModal(
+    'Recurring reservation',
+    `<form id="recurring-form" class="form-grid"><label>Court<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>Customer<select name="customerId" required>${customerOptions(customers)}</select></label><label>First date<input name="date" type="date" required value="${escapeText(today())}"></label><label>Until date<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>Start time<input name="time" type="time" required value="18:00"></label><label>Duration<select name="durationMinutes"><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="120">120 minutes</option></select></label><label>Every (weeks)<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>Source<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Create recurring series</button></div></form>`,
+  );
+  const form = app.querySelector<HTMLFormElement>('#recurring-form');
+  form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form) return;
+    setBusy(form, true);
+    try {
+      const values = formData(form);
+      const startAt = isoFromInputs(String(values.date), String(values.time));
+      const endAt = endIsoFromInputs(
+        String(values.date),
+        String(values.time),
+        Number(values.durationMinutes),
+      );
+      await request('/reservations/recurring', {
+        method: 'POST',
+        body: JSON.stringify({
+          courtId: values.courtId,
+          customerId: values.customerId,
+          startAt,
+          endAt,
+          untilDate: values.untilDate,
+          intervalWeeks: Number(values.intervalWeeks),
+          source: values.source,
+        }),
+      });
+      closeModal();
+      toast('Recurring reservations created.');
+      await renderRoute();
+    } catch (error) {
+      showFormError(form, error);
+      setBusy(form, false);
+    }
+  });
 }
 async function reservations() {
   const data = await request<Reservation[]>('/reservations');
@@ -855,6 +1134,19 @@ async function reservations() {
       screen()
         ?.querySelector('#add-reservation')
         ?.addEventListener('click', () => void openReservationModal());
+      const actions = screen()?.querySelector('.toolbar');
+      if (actions && !actions.querySelector('#add-recurring-reservation')) {
+        actions.insertAdjacentHTML(
+          'beforeend',
+          `<button class="button" id="add-recurring-reservation">Recurring reservation</button>`,
+        );
+        actions
+          .querySelector('#add-recurring-reservation')
+          ?.addEventListener(
+            'click',
+            () => void openRecurringReservationModal(),
+          );
+      }
       screen()
         ?.querySelectorAll<HTMLElement>('[data-reservation]')
         .forEach((element) =>
@@ -866,6 +1158,20 @@ async function reservations() {
         );
     }, 0);
     return `<div class="toolbar"><div><h2>Reservations</h2><p class="muted">Manage confirmed and completed bookings.</p></div><button class="button primary" id="add-reservation">New reservation</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>Date/time</th><th>Court</th><th>Customer</th><th>Status</th><th>Expected</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}–${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${escapeText(r.status)}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button('Open', `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No reservations yet.</p>'}</article>`;
+  });
+  const rows = screen()?.querySelectorAll<HTMLTableRowElement>('tbody tr');
+  rows?.forEach((row, index) => {
+    const reservation = data[index];
+    if (reservation) {
+      const cells = row.querySelectorAll('td');
+      if (cells[1])
+        cells[1].textContent = reservation.courtName ?? reservation.courtId;
+      if (cells[2])
+        cells[2].textContent =
+          reservation.customerName ?? reservation.customerId;
+      if (cells[3])
+        cells[3].textContent = `${reservation.status} · ${reservation.paymentStatus ?? 'UNPAID'}`;
+    }
   });
 }
 async function requests() {
@@ -1203,19 +1509,83 @@ async function publicBooking(slug: string) {
   try {
     const venue = await request<{
       name: string;
-      courts: { courtId: string; name: string; sport: string }[];
+      timezone: string;
+      courts: {
+        courtId: string;
+        name: string;
+        sport: string;
+        slotMinutes: number;
+      }[];
     }>(`/public/venues/${encodeURIComponent(slug)}`);
     app.innerHTML = `<main class="login"><section class="card public-booking"><h1>${escapeText(venue.name)}</h1><p class="muted">Request a court reservation</p><form id="public-form"><label>Court<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} — ${escapeText(court.sport)}</option>`).join('')}</select></label><label>Date<input type="date" name="date" required></label><label>Start time<input type="time" name="time" required></label><label>Duration<select name="durationMinutes"><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="120">2 hours</option></select></label><label>Name<input name="customerName" required></label><label>Phone<input name="phone" required></label><label>Email (optional)<input name="email" type="email"></label><label>Notes (optional)<textarea name="notes"></textarea></label><p class="notice">This is a reservation request. Your reservation is not confirmed yet. The venue will contact you after reviewing it.</p><button class="button primary">Send request</button><p id="public-result" role="status"></p></form></section></main>`;
+    const publicForm = app.querySelector<HTMLFormElement>('#public-form');
+    const publicTime = publicForm?.elements.namedItem(
+      'time',
+    ) as HTMLInputElement | null;
+    publicTime?.replaceWith(
+      Object.assign(document.createElement('select'), {
+        name: 'time',
+        required: true,
+        innerHTML: '<option value="">Loading…</option>',
+      }),
+    );
+    const loadPublicAvailability = async () => {
+      if (!publicForm) return;
+      const courtId = String(
+        (publicForm.elements.namedItem('courtId') as HTMLSelectElement).value,
+      );
+      const date = String(
+        (publicForm.elements.namedItem('date') as HTMLInputElement).value,
+      );
+      const duration = String(
+        (publicForm.elements.namedItem('durationMinutes') as HTMLSelectElement)
+          .value,
+      );
+      const start = publicForm.elements.namedItem('time') as HTMLSelectElement;
+      start.innerHTML = '<option>Loading…</option>';
+      try {
+        const data = await request<{ available: string[] }>(
+          `/public/venues/${encodeURIComponent(slug)}/availability?courtId=${encodeURIComponent(courtId)}&date=${encodeURIComponent(date)}&durationMinutes=${duration}`,
+        );
+        start.innerHTML = data.available.length
+          ? data.available
+              .map(
+                (value) =>
+                  `<option value="${escapeText(value)}">${escapeText(value)}</option>`,
+              )
+              .join('')
+          : '<option value="">No available times</option>';
+      } catch (error) {
+        start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
+      }
+    };
+    publicForm
+      ?.querySelector('[name="courtId"]')
+      ?.addEventListener('change', () => void loadPublicAvailability());
+    publicForm
+      ?.querySelector('[name="date"]')
+      ?.addEventListener('change', () => void loadPublicAvailability());
+    publicForm
+      ?.querySelector('[name="durationMinutes"]')
+      ?.addEventListener('change', () => void loadPublicAvailability());
+    void loadPublicAvailability();
     app
       .querySelector<HTMLFormElement>('#public-form')
       ?.addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget as HTMLFormElement;
         const values = formData(form);
-        const start = isoFromInputs(String(values.date), String(values.time)),
-          end = new Date(
-            new Date(start).getTime() + Number(values.durationMinutes) * 60000,
-          ).toISOString();
+        const start = isoFromInputs(
+            String(values.date),
+            String(values.time),
+            venue.timezone,
+          ),
+          end = endIsoFromInputs(
+            String(values.date),
+            String(values.time),
+            Number(values.durationMinutes),
+            venue.timezone,
+          );
         const result = app.querySelector('#public-result')!;
         try {
           await request(`/public/venues/${encodeURIComponent(slug)}/requests`, {
