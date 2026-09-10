@@ -34,8 +34,7 @@ export class Router {
     return this.match(path);
   }
   listen(render: () => void) {
-    window.addEventListener('popstate', render);
-    document.addEventListener('click', (event) => {
+    const onClick = (event: MouseEvent) => {
       const target = (event.target as Element).closest('a');
       if (
         !target ||
@@ -53,7 +52,12 @@ export class Router {
       event.preventDefault();
       this.navigate(url.pathname + url.search);
       render();
-    });
-    return () => window.removeEventListener('popstate', render);
+    };
+    window.addEventListener('popstate', render);
+    document.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('popstate', render);
+      document.removeEventListener('click', onClick);
+    };
   }
 }

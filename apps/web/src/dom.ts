@@ -1,5 +1,10 @@
-export const required = (selector: string, parent: ParentNode = document) => {
-  const element = parent.querySelector<HTMLElement>(selector);
+import { t } from './i18n.js';
+
+export const required = <T extends HTMLElement = HTMLElement>(
+  selector: string,
+  parent: ParentNode = document,
+) => {
+  const element = parent.querySelector<T>(selector);
   if (!element) throw new Error(`Missing required element: ${selector}`);
   return element;
 };
@@ -23,4 +28,9 @@ export const loadingState = () => {
   element.textContent = t('common.loading');
   return element;
 };
-import { t } from './i18n.js';
+
+export const formData = (form: HTMLFormElement) =>
+  Object.fromEntries(new FormData(form).entries());
+
+export const button = (label: string, attrs = '') =>
+  `<button type="button" class="button" ${attrs}>${escapeHtml(label)}</button>`;

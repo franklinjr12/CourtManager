@@ -12,16 +12,39 @@ test('browser API workflow covers conflicts, recurring reservations, and court b
   const courtId = courts.body.data[0].courtId as string;
   const customerId = customers.body.data[0].customerId as string;
   const candidate = new Date(Date.now() + 30 * 86400000);
+  const dateAtOffset = (date: string, offset: number) =>
+    new Date(new Date(`${date}T00:00:00Z`).getTime() + offset * 86400000)
+      .toISOString()
+      .slice(0, 10);
+  const recurringOffsets = Array.from({ length: 8 }, (_, index) =>
+    (index + 2) * 7,
+  );
   let base = '';
-  for (let offset = 0; offset < 30 && !base; offset += 1) {
+  for (let offset = 0; offset < 180 && !base; offset += 1) {
     const date = new Date(candidate);
     date.setUTCDate(candidate.getUTCDate() + offset);
     const value = date.toISOString().slice(0, 10);
-    const availability = await api(
-      page,
-      `/availability?courtId=${courtId}&date=${value}&durationMinutes=60`,
+    const datesToCheck = [
+      value,
+      ...recurringOffsets.map((recurrenceOffset) =>
+        dateAtOffset(value, recurrenceOffset),
+      ),
+      dateAtOffset(value, 70),
+    ];
+    const availability = await Promise.all(
+      datesToCheck.map((dateToCheck) =>
+        api(
+          page,
+          `/availability?courtId=${courtId}&date=${dateToCheck}&durationMinutes=60`,
+        ),
+      ),
     );
-    if (availability.body.data.available.includes('18:00')) base = value;
+    if (
+      availability.every((result) =>
+        result.body.data.available.includes('18:00'),
+      )
+    )
+      base = value;
   }
   if (!base) throw new Error('Could not find an available test date.');
   const reservationInput = {
@@ -64,13 +87,9 @@ test('browser API workflow covers conflicts, recurring reservations, and court b
     method: 'POST',
     body: JSON.stringify({
       ...reservationInput,
-      startAt: `${new Date(new Date(`${base}T00:00:00Z`).getTime() + 14 * 86400000).toISOString().slice(0, 10)}T21:00:00Z`,
-      endAt: `${new Date(new Date(`${base}T00:00:00Z`).getTime() + 14 * 86400000).toISOString().slice(0, 10)}T22:00:00Z`,
-      untilDate: new Date(
-        new Date(`${base}T00:00:00Z`).getTime() + 63 * 86400000,
-      )
-        .toISOString()
-        .slice(0, 10),
+      startAt: `${dateAtOffset(base, 14)}T21:00:00Z`,
+      endAt: `${dateAtOffset(base, 14)}T22:00:00Z`,
+      untilDate: dateAtOffset(base, 63),
       frequency: 'WEEKLY',
       intervalWeeks: 1,
     }),
@@ -81,15 +100,15 @@ test('browser API workflow covers conflicts, recurring reservations, and court b
     method: 'POST',
     body: JSON.stringify({
       courtId,
-      startAt: `${new Date(new Date(`${base}T00:00:00Z`).getTime() + 70 * 86400000).toISOString().slice(0, 10)}T21:00:00Z`,
-      endAt: `${new Date(new Date(`${base}T00:00:00Z`).getTime() + 70 * 86400000).toISOString().slice(0, 10)}T22:00:00Z`,
+      startAt: `${dateAtOffset(base, 70)}T21:00:00Z`,
+      endAt: `${dateAtOffset(base, 70)}T22:00:00Z`,
       reason: 'MAINTENANCE',
     }),
   });
   expect(block.status).toBe(201);
   const availability = await api(
     page,
-    `/availability?courtId=${courtId}&date=${new Date(new Date(`${base}T00:00:00Z`).getTime() + 70 * 86400000).toISOString().slice(0, 10)}&durationMinutes=60`,
+    `/availability?courtId=${courtId}&date=${dateAtOffset(base, 70)}&durationMinutes=60`,
   );
   expect(availability.body.data.available).not.toContain('18:00');
 });

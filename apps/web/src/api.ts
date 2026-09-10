@@ -1,12 +1,16 @@
+import { t } from './i18n.js';
+
 export class ApiError extends Error {
   constructor(
-    public readonly code: string,
     message: string,
-    public readonly status: number,
+    public readonly code?: string,
+    public readonly status?: number,
   ) {
     super(message);
+    this.name = 'ApiError';
   }
 }
+
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
@@ -23,17 +27,17 @@ export class ApiClient {
         ...(init.headers ?? {}),
       },
     });
-    const payload = (await response.json()) as {
+    const payload = (await response.json().catch(() => ({}))) as {
       data?: T;
-      error?: { code: string; message: string };
+      error?: { code?: string; message?: string };
     };
     if (response.status === 401) {
       this.onUnauthorized();
     }
     if (!response.ok)
       throw new ApiError(
-        payload.error?.code ?? 'INTERNAL_ERROR',
         payload.error?.message ?? t('errors.requestFailed'),
+        payload.error?.code,
         response.status,
       );
     return payload.data as T;
@@ -57,4 +61,3 @@ export class ApiClient {
     return this.request<T>(path, { method: 'DELETE' });
   }
 }
-import { t } from './i18n.js';
