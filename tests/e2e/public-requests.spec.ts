@@ -19,21 +19,21 @@ test('public request flows through confirmation, payment, completion, and histor
   await page.locator('input[name="date"]').fill(date);
   await expect(
     page.locator('select[name="time"] option').first(),
-  ).not.toHaveText('LoadingÃ¢â‚¬Â¦');
+  ).not.toHaveText('Carregando…');
   await page.locator('input[name="customerName"]').fill(unique);
   await page.locator('input[name="phone"]').fill('41999997777');
-  await page.getByRole('button', { name: 'Send request' }).click();
-  await expect(page.locator('#public-result')).toHaveText(/Request sent/);
+  await page.getByRole('button', { name: 'Enviar solicitação' }).click();
+  await expect(page.locator('#public-result')).toHaveText(/Solicitação enviada/);
 
   await page.goto('/requests');
   const requestRow = page.locator('tr').filter({ hasText: unique });
   await expect(requestRow).toBeVisible();
-  await requestRow.getByRole('button', { name: 'Confirm' }).click();
+  await requestRow.getByRole('button', { name: 'Confirmar' }).click();
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: 'Confirm request' })
+    .getByRole('button', { name: 'Confirmar solicitação' })
     .click();
-  await expect(requestRow).toContainText('CONFIRMED');
+  await expect(requestRow).toContainText('Confirmada');
   const requestData = await api(page, '/requests');
   const confirmed = requestData.body.data.find(
     (item: {
@@ -116,23 +116,23 @@ test('public request flows through confirmation, payment, completion, and histor
   await page.goto('/requests');
   const rejectedRow = page.locator('tr').filter({ hasText: rejectedName });
   await expect(rejectedRow).toBeVisible();
-  await rejectedRow.getByRole('button', { name: 'Reject' }).click();
+  await rejectedRow.getByRole('button', { name: 'Recusar' }).click();
   await page
     .getByRole('dialog')
-    .getByLabel('Reason')
+    .getByLabel('Motivo')
     .fill('No availability after review.');
   page.once('dialog', (dialogEvent) => dialogEvent.accept());
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: 'Reject request' })
+    .getByRole('button', { name: 'Recusar solicitação' })
     .click();
-  await expect(rejectedRow).toContainText('REJECTED');
+  await expect(rejectedRow).toContainText('Recusada');
   await page.goto(`/customers?search=${encodeURIComponent(unique)}`);
   await expect(page.locator('tr').filter({ hasText: unique })).toBeVisible();
   await page
     .locator('tr')
     .filter({ hasText: unique })
-    .getByRole('button', { name: 'History' })
+    .getByRole('button', { name: 'Histórico' })
     .click();
-  await expect(page.getByRole('dialog')).toContainText('COMPLETED');
+  await expect(page.getByRole('dialog')).toContainText('Concluída');
 });

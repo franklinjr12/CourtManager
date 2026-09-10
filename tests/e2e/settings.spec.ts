@@ -9,19 +9,19 @@ test('owner can manage courts from Settings', async ({ page }) => {
   const sport = `PW Sport ${Date.now()}`;
   await login(page);
   await page.goto('/settings');
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-  await page.getByRole('button', { name: 'Add sport' }).click();
+  await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
+  await page.getByRole('button', { name: 'Adicionar esporte' }).click();
   const sportDialog = page.getByRole('dialog');
-  await sportDialog.getByLabel('Name').fill(sport);
-  await sportDialog.getByRole('button', { name: 'Add sport' }).click();
+  await sportDialog.getByLabel('Nome').fill(sport);
+  await sportDialog.getByRole('button', { name: 'Adicionar esporte' }).click();
   await expect(
     page.locator('.list-row').filter({ hasText: sport }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Add court' }).click();
+  await page.getByRole('button', { name: 'Adicionar quadra' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Name').fill(unique);
-  await dialog.getByLabel('Sport').fill('Tennis');
-  await dialog.getByRole('button', { name: 'Add court' }).click();
+  await dialog.getByLabel('Nome').fill(unique);
+  await dialog.getByLabel('Esporte').fill('Tennis');
+  await dialog.getByRole('button', { name: 'Adicionar quadra' }).click();
   const row = page.locator('.list-row').filter({ hasText: unique });
   await expect(row).toBeVisible();
   const courts = await api(page, '/courts?includeArchived=true');
@@ -29,11 +29,11 @@ test('owner can manage courts from Settings', async ({ page }) => {
     (item: { name: string }) => item.name === unique,
   );
   expect(court).toBeTruthy();
-  await row.getByRole('button', { name: 'Edit' }).click();
-  await page.getByRole('dialog').getByLabel('Name').fill(edited);
+  await row.getByRole('button', { name: 'Editar' }).click();
+  await page.getByRole('dialog').getByLabel('Nome').fill(edited);
   await page
     .getByRole('dialog')
-    .getByRole('button', { name: 'Save changes' })
+    .getByRole('button', { name: 'Salvar alterações' })
     .click();
   await expect(
     page.locator('.list-row').filter({ hasText: edited }),
@@ -42,27 +42,27 @@ test('owner can manage courts from Settings', async ({ page }) => {
   await page
     .locator('.list-row')
     .filter({ hasText: edited })
-    .getByRole('button', { name: 'Archive' })
+    .getByRole('button', { name: 'Arquivar' })
     .click();
   await expect(
-    page.locator('.list-row').filter({ hasText: edited }).getByText('Archived'),
+    page.locator('.list-row').filter({ hasText: edited }).getByText('Arquivado'),
   ).toBeVisible();
   await page
     .locator('.list-row')
     .filter({ hasText: edited })
-    .getByRole('button', { name: 'Restore' })
+    .getByRole('button', { name: 'Restaurar' })
     .click();
   await expect(
-    page.locator('.list-row').filter({ hasText: edited }).getByText('Active'),
+    page.locator('.list-row').filter({ hasText: edited }).getByText('Ativo'),
   ).toBeVisible();
   page.once('dialog', (dialogEvent) => dialogEvent.accept());
   await page
     .locator('.list-row')
     .filter({ hasText: edited })
-    .getByRole('button', { name: 'Archive' })
+    .getByRole('button', { name: 'Arquivar' })
     .click();
   await expect(
-    page.locator('.list-row').filter({ hasText: edited }).getByText('Archived'),
+    page.locator('.list-row').filter({ hasText: edited }).getByText('Arquivado'),
   ).toBeVisible();
   if (court)
     expect((await api(page, `/courts/${court.courtId}`)).status).toBe(404);

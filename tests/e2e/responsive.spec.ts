@@ -9,9 +9,9 @@ test('mobile schedule keeps actions usable and modal closes with Escape', async 
   await login(page);
   await page.goto('/schedule');
   await expect(
-    page.getByRole('button', { name: 'New reservation' }),
+    page.getByRole('button', { name: 'Nova reserva' }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'New reservation' }).click();
+  await page.getByRole('button', { name: 'Nova reserva' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);

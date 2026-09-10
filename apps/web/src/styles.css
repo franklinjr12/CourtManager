@@ -88,6 +88,38 @@ a {
   padding: 0 34px;
   color: var(--muted);
 }
+.language-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.language-control {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fff;
+  color: var(--navy);
+  max-width: 190px;
+}
+.login-head,
+.public-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 #screen {
   padding: 34px;
   max-width: 1400px;
@@ -448,6 +480,17 @@ textarea:focus {
   .content header {
     height: 52px;
     padding: 0 16px;
+  }
+  .content header .language-selector {
+    max-width: 52%;
+  }
+  .language-control {
+    max-width: 100%;
+  }
+  .login-head,
+  .public-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
   #screen {
     padding: 18px 14px;

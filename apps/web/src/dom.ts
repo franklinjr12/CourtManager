@@ -20,6 +20,7 @@ export const emptyState = (message: string) => {
 export const loadingState = () => {
   const element = document.createElement('p');
   element.className = 'loading';
-  element.textContent = 'Loading…';
+  element.textContent = t('common.loading');
   return element;
 };
+import { t } from './i18n.js';

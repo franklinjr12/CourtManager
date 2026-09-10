@@ -9,15 +9,15 @@ test('new reservation opens, supports quick customer creation, and creates a boo
   const unique = `PW Customer ${Date.now()}`;
   await login(page);
   await page.goto('/schedule');
-  await page.getByRole('button', { name: 'New reservation' }).click();
+  await page.getByRole('button', { name: 'Nova reserva' }).click();
   const dialog = page.getByRole('dialog');
   await expect(
-    dialog.getByRole('heading', { name: 'New reservation' }),
+    dialog.getByRole('heading', { name: 'Nova reserva' }),
   ).toBeVisible();
-  await dialog.getByRole('button', { name: '+ New customer' }).click();
+  await dialog.getByRole('button', { name: '+ Novo cliente' }).click();
   await dialog.locator('[name="quickName"]').fill(unique);
   await dialog.locator('[name="quickPhone"]').fill('41999998888');
-  await dialog.getByRole('button', { name: 'Create customer' }).click();
+  await dialog.getByRole('button', { name: 'Criar cliente' }).click();
   await expect(
     dialog
       .locator('select[name="customerId"] option')
@@ -26,13 +26,13 @@ test('new reservation opens, supports quick customer creation, and creates a boo
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const date = tomorrow.toISOString().slice(0, 10);
-  await dialog.getByLabel('Date').fill(date);
+  await dialog.getByLabel('Data').fill(date);
   await expect(
     dialog.locator('select[name="startTime"] option').first(),
-  ).not.toHaveText('Loadingâ€¦');
+  ).not.toHaveText('Carregando…');
   await dialog.locator('select[name="startTime"]').selectOption({ index: 0 });
-  await dialog.getByRole('button', { name: 'Save reservation' }).click();
-  await expect(page.getByRole('status')).toHaveText('Reservation created.');
+  await dialog.getByRole('button', { name: 'Salvar reserva' }).click();
+  await expect(page.getByRole('status')).toHaveText('Reserva criada.');
   const customers = await api(
     page,
     `/customers?search=${encodeURIComponent(unique)}`,

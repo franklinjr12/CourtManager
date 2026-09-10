@@ -33,7 +33,7 @@ export class ApiClient {
     if (!response.ok)
       throw new ApiError(
         payload.error?.code ?? 'INTERNAL_ERROR',
-        payload.error?.message ?? 'Request failed',
+        payload.error?.message ?? t('errors.requestFailed'),
         response.status,
       );
     return payload.data as T;
@@ -57,3 +57,4 @@ export class ApiClient {
     return this.request<T>(path, { method: 'DELETE' });
   }
 }
+import { t } from './i18n.js';

@@ -1,4 +1,21 @@
 import './styles.css';
+import {
+  attendanceStatusLabel,
+  blockReasonLabel,
+  formatDate,
+  formatMoney,
+  getLocale,
+  paymentMethodLabel,
+  paymentStatusLabel,
+  reservationSourceLabel,
+  reservationStatusLabel,
+  requestStatusLabel,
+  setLocale,
+  t,
+  translateError,
+  weekdayLabel,
+  type Locale,
+} from './i18n.js';
 
 type Session = {
   token: string;
@@ -130,10 +147,6 @@ const setSession = (value: Session | null) =>
   value
     ? localStorage.setItem('court-manager-session', JSON.stringify(value))
     : localStorage.removeItem('court-manager-session');
-const formatMoney = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-    Number(n) || 0,
-  );
 const timezone = () => session()?.organization?.timezone ?? 'UTC';
 const today = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -211,15 +224,39 @@ const localDateKey = (date: string) => {
   return `${value.year}-${value.month}-${value.day}`;
 };
 const dateValue = (date: string) => {
-  const value = localParts(new Date(date));
-  return `${value.day}/${value.month}/${value.year}`;
+  return formatDate(new Date(date), timezone());
 };
 const errorMessage = (error: unknown) => {
-  const message = error instanceof Error ? error.message : 'Request failed';
-  if (message === 'SCHEDULE_CONFLICT')
-    return 'This time is no longer available. Choose another time.';
-  return message;
+  return translateError(error);
 };
+const languageSelector = () =>
+  `<label class="language-selector"><span class="sr-only">${t('common.language')}</span><select class="language-control" data-language-selector aria-label="${t('common.language')}"><option value="pt-BR" ${getLocale() === 'pt-BR' ? 'selected' : ''}>${t('common.portugueseBrazil')}</option><option value="en-US" ${getLocale() === 'en-US' ? 'selected' : ''}>${t('common.englishUS')}</option></select></label>`;
+const wireLanguageSelector = () => {
+  app.querySelector<HTMLSelectElement>('[data-language-selector]')?.addEventListener('change', (event) => {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (!['pt-BR', 'en-US'].includes(value)) return;
+    setLocale(value as Locale);
+    void renderRoute();
+  });
+};
+const localizeEnumOptions = (container: ParentNode) => {
+  container.querySelectorAll<HTMLSelectElement>('select').forEach((select) => {
+    select.querySelectorAll<HTMLOptionElement>('option').forEach((option) => {
+      const value = option.value || option.textContent?.trim() || '';
+      if (select.name === 'status' && ['PRESENT', 'ABSENT', 'EXCUSED'].includes(value)) option.textContent = attendanceStatusLabel(value);
+      else if (select.name === 'method') option.textContent = paymentMethodLabel(value);
+      else if (select.name === 'source') option.textContent = reservationSourceLabel(value);
+      else if (select.name === 'reason') option.textContent = blockReasonLabel(value);
+      else if (select.name === 'weekday' && /^\d$/.test(value)) option.textContent = weekdayLabel(Number(value));
+    });
+  });
+};
+class ApiError extends Error {
+  constructor(message: string, readonly code?: string, readonly status?: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const current = session();
   const response = await fetch(`${API}${path}`, {
@@ -239,10 +276,10 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
     navigate('/login');
   }
   if (!response.ok)
-    throw new Error(
-      payload.error?.code === 'SCHEDULE_CONFLICT'
-        ? 'SCHEDULE_CONFLICT'
-        : (payload.error?.message ?? 'Request failed'),
+    throw new ApiError(
+      payload.error?.message ?? t('errors.requestFailed'),
+      payload.error?.code,
+      response.status,
     );
   return payload.data as T;
 };
@@ -286,8 +323,9 @@ const openModal = (title: string, body: string, returnFocus?: HTMLElement) => {
   modalReturn = returnFocus ?? (document.activeElement as HTMLElement);
   app.insertAdjacentHTML(
     'beforeend',
-    `<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">${escapeText(title)}</h2><button type="button" class="icon-button" data-close aria-label="Close">×</button></div><div class="modal-body">${body}</div></section></div>`,
+    `<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">${escapeText(title)}</h2><button type="button" class="icon-button" data-close aria-label="${t('common.close')}">×</button></div><div class="modal-body">${body}</div></section></div>`,
   );
+  localizeEnumOptions(app);
   const backdrop = app.querySelector('.modal-backdrop');
   backdrop?.addEventListener('click', (event) => {
     if (event.target === backdrop) closeModal();
@@ -339,20 +377,21 @@ const hourFields = (hours: OpeningHours) =>
     .map((day) => {
       const closed = hours[day] === null;
       const value = hours[day] ?? { open: '07:00', close: '23:00' };
-      return `<div class="hour-row"><strong>${day}</strong><label>Open<input name="open-${day}" type="time" value="${escapeText(value.open)}" ${closed ? 'disabled' : 'required'}></label><label>Close<input name="close-${day}" type="time" value="${escapeText(value.close)}" ${closed ? 'disabled' : 'required'}></label><label class="check"><input name="closed-${day}" type="checkbox" ${closed ? 'checked' : ''}> Closed</label></div>`;
+      return `<div class="hour-row"><strong>${weekdayLabel(day)}</strong><label>${t('settings.open')}<input name="open-${day}" type="time" value="${escapeText(value.open)}" ${closed ? 'disabled' : 'required'}></label><label>${t('settings.close')}<input name="close-${day}" type="time" value="${escapeText(value.close)}" ${closed ? 'disabled' : 'required'}></label><label class="check"><input name="closed-${day}" type="checkbox" ${closed ? 'checked' : ''}> ${t('settings.closed')}</label></div>`;
     })
     .join('');
 const courtForm = (court?: Court) => {
   const hours = court?.openingHours ?? defaultHours();
-  return `<form id="court-form" class="form-grid"><label>Name<input name="name" required maxlength="100" value="${escapeText(court?.name)}"></label><label>Sport<input name="sport" required maxlength="80" value="${escapeText(court?.sport)}"></label><label>Hourly price<input name="defaultHourlyPrice" type="number" min="0" step="0.01" required value="${escapeText(court?.defaultHourlyPrice ?? 80)}"></label><label>Slot size<select name="slotMinutes"><option value="30" ${court?.slotMinutes === 30 ? 'selected' : ''}>30 minutes</option><option value="60" ${court?.slotMinutes === 60 ? 'selected' : ''}>60 minutes</option></select></label><label class="check"><input name="publiclyRequestable" type="checkbox" ${court?.publiclyRequestable !== false ? 'checked' : ''}> Public booking enabled</label><label class="check"><input name="active" type="checkbox" ${court?.active !== false ? 'checked' : ''}> Active</label><label class="full">Notes<textarea name="notes" maxlength="2000">${escapeText(court?.notes)}</textarea></label><fieldset class="full"><legend>Opening hours</legend>${hourFields(hours)}</fieldset><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">${court ? 'Save changes' : 'Add court'}</button></div></form>`;
+  return `<form id="court-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="100" value="${escapeText(court?.name)}"></label><label>${t('common.sport')}<input name="sport" required maxlength="80" value="${escapeText(court?.sport)}"></label><label>${t('settings.hourlyPrice')}<input name="defaultHourlyPrice" type="number" min="0" step="0.01" required value="${escapeText(court?.defaultHourlyPrice ?? 80)}"></label><label>${t('settings.slotSize')}<select name="slotMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option></select></label><label class="check"><input name="publiclyRequestable" type="checkbox" ${court?.publiclyRequestable !== false ? 'checked' : ''}> ${t('settings.publicBookingEnabled')}</label><label class="check"><input name="active" type="checkbox" ${court?.active !== false ? 'checked' : ''}> ${t('common.active')}</label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="2000">${escapeText(court?.notes)}</textarea></label><fieldset class="full"><legend>${t('settings.openingHours')}</legend>${hourFields(hours)}</fieldset><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${court ? t('common.saveChanges') : t('settings.addCourt')}</button></div></form>`;
 };
 const customerForm = (customer?: Customer) =>
-  `<form id="customer-form" class="form-grid"><label>Name<input name="name" required maxlength="160" value="${escapeText(customer?.name)}"></label><label>Phone<input name="phone" maxlength="40" value="${escapeText(customer?.phone)}"></label><label>Email<input name="email" type="email" value="${escapeText(customer?.email)}"></label><label class="full">Notes<textarea name="notes" maxlength="4000">${escapeText(customer?.notes)}</textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">${customer ? 'Save changes' : 'Create customer'}</button></div></form>`;
+  `<form id="customer-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="160" value="${escapeText(customer?.name)}"></label><label>${t('common.phone')}<input name="phone" maxlength="40" value="${escapeText(customer?.phone)}"></label><label>${t('common.email')}<input name="email" type="email" value="${escapeText(customer?.email)}"></label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="4000">${escapeText(customer?.notes)}</textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${customer ? t('common.saveChanges') : t('customers.create')}</button></div></form>`;
 const organizationForm = (org: Organization) =>
-  `<form id="organization-form" class="form-grid"><label>Name<input name="name" required maxlength="160" value="${escapeText(org.name)}"></label><label>Public slug<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="${escapeText(org.slug)}"></label><label>Timezone<input name="timezone" required value="${escapeText(org.timezone)}"></label><label>Currency<input name="currency" required maxlength="3" value="${escapeText(org.currency)}"></label><label>Phone<input name="phone" value="${escapeText(org.phone)}"></label><label>Email<input name="email" type="email" value="${escapeText(org.email)}"></label><label class="check full"><input name="classes" type="checkbox" ${org.features.classes ? 'checked' : ''}> Enable classes</label><p class="form-error" role="alert"></p><div class="form-actions full"><button class="button primary">Save organization</button></div></form>`;
+  `<form id="organization-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="160" value="${escapeText(org.name)}"></label><label>${t('settings.publicSlug')}<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="${escapeText(org.slug)}"></label><label>${t('settings.timezone')}<input name="timezone" required value="${escapeText(org.timezone)}"></label><label>${t('settings.currency')}<input name="currency" required maxlength="3" value="${escapeText(org.currency)}"></label><label>${t('common.phone')}<input name="phone" value="${escapeText(org.phone)}"></label><label>${t('common.email')}<input name="email" type="email" value="${escapeText(org.email)}"></label><label class="check full"><input name="classes" type="checkbox" ${org.features.classes ? 'checked' : ''}> ${t('settings.enableClasses')}</label><p class="form-error" role="alert"></p><div class="form-actions full"><button class="button primary">${t('settings.saveOrganization')}</button></div></form>`;
 
 function login() {
-  app.innerHTML = `<main class="login"><form id="login-form" class="card"><h1>Court Manager</h1><p class="muted">Sign in to manage your courts.</p><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button class="button primary">Sign in</button><p id="login-error" class="error" role="alert"></p></form></main>`;
+  app.innerHTML = `<main class="login"><form id="login-form" class="card"><div class="login-head"><h1>Court Manager</h1>${languageSelector()}</div><p class="muted">${t('login.subtitle')}</p><label>${t('common.email')}<input name="email" type="email" required autocomplete="email"></label><label>${t('login.password')}<input name="password" type="password" required autocomplete="current-password"></label><button class="button primary">${t('login.submit')}</button><p id="login-error" class="error" role="alert"></p></form></main>`;
+  wireLanguageSelector();
   app
     .querySelector<HTMLFormElement>('#login-form')
     ?.addEventListener('submit', async (event) => {
@@ -378,7 +417,8 @@ async function shell(content: () => Promise<string> | string) {
     navigate('/login');
     return;
   }
-  app.innerHTML = `<div class="shell"><aside><h1>Court Manager</h1><nav><a href="/dashboard">Dashboard</a><a href="/schedule">Schedule</a><a href="/requests">Requests</a><a href="/reservations">Reservations</a><a href="/customers">Customers</a><a href="/finance">Finance</a><a href="/classes">Classes</a><a href="/reports">Reports</a><a href="/settings">Settings</a></nav><button id="logout" class="link-button">Log out</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? 'Sports center')}</span><span>${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">Loading…</div></section></main></div>`;
+  app.innerHTML = `<div class="shell"><aside><h1>Court Manager</h1><nav><a href="/dashboard">${t('nav.dashboard')}</a><a href="/schedule">${t('nav.schedule')}</a><a href="/requests">${t('nav.requests')}</a><a href="/reservations">${t('nav.reservations')}</a><a href="/customers">${t('nav.customers')}</a><a href="/finance">${t('nav.finance')}</a><a href="/classes">${t('nav.classes')}</a><a href="/reports">${t('nav.reports')}</a><a href="/settings">${t('nav.settings')}</a></nav><button id="logout" class="link-button">${t('nav.logOut')}</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? t('nav.sportsCenter'))}</span><span>${languageSelector()} ${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">${t('common.loading')}</div></section></main></div>`;
+  wireLanguageSelector();
   const queuedToast = sessionStorage.getItem('court-manager-toast');
   if (queuedToast) {
     sessionStorage.removeItem('court-manager-toast');
@@ -411,7 +451,10 @@ async function shell(content: () => Promise<string> | string) {
     }),
   );
   const target = document.querySelector<HTMLElement>('#screen');
-  if (target) target.innerHTML = await content();
+  if (target) {
+    target.innerHTML = await content();
+    localizeEnumOptions(target);
+  }
 }
 const screen = () => document.querySelector<HTMLElement>('#screen');
 async function dashboard() {
@@ -424,7 +467,7 @@ async function dashboard() {
       outstanding: number;
       upcoming: Reservation[];
     }>('/dashboard');
-    return `<div class="toolbar"><div><h2>Today</h2><p class="muted">Operational overview</p></div><a class="button primary" href="/schedule">Open schedule</a></div><div class="metrics"><article class="metric card"><span>Reservations</span><strong>${data.reservationsToday}</strong></article><article class="metric card"><span>Pending requests</span><strong>${data.pendingRequests}</strong></article><article class="metric card"><span>Expected revenue</span><strong>${formatMoney(data.expectedRevenue)}</strong></article><article class="metric card"><span>Outstanding</span><strong>${formatMoney(data.outstanding)}</strong></article></div><article class="card"><h3>Upcoming</h3>${data.upcoming.length ? `<ul>${data.upcoming.map((item) => `<li>${escapeText(timeValue(item.startAt))} — ${formatMoney(item.expectedAmount)}</li>`).join('')}</ul>` : '<p class="empty">No reservations yet today.</p>'}</article>`;
+    return `<div class="toolbar"><div><h2>${t('dashboard.today')}</h2><p class="muted">${t('dashboard.overview')}</p></div><a class="button primary" href="/schedule">${t('dashboard.openSchedule')}</a></div><div class="metrics"><article class="metric card"><span>${t('dashboard.reservations')}</span><strong>${data.reservationsToday}</strong></article><article class="metric card"><span>${t('dashboard.pendingRequests')}</span><strong>${data.pendingRequests}</strong></article><article class="metric card"><span>${t('dashboard.expectedRevenue')}</span><strong>${formatMoney(data.expectedRevenue)}</strong></article><article class="metric card"><span>${t('dashboard.outstanding')}</span><strong>${formatMoney(data.outstanding)}</strong></article></div><article class="card"><h3>${t('dashboard.upcoming')}</h3>${data.upcoming.length ? `<ul>${data.upcoming.map((item) => `<li>${escapeText(timeValue(item.startAt))} — ${formatMoney(item.expectedAmount)}</li>`).join('')}</ul>` : `<p class="empty">${t('dashboard.noReservations')}</p>`}</article>`;
   });
 }
 function openingHoursFrom(form: HTMLFormElement) {
@@ -447,7 +490,7 @@ function openingHoursFrom(form: HTMLFormElement) {
   );
 }
 async function openCourtModal(court?: Court) {
-  openModal(court ? 'Edit court' : 'Add court', courtForm(court));
+  openModal(court ? t('settings.editCourt') : t('settings.addCourt'), courtForm(court));
   const form = app.querySelector<HTMLFormElement>('#court-form');
   if (!form) return;
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -484,7 +527,7 @@ async function openCourtModal(court?: Court) {
         body: JSON.stringify(payload),
       });
       closeModal();
-      toast(court ? 'Court updated.' : 'Court added.');
+      toast(court ? t('settings.courtUpdated') : t('settings.courtAdded'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -494,8 +537,8 @@ async function openCourtModal(court?: Court) {
 }
 async function openSportModal(sport?: Sport) {
   openModal(
-    sport ? 'Edit sport' : 'Add sport',
-    `<form id="sport-form" class="form-grid"><label class="full">Name<input name="name" required maxlength="80" value="${escapeText(sport?.name)}"></label><label class="check full"><input name="active" type="checkbox" ${sport?.active !== false ? 'checked' : ''}> Active</label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">${sport ? 'Save changes' : 'Add sport'}</button></div></form>`,
+    sport ? t('settings.editSport') : t('settings.addSport'),
+    `<form id="sport-form" class="form-grid"><label class="full">${t('common.name')}<input name="name" required maxlength="80" value="${escapeText(sport?.name)}"></label><label class="check full"><input name="active" type="checkbox" ${sport?.active !== false ? 'checked' : ''}> ${t('common.active')}</label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${sport ? t('common.saveChanges') : t('settings.addSport')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#sport-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -512,7 +555,7 @@ async function openSportModal(sport?: Sport) {
         }),
       });
       closeModal();
-      toast(sport ? 'Sport updated.' : 'Sport added.');
+      toast(sport ? t('settings.sportUpdated') : t('settings.sportAdded'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -528,7 +571,7 @@ async function settings() {
       request<Sport[]>('/sports?includeInactive=true'),
     ]);
     setTimeout(wireSettings, 0);
-    return `<div class="toolbar"><div><h2>Settings</h2><p class="muted">Manage organization, sports, and courts.</p></div><button class="button primary" id="add-court">Add court</button></div><article class="card"><h3>Organization</h3>${organizationForm(org)}</article><article class="card section-card"><div class="section-head"><div><h3>Sports</h3><p class="muted">${sports.filter((s) => s.active).length} active · ${sports.filter((s) => !s.active).length} inactive</p></div><button class="button" id="add-sport">Add sport</button></div><div class="court-list">${sports.length ? sports.map((sport) => `<article class="list-row ${sport.active ? '' : 'archived'}"><div><strong>${escapeText(sport.name)}</strong><small>${sport.active ? 'Active' : 'Inactive'}</small></div><div class="row-actions">${button('Edit', `data-edit-sport="${escapeText(sport.sportId)}"`)}${button(sport.active ? 'Deactivate' : 'Activate', `data-toggle-sport="${escapeText(sport.sportId)}" data-active="${sport.active ? 'false' : 'true'}"`)}</div></article>`).join('') : '<p class="empty">No sports yet. Add the first sport.</p>'}</div></article><article class="card section-card"><div class="section-head"><div><h3>Courts</h3><p class="muted">${courts.filter((c) => !c.archivedAt).length} active · ${courts.filter((c) => c.archivedAt).length} archived</p></div></div><div class="court-list">${courts.length ? courts.map((c) => `<article class="list-row ${c.archivedAt ? 'archived' : ''}"><div><strong>${escapeText(c.name)}</strong><span>${escapeText(c.sport)} · ${formatMoney(c.defaultHourlyPrice)}/hour · ${c.slotMinutes} min</span><small>${c.archivedAt ? 'Archived' : c.active ? 'Active' : 'Inactive'} · ${c.publiclyRequestable ? 'Public booking enabled' : 'Private'}</small></div><div class="row-actions">${button('Edit', `data-edit-court="${escapeText(c.courtId)}"`)}${c.archivedAt ? button('Restore', `data-restore-court="${escapeText(c.courtId)}"`) : button('Archive', `data-archive-court="${escapeText(c.courtId)}"`)}</div></article>`).join('') : '<p class="empty">No courts yet. Add first court.</p>'}</div></article>`;
+    return `<div class="toolbar"><div><h2>${t('settings.title')}</h2><p class="muted">${t('settings.description')}</p></div><button class="button primary" id="add-court">${t('settings.addCourt')}</button></div><article class="card"><h3>${t('settings.organization')}</h3>${organizationForm(org)}</article><article class="card section-card"><div class="section-head"><div><h3>${t('settings.sports')}</h3><p class="muted">${t('settings.activeSummary', { active: sports.filter((s) => s.active).length, inactive: sports.filter((s) => !s.active).length })}</p></div><button class="button" id="add-sport">${t('settings.addSport')}</button></div><div class="court-list">${sports.length ? sports.map((sport) => `<article class="list-row ${sport.active ? '' : 'archived'}"><div><strong>${escapeText(sport.name)}</strong><small>${sport.active ? t('common.active') : t('common.inactive')}</small></div><div class="row-actions">${button(t('common.edit'), `data-edit-sport="${escapeText(sport.sportId)}"`)}${button(sport.active ? t('common.deactivate') : t('common.activate'), `data-toggle-sport="${escapeText(sport.sportId)}" data-active="${sport.active ? 'false' : 'true'}"`)}</div></article>`).join('') : `<p class="empty">${t('settings.noSports')}</p>`}</div></article><article class="card section-card"><div class="section-head"><div><h3>${t('settings.courts')}</h3><p class="muted">${t('settings.courtSummary', { active: courts.filter((c) => !c.archivedAt).length, archived: courts.filter((c) => c.archivedAt).length })}</p></div></div><div class="court-list">${courts.length ? courts.map((c) => `<article class="list-row ${c.archivedAt ? 'archived' : ''}"><div><strong>${escapeText(c.name)}</strong><span>${escapeText(c.sport)} · ${formatMoney(c.defaultHourlyPrice)}${t('common.hour')} · ${c.slotMinutes} min</span><small>${c.archivedAt ? t('common.archived') : c.active ? t('common.active') : t('common.inactive')} · ${c.publiclyRequestable ? t('settings.publicBookingEnabled') : t('common.private')}</small></div><div class="row-actions">${button(t('common.edit'), `data-edit-court="${escapeText(c.courtId)}"`)}${c.archivedAt ? button(t('common.restore'), `data-restore-court="${escapeText(c.courtId)}"`) : button(t('common.archive'), `data-archive-court="${escapeText(c.courtId)}"`)}</div></article>`).join('') : `<p class="empty">${t('settings.noCourts')}</p>`}</div></article>`;
   });
 }
 function wireSettings() {
@@ -548,7 +591,7 @@ function wireSettings() {
           method: 'PATCH',
           body: JSON.stringify({ active: element.dataset.active === 'true' }),
         });
-        toast('Sport status updated.');
+        toast(t('settings.sportStatusUpdated'));
         await renderRoute();
       } catch (error) {
         toast(errorMessage(error), 'error');
@@ -568,13 +611,13 @@ function wireSettings() {
   );
   app.querySelectorAll<HTMLElement>('[data-archive-court]').forEach((element) =>
     element.addEventListener('click', async () => {
-      if (!window.confirm('Archive this court? Existing history will remain.'))
+      if (!window.confirm(t('settings.archiveCourtConfirmation')))
         return;
       try {
         await request(`/courts/${element.dataset.archiveCourt}/archive`, {
           method: 'POST',
         });
-        toast('Court archived.');
+        toast(t('settings.courtArchived'));
         await renderRoute();
       } catch (error) {
         toast(errorMessage(error), 'error');
@@ -587,7 +630,7 @@ function wireSettings() {
         await request(`/courts/${element.dataset.restoreCourt}/restore`, {
           method: 'POST',
         });
-        toast('Court restored.');
+        toast(t('settings.courtRestored'));
         await renderRoute();
       } catch (error) {
         toast(errorMessage(error), 'error');
@@ -615,7 +658,7 @@ function wireSettings() {
             features: { ...current.features, classes: values.classes === 'on' },
           }),
         });
-        toast('Organization saved.');
+        toast(t('settings.organizationSaved'));
         setBusy(form, false);
       } catch (error) {
         showFormError(form, error);
@@ -636,7 +679,7 @@ async function loadAvailability(form: HTMLFormElement) {
     ),
     start = form.elements.namedItem('startTime') as HTMLSelectElement;
   if (!court || !date) return;
-  start.innerHTML = '<option>Loading…</option>';
+  start.innerHTML = `<option>${t('common.loading')}</option>`;
   try {
     const data = await request<{ available: string[] }>(
       `/availability?courtId=${encodeURIComponent(court)}&date=${encodeURIComponent(date)}&durationMinutes=${duration}`,
@@ -648,7 +691,7 @@ async function loadAvailability(form: HTMLFormElement) {
               `<option value="${escapeText(value)}">${escapeText(value)}</option>`,
           )
           .join('')
-      : '<option value="">No available times</option>';
+      : `<option value="">${t('common.noAvailableTimes')}</option>`;
   } catch (error) {
     start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
   }
@@ -658,7 +701,7 @@ async function openCustomerModal(
   customer?: Customer,
 ) {
   openModal(
-    customer ? 'Edit customer' : 'Create customer',
+    customer ? t('customers.edit') : t('customers.create'),
     customerForm(customer),
   );
   const form = app.querySelector<HTMLFormElement>('#customer-form');
@@ -679,7 +722,7 @@ async function openCustomerModal(
         { method: customer ? 'PATCH' : 'POST', body: JSON.stringify(payload) },
       );
       closeModal();
-      toast(customer ? 'Customer updated.' : 'Customer created.');
+      toast(customer ? t('customers.updated') : t('customers.created'));
       onCreated?.(saved);
       if (!onCreated) await renderRoute();
     } catch (error) {
@@ -704,8 +747,8 @@ async function openReservationModal(
     request<Customer[]>('/customers?limit=100'),
   ]);
   const startDate = prefill?.startAt ? new Date(prefill.startAt) : new Date();
-  const body = `<form id="reservation-form" class="form-grid"><label>Court<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" data-price="${c.defaultHourlyPrice}" ${c.courtId === prefill?.courtId ? 'selected' : ''}>${escapeText(c.name)} — ${escapeText(c.sport)}</option>`).join('')}</select></label><label>Date<input name="date" type="date" required value="${escapeText(prefill?.startAt ? startDate.toISOString().slice(0, 10) : date)}"></label><label>Duration<select name="durationMinutes"><option value="30">30 minutes</option><option value="60">60 minutes</option></select></label><label>Start time<select name="startTime" required><option>Loading…</option></select></label><label class="full">Customer<select name="customerId" required>${customerOptions(customers)}</select><button type="button" class="button small" id="quick-customer">+ New customer</button></label><div id="quick-customer-fields" class="inline-panel full" hidden><label>Name<input name="quickName" maxlength="160"></label><label>Phone<input name="quickPhone" maxlength="40"></label><button type="button" class="button small" id="create-quick-customer">Create customer</button><p class="form-error" id="quick-customer-error" role="alert"></p></div><label>Expected amount<input name="expectedAmount" type="number" min="0" step="0.01" required></label><label>Source<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><label class="full">Notes<textarea name="notes" maxlength="4000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Save reservation</button></div></form>`;
-  openModal('New reservation', body);
+  const body = `<form id="reservation-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" data-price="${c.defaultHourlyPrice}" ${c.courtId === prefill?.courtId ? 'selected' : ''}>${escapeText(c.name)} — ${escapeText(c.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input name="date" type="date" required value="${escapeText(prefill?.startAt ? startDate.toISOString().slice(0, 10) : date)}"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option></select></label><label>${t('common.startTime')}<select name="startTime" required><option>${t('common.loading')}</option></select></label><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select><button type="button" class="button small" id="quick-customer">${t('reservations.quickNewCustomer')}</button></label><div id="quick-customer-fields" class="inline-panel full" hidden><label>${t('common.name')}<input name="quickName" maxlength="160"></label><label>${t('common.phone')}<input name="quickPhone" maxlength="40"></label><button type="button" class="button small" id="create-quick-customer">${t('customers.create')}</button><p class="form-error" id="quick-customer-error" role="alert"></p></div><label>${t('common.expectedAmount')}<input name="expectedAmount" type="number" min="0" step="0.01" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="4000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.save')}</button></div></form>`;
+  openModal(t('reservations.new'), body);
   const form = app.querySelector<HTMLFormElement>('#reservation-form');
   if (!form) return;
   form.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -748,7 +791,7 @@ async function openReservationModal(
         ).trim(),
         error = form.querySelector<HTMLElement>('#quick-customer-error');
       if (!name) {
-        if (error) error.textContent = 'Name is required.';
+        if (error) error.textContent = t('reservations.nameRequired');
         return;
       }
       try {
@@ -800,7 +843,7 @@ async function openReservationModal(
         }),
       });
       closeModal();
-      toast('Reservation created.');
+      toast(t('reservations.created'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -811,8 +854,8 @@ async function openReservationModal(
 async function openBlockModal(date = today(), courtId?: string) {
   const courts = await request<Court[]>('/courts');
   openModal(
-    'Block court',
-    `<form id="block-form" class="form-grid"><label>Court<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" ${c.courtId === courtId ? 'selected' : ''}>${escapeText(c.name)}</option>`).join('')}</select></label><label>Date<input name="date" type="date" value="${escapeText(date)}" required></label><label>Start<input name="start" type="time" value="08:00" required></label><label>End<input name="end" type="time" value="09:00" required></label><label>Reason<select name="reason"><option>MAINTENANCE</option><option>CLEANING</option><option>PRIVATE_EVENT</option><option>TOURNAMENT</option><option>WEATHER</option><option>STAFF_USE</option><option>OTHER</option></select></label><label class="full">Notes<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Block court</button></div></form>`,
+    t('schedule.blockCourt'),
+    `<form id="block-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" ${c.courtId === courtId ? 'selected' : ''}>${escapeText(c.name)}</option>`).join('')}</select></label><label>${t('common.date')}<input name="date" type="date" value="${escapeText(date)}" required></label><label>${t('common.start')}<input name="start" type="time" value="08:00" required></label><label>${t('common.end')}<input name="end" type="time" value="09:00" required></label><label>${t('common.reason' as never)}<select name="reason"><option>MAINTENANCE</option><option>CLEANING</option><option>PRIVATE_EVENT</option><option>TOURNAMENT</option><option>WEATHER</option><option>STAFF_USE</option><option>OTHER</option></select></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('schedule.blockCourt')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#block-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -832,7 +875,7 @@ async function openBlockModal(date = today(), courtId?: string) {
         }),
       });
       closeModal();
-      toast('Court blocked.');
+      toast(t('schedule.blockCourt'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -843,13 +886,13 @@ async function openBlockModal(date = today(), courtId?: string) {
 async function openReservationDetail(id: string) {
   const reservation = await request<Reservation>(`/reservations/${id}`);
   openModal(
-    'Reservation details',
-    `<div class="detail-grid"><div><span class="muted">Status</span><strong>${escapeText(reservation.status)}</strong></div><div><span class="muted">Time</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">Expected</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">Paid</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>Date<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>Start<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>End<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Close</button>${reservation.status === 'CONFIRMED' ? '<button class="button primary">Save time</button>' : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button('Complete', 'data-transition="COMPLETED"')}${button('No-show', 'data-transition="NO_SHOW"')}${button('Cancel reservation', 'data-transition="CANCELLED"')}${button('Record payment', `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
+    t('reservations.details'),
+    `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${reservation.status === 'CONFIRMED' ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
   );
   const detailGrid = app.querySelector<HTMLElement>('.modal .detail-grid');
   detailGrid?.insertAdjacentHTML(
     'beforeend',
-    `<div><span class="muted">Payment status</span><strong>${escapeText(reservation.paymentStatus ?? 'UNPAID')}</strong></div>`,
+    `<div><span class="muted">${t('common.paymentStatus')}</span><strong>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</strong></div>`,
   );
   const detailDate = app.querySelector<HTMLInputElement>(
     '#reservation-edit-form [name="date"]',
@@ -878,7 +921,7 @@ async function openReservationDetail(id: string) {
         }),
       });
       closeModal();
-      toast('Reservation updated.');
+      toast(t('reservations.updated'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -890,7 +933,7 @@ async function openReservationDetail(id: string) {
       const status = String(element.dataset.transition);
       if (
         !window.confirm(
-          `${status === 'CANCELLED' ? 'Cancel' : status === 'NO_SHOW' ? 'Mark no-show' : 'Complete'} reservation?`,
+          status === 'CANCELLED' ? t('reservations.cancelConfirmation') : status === 'NO_SHOW' ? t('reservations.noShowConfirmation') : t('reservations.completeConfirmation'),
         )
       )
         return;
@@ -900,7 +943,7 @@ async function openReservationDetail(id: string) {
           { method: 'POST' },
         );
         closeModal();
-        toast('Reservation status updated.');
+        toast(t('reservations.statusUpdated'));
         await renderRoute();
       } catch (error) {
         toast(errorMessage(error), 'error');
@@ -922,10 +965,10 @@ async function schedule() {
       item.reservationId
         ? {
             ...item,
-            status: `${item.customerName ?? 'Customer'} · ${item.status} · ${item.paymentStatus ?? 'UNPAID'}`,
+            status: `${item.customerName ?? t('common.customer')} · ${reservationStatusLabel(item.status)} · ${paymentStatusLabel(item.paymentStatus ?? 'UNPAID')}`,
           }
         : item.classId
-          ? { ...item, reason: `Class · ${item.name ?? 'Class'}` }
+          ? { ...item, reason: `${t('schedule.class')} · ${item.name ?? t('schedule.class')}` }
           : item,
     );
     renderedItems = data.items;
@@ -949,12 +992,12 @@ async function schedule() {
         ?.querySelectorAll<HTMLElement>('[data-block]')
         .forEach((element) =>
           element.addEventListener('click', async () => {
-            if (!window.confirm('Cancel this court block?')) return;
+            if (!window.confirm(t('schedule.cancelBlockConfirmation'))) return;
             try {
               await request(`/blocks/${element.dataset.block}/cancel`, {
                 method: 'POST',
               });
-              toast('Court block cancelled.');
+              toast(t('schedule.cancelBlock'));
               await renderRoute();
             } catch (error) {
               toast(errorMessage(error), 'error');
@@ -962,16 +1005,16 @@ async function schedule() {
           }),
         );
     }, 0);
-    return `<div class="toolbar"><div><h2>Schedule</h2><p class="muted">${escapeText(date)}</p></div><div class="row-actions"><button class="button" id="previous-day">Previous day</button><button class="button" id="today">Today</button><button class="button" id="next-day">Next day</button><button class="button" id="block-court">Block court</button><button class="button primary" id="new-booking">New reservation</button></div></div><div class="schedule-grid">${
+    return `<div class="toolbar"><div><h2>${t('schedule.title')}</h2><p class="muted">${escapeText(formatDate(`${date}T12:00:00`, timezone()))}</p></div><div class="row-actions"><button class="button" id="previous-day">${t('common.previousDay')}</button><button class="button" id="today">${t('dashboard.today')}</button><button class="button" id="next-day">${t('common.nextDay')}</button><button class="button" id="block-court">${t('schedule.blockCourt')}</button><button class="button primary" id="new-booking">${t('reservations.new')}</button></div></div><div class="schedule-grid">${
       data.courts
         .map((court) => {
           const items = displayItems.filter(
             (item) => item.courtId === court.courtId,
           );
-          return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Reservation · ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Blocked · ${escapeText(item.reason)}</span>${item.blockId ? button('Cancel', `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : '<p class="empty">Available</p>'}</article>`;
+          return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>${t('schedule.reservation')} · ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>${item.classId ? `${t('schedule.class')} · ${escapeText(item.reason)}` : `${t('schedule.blocked')} · ${blockReasonLabel(item.reason ?? '')}`}</span>${item.blockId ? button(t('schedule.cancelBlock'), `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : `<p class="empty">${t('common.available')}</p>`}</article>`;
         })
         .join('') ||
-      '<p class="empty">Create a court in Settings to start scheduling.</p>'
+      `<p class="empty">${t('schedule.createCourtHint')}</p>`
     }</div>`;
   });
   screen()
@@ -982,7 +1025,7 @@ async function schedule() {
       );
       const strong = element.querySelector('strong');
       if (reservation && strong)
-        strong.textContent = `${strong.textContent} — ${reservation.customerName ?? 'Customer'}`;
+        strong.textContent = `${strong.textContent} — ${reservation.customerName ?? t('common.customer')}`;
     });
   const move = (amount: number) => {
     const next = new Date(`${date}T12:00:00Z`);
@@ -1008,7 +1051,7 @@ async function customers() {
       `/customers?limit=100${query ? `&search=${encodeURIComponent(query)}` : ''}`,
     );
     setTimeout(wireCustomerList, 0);
-    return `<div class="toolbar"><div><h2>Customers</h2><p class="muted">Create and maintain customer records.</p></div><button class="button primary" id="add-customer">Add customer</button></div><form id="customer-search" class="search-bar"><input name="search" placeholder="Search name, phone, email" value="${escapeText(query)}"><button class="button">Search</button></form><article class="card table-wrap">${data.length ? `<table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.phone)}</td><td>${escapeText(c.email)}</td><td>${c.archived ? 'Archived' : 'Active'}</td><td class="row-actions">${button('Edit', `data-edit-customer="${escapeText(c.customerId)}"`)}${c.archived ? '' : button('Archive', `data-archive-customer="${escapeText(c.customerId)}"`)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No customers yet.</p>'}</article>`;
+    return `<div class="toolbar"><div><h2>${t('customers.title')}</h2><p class="muted">${t('customers.description')}</p></div><button class="button primary" id="add-customer">${t('customers.add')}</button></div><form id="customer-search" class="search-bar"><input name="search" placeholder="${t('customers.searchPlaceholder')}" value="${escapeText(query)}"><button class="button">${t('common.search')}</button></form><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.name')}</th><th>${t('common.phone')}</th><th>${t('common.email')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.phone)}</td><td>${escapeText(c.email)}</td><td>${c.archived ? t('common.archived') : t('common.active')}</td><td class="row-actions">${button(t('common.edit'), `data-edit-customer="${escapeText(c.customerId)}"`)}${c.archived ? '' : button(t('common.archive'), `data-archive-customer="${escapeText(c.customerId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('customers.noCustomers')}</p>`}</article>`;
   });
 }
 function wireCustomerList() {
@@ -1036,13 +1079,13 @@ function wireCustomerList() {
     .querySelectorAll<HTMLElement>('[data-archive-customer]')
     .forEach((element) =>
       element.addEventListener('click', async () => {
-        if (!window.confirm('Archive this customer?')) return;
+        if (!window.confirm(t('customers.archiveConfirmation'))) return;
         try {
           await request(
             `/customers/${element.dataset.archiveCustomer}/archive`,
             { method: 'POST' },
           );
-          toast('Customer archived.');
+          toast(t('customers.archived'));
           await renderRoute();
         } catch (error) {
           toast(errorMessage(error), 'error');
@@ -1057,7 +1100,7 @@ function wireCustomerList() {
         actions.insertAdjacentHTML(
           'beforeend',
           button(
-            'History',
+            t('customers.history'),
             `data-customer-history="${escapeText(element.dataset.editCustomer)}"`,
           ),
         );
@@ -1079,8 +1122,8 @@ async function openCustomerHistory(customerId: string) {
     ),
   ]);
   openModal(
-    `${customer.name} · history`,
-    `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>Date/time</th><th>Status</th><th>Expected</th><th>Payment</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${escapeText(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${escapeText(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">No reservation history.</p>'}`,
+    t('customers.historyTitle', { name: customer.name }),
+    `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.payment')}</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${reservationStatusLabel(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="empty">${t('customers.noHistory')}</p>`}`,
   );
 }
 async function openRecurringReservationModal() {
@@ -1089,8 +1132,8 @@ async function openRecurringReservationModal() {
     request<Customer[]>('/customers?limit=100'),
   ]);
   openModal(
-    'Recurring reservation',
-    `<form id="recurring-form" class="form-grid"><label>Court<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>Customer<select name="customerId" required>${customerOptions(customers)}</select></label><label>First date<input name="date" type="date" required value="${escapeText(today())}"></label><label>Until date<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>Start time<input name="time" type="time" required value="18:00"></label><label>Duration<select name="durationMinutes"><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="120">120 minutes</option></select></label><label>Every (weeks)<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>Source<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Create recurring series</button></div></form>`,
+    t('reservations.recurring'),
+    `<form id="recurring-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><label>${t('reservations.firstDate')}<input name="date" type="date" required value="${escapeText(today())}"></label><label>${t('reservations.untilDate')}<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>${t('common.startTime')}<input name="time" type="time" required value="18:00"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.minutes', { count: 120 })}</option></select></label><label>${t('reservations.everyWeeks')}<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.createRecurring')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#recurring-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -1119,7 +1162,7 @@ async function openRecurringReservationModal() {
         }),
       });
       closeModal();
-      toast('Recurring reservations created.');
+      toast(t('reservations.recurringCreated'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -1138,7 +1181,7 @@ async function reservations() {
       if (actions && !actions.querySelector('#add-recurring-reservation')) {
         actions.insertAdjacentHTML(
           'beforeend',
-          `<button class="button" id="add-recurring-reservation">Recurring reservation</button>`,
+          `<button class="button" id="add-recurring-reservation">${t('reservations.recurring')}</button>`,
         );
         actions
           .querySelector('#add-recurring-reservation')
@@ -1157,7 +1200,7 @@ async function reservations() {
           ),
         );
     }, 0);
-    return `<div class="toolbar"><div><h2>Reservations</h2><p class="muted">Manage confirmed and completed bookings.</p></div><button class="button primary" id="add-reservation">New reservation</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>Date/time</th><th>Court</th><th>Customer</th><th>Status</th><th>Expected</th><th>Actions</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}–${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${escapeText(r.status)}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button('Open', `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No reservations yet.</p>'}</article>`;
+    return `<div class="toolbar"><div><h2>${t('reservations.title')}</h2><p class="muted">${t('reservations.description')}</p></div><button class="button primary" id="add-reservation">${t('reservations.new')}</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.court')}</th><th>${t('common.customer')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}–${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${reservationStatusLabel(r.status)} · ${paymentStatusLabel(r.paymentStatus ?? 'UNPAID')}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button(t('common.open' as never), `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('reservations.noReservations')}</p>`}</article>`;
   });
   const rows = screen()?.querySelectorAll<HTMLTableRowElement>('tbody tr');
   rows?.forEach((row, index) => {
@@ -1170,7 +1213,7 @@ async function reservations() {
         cells[2].textContent =
           reservation.customerName ?? reservation.customerId;
       if (cells[3])
-        cells[3].textContent = `${reservation.status} · ${reservation.paymentStatus ?? 'UNPAID'}`;
+        cells[3].textContent = `${reservationStatusLabel(reservation.status)} · ${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}`;
     }
   });
 }
@@ -1181,7 +1224,7 @@ async function requests() {
   ]);
   await shell(async () => {
     setTimeout(() => wireRequests(data, customers), 0);
-    return `<div class="toolbar"><div><h2>Reservation requests</h2><p class="muted">${data.filter((item) => item.status === 'REQUESTED').length} pending</p></div></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>Customer</th><th>Requested time</th><th>Court</th><th>Status</th><th>Actions</th></tr></thead><tbody>${data.map((item) => `<tr><td>${escapeText(item.customerName)}<small>${escapeText(item.phone)}</small></td><td>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</td><td>${escapeText(item.courtId)}</td><td>${escapeText(item.status)}</td><td>${item.status === 'REQUESTED' ? `${button('Review', `data-review-request="${escapeText(item.requestId)}"`)}${button('Confirm', `data-confirm-request="${escapeText(item.requestId)}"`)}${button('Reject', `data-reject-request="${escapeText(item.requestId)}"`)}` : '—'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No reservation requests yet.</p>'}</article>`;
+    return `<div class="toolbar"><div><h2>${t('requests.title')}</h2><p class="muted">${t('requests.pending', { count: data.filter((item) => item.status === 'REQUESTED').length })}</p></div></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.customer')}</th><th>${t('requests.requestedTime')}</th><th>${t('common.court')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((item) => `<tr><td>${escapeText(item.customerName)}<small>${escapeText(item.phone)}</small></td><td>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</td><td>${escapeText(item.courtId)}</td><td>${requestStatusLabel(item.status)}</td><td>${item.status === 'REQUESTED' ? `${button(t('requests.review'), `data-review-request="${escapeText(item.requestId)}"`)}${button(t('requests.confirm'), `data-confirm-request="${escapeText(item.requestId)}"`)}${button(t('requests.reject'), `data-reject-request="${escapeText(item.requestId)}"`)}` : '—'}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('requests.noRequests')}</p>`}</article>`;
   });
 }
 function wireRequests(data: RequestItem[], customers: Customer[]) {
@@ -1194,8 +1237,8 @@ function wireRequests(data: RequestItem[], customers: Customer[]) {
         );
         if (item)
           openModal(
-            'Request review',
-            `<div class="detail-grid"><div><span class="muted">Customer</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">Contact</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">Requested</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || 'No notes.')}</p>`,
+            t('requests.reviewTitle'),
+            `<div class="detail-grid"><div><span class="muted">${t('common.customer')}</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">${t('requests.contact')}</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">${t('requests.requested')}</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || t('common.noNotes'))}</p>`,
           );
       }),
     );
@@ -1220,8 +1263,8 @@ function wireRequests(data: RequestItem[], customers: Customer[]) {
 }
 function openConfirmRequest(item: RequestItem, customers: Customer[]) {
   openModal(
-    'Confirm request',
-    `<form id="confirm-request-form" class="form-grid"><p class="full">${escapeText(item.customerName)} · ${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}</p><label class="full">Customer<select name="customerId"><option value="">Create customer from request</option>${customerOptions(customers, item.linkedCustomerId)}</select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Confirm request</button></div></form>`,
+    t('requests.confirmTitle'),
+    `<form id="confirm-request-form" class="form-grid"><p class="full">${escapeText(item.customerName)} · ${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}</p><label class="full">${t('common.customer')}<select name="customerId"><option value="">${t('requests.createCustomer')}</option>${customerOptions(customers, item.linkedCustomerId)}</select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('requests.confirmButton')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#confirm-request-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -1237,7 +1280,7 @@ function openConfirmRequest(item: RequestItem, customers: Customer[]) {
         ),
       });
       closeModal();
-      toast('Request confirmed.');
+      toast(t('requests.confirmed'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -1247,14 +1290,14 @@ function openConfirmRequest(item: RequestItem, customers: Customer[]) {
 }
 async function rejectRequest(id: string) {
   openModal(
-    'Reject request',
-    `<form id="reject-request-form" class="form-grid"><label class="full">Reason<textarea name="reason" maxlength="1000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button danger">Reject request</button></div></form>`,
+    t('requests.rejectTitle'),
+    `<form id="reject-request-form" class="form-grid"><label class="full">${t('common.reason' as never)}<textarea name="reason" maxlength="1000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button danger">${t('requests.rejectButton')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#reject-request-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!window.confirm('Reject this request?')) return;
+    if (!window.confirm(t('requests.rejectConfirmation'))) return;
     setBusy(form, true);
     try {
       const values = formData(form);
@@ -1263,7 +1306,7 @@ async function rejectRequest(id: string) {
         body: JSON.stringify({ reason: values.reason || undefined }),
       });
       closeModal();
-      toast('Request rejected.');
+      toast(t('requests.rejected'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -1277,8 +1320,8 @@ async function openPaymentModal(reservation?: Reservation) {
     : await request<Reservation[]>('/reservations');
   const customers = await request<Customer[]>('/customers?limit=100');
   openModal(
-    'Record payment',
-    `<form id="payment-form" class="form-grid"><label class="full">Reservation<select name="reservationId" required>${reservationsData.map((r) => `<option value="${escapeText(r.reservationId)}" data-customer="${escapeText(r.customerId)}" data-remaining="${escapeText(r.remainingAmount ?? r.expectedAmount)}">${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))} · ${formatMoney(r.expectedAmount)}</option>`).join('')}</select></label><label>Customer<select name="customerId" required>${customerOptions(customers, reservation?.customerId)}</select></label><label>Amount<input name="amount" type="number" min="0" step="0.01" required value="${escapeText(reservation?.remainingAmount ?? '')}"></label><label>Method<select name="method"><option>PIX</option><option>CASH</option><option>CREDIT_CARD</option><option>DEBIT_CARD</option><option>BANK_TRANSFER</option><option>OTHER</option></select></label><label>Paid at<input name="paidAt" type="datetime-local" required value="${escapeText(new Date().toISOString().slice(0, 16))}"></label><label class="full">Notes<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Record payment</button></div></form>`,
+    t('finance.record'),
+    `<form id="payment-form" class="form-grid"><label class="full">${t('common.reservation' as never)}<select name="reservationId" required>${reservationsData.map((r) => `<option value="${escapeText(r.reservationId)}" data-customer="${escapeText(r.customerId)}" data-remaining="${escapeText(r.remainingAmount ?? r.expectedAmount)}">${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))} · ${formatMoney(r.expectedAmount)}</option>`).join('')}</select></label><label>${t('common.customer')}<select name="customerId" required>${customerOptions(customers, reservation?.customerId)}</select></label><label>${t('common.price')}<input name="amount" type="number" min="0" step="0.01" required value="${escapeText(reservation?.remainingAmount ?? '')}"></label><label>${t('common.payment')}<select name="method"><option value="PIX">${paymentMethodLabel('PIX')}</option><option value="CASH">${paymentMethodLabel('CASH')}</option><option value="CREDIT_CARD">${paymentMethodLabel('CREDIT_CARD')}</option><option value="DEBIT_CARD">${paymentMethodLabel('DEBIT_CARD')}</option><option value="BANK_TRANSFER">${paymentMethodLabel('BANK_TRANSFER')}</option><option value="OTHER">${paymentMethodLabel('OTHER')}</option></select></label><label>${t('finance.paidAt')}<input name="paidAt" type="datetime-local" required value="${escapeText(new Date().toISOString().slice(0, 16))}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('finance.record')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#payment-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -1309,7 +1352,7 @@ async function openPaymentModal(reservation?: Reservation) {
         }),
       });
       closeModal();
-      toast('Payment recorded.');
+      toast(t('finance.paymentRecorded'));
       await renderRoute();
     } catch (error) {
       showFormError(currentForm, error);
@@ -1328,12 +1371,12 @@ async function finance() {
         ?.querySelectorAll<HTMLElement>('[data-delete-payment]')
         .forEach((element) =>
           element.addEventListener('click', async () => {
-            if (!window.confirm('Delete this payment record?')) return;
+            if (!window.confirm(t('finance.deleteConfirmation'))) return;
             try {
               await request(`/payments/${element.dataset.deletePayment}`, {
                 method: 'DELETE',
               });
-              toast('Payment deleted.');
+              toast(t('finance.deleted'));
               await renderRoute();
             } catch (error) {
               toast(errorMessage(error), 'error');
@@ -1341,7 +1384,7 @@ async function finance() {
           }),
         );
     }, 0);
-    return `<div class="toolbar"><div><h2>Payments</h2><p class="muted">External payment records.</p></div><button class="button primary" id="record-payment">Record payment</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>Paid at</th><th>Amount</th><th>Method</th><th>Reservation/class</th><th>Actions</th></tr></thead><tbody>${data.map((p) => `<tr><td>${escapeText(dateValue(p.paidAt))}</td><td>${formatMoney(p.amount)}</td><td>${escapeText(p.method)}</td><td>${escapeText(p.reservationId ?? p.classId)}</td><td>${button('Delete', `data-delete-payment="${escapeText(p.paymentId)}"`)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No payments yet.</p>'}</article>`;
+    return `<div class="toolbar"><div><h2>${t('finance.title')}</h2><p class="muted">${t('finance.description')}</p></div><button class="button primary" id="record-payment">${t('finance.record')}</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('finance.paidAt')}</th><th>${t('common.price')}</th><th>${t('common.payment')}</th><th>${t('finance.reservationClass')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((p) => `<tr><td>${escapeText(dateValue(p.paidAt))}</td><td>${formatMoney(p.amount)}</td><td>${paymentMethodLabel(p.method)}</td><td>${escapeText(p.reservationId ?? p.classId)}</td><td>${button(t('common.delete'), `data-delete-payment="${escapeText(p.paymentId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('finance.noPayments')}</p>`}</article>`;
   });
 }
 async function classes() {
@@ -1351,7 +1394,7 @@ async function classes() {
   const customers = await request<Customer[]>('/customers?limit=100');
   await shell(async () => {
     setTimeout(() => wireClasses(data, customers), 0);
-    return `<div class="toolbar"><div><h2>Classes</h2><p class="muted">Recurring court sessions and attendance.</p></div>${org.features.classes ? '<button class="button primary" id="add-class">Add class</button>' : ''}</div>${org.features.classes ? `<article class="card table-wrap">${data.length ? `<table><thead><tr><th>Name</th><th>Sport</th><th>Schedule</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.sport)}</td><td>${escapeText(c.startDate)} ${escapeText(c.startTime)}</td><td>${c.capacity}</td><td>${button('Enroll', `data-enroll-class="${escapeText(c.classId)}"`)} ${button('Attendance', `data-attendance-class="${escapeText(c.classId)}"`)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No classes yet.</p>'}</article>` : `<article class="card"><h3>Classes disabled</h3><p class="empty">Enable classes in Settings to create sessions.</p><a class="button" href="/settings">Open settings</a></article>`}`;
+    return `<div class="toolbar"><div><h2>${t('classes.title')}</h2><p class="muted">${t('classes.description')}</p></div>${org.features.classes ? `<button class="button primary" id="add-class">${t('classes.add')}</button>` : ''}</div>${org.features.classes ? `<article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.name')}</th><th>${t('common.sport')}</th><th>${t('common.schedule' as never)}</th><th>${t('classes.capacity' as never)}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.sport)}</td><td>${escapeText(c.startDate)} ${escapeText(c.startTime)}</td><td>${c.capacity}</td><td>${button(t('classes.enroll'), `data-enroll-class="${escapeText(c.classId)}"`)} ${button(t('classes.attendance'), `data-attendance-class="${escapeText(c.classId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('classes.noClasses' as never)}</p>`}</article>` : `<article class="card"><h3>${t('classes.disabled')}</h3><p class="empty">${t('classes.enableHint')}</p><a class="button" href="/settings">${t('classes.openSettings')}</a></article>`}`;
   });
   if (org.features.classes)
     setTimeout(() => {
@@ -1361,10 +1404,10 @@ async function classes() {
     }, 0);
 }
 function classForm(courts: Court[]) {
-  return `<form id="class-form" class="form-grid"><label>Name<input name="name" required></label><label>Sport<input name="sport" required></label><label>Court<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}">${escapeText(c.name)}</option>`).join('')}</select></label><label>Capacity<input name="capacity" type="number" min="1" required value="10"></label><label>Price<input name="price" type="number" min="0" step="0.01" required value="0"></label><label>Weekday<select name="weekday"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label><label>Start time<input name="startTime" type="time" required value="18:00"></label><label>Duration<input name="durationMinutes" type="number" min="30" required value="60"></label><label>Start date<input name="startDate" type="date" required value="${today()}"></label><label>End date<input name="endDate" type="date" value="${today()}"></label><label class="full">Notes<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Create class</button></div></form>`;
+  return `<form id="class-form" class="form-grid"><label>${t('common.name')}<input name="name" required></label><label>${t('common.sport')}<input name="sport" required></label><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}">${escapeText(c.name)}</option>`).join('')}</select></label><label>${t('classes.capacity')}<input name="capacity" type="number" min="1" required value="10"></label><label>${t('common.price')}<input name="price" type="number" min="0" step="0.01" required value="0"></label><label>${t('common.weekday' as never)}<select name="weekday">${[0, 1, 2, 3, 4, 5, 6].map((day) => `<option value="${day}">${weekdayLabel(day)}</option>`).join('')}</select></label><label>${t('common.startTime')}<input name="startTime" type="time" required value="18:00"></label><label>${t('common.duration')}<input name="durationMinutes" type="number" min="30" required value="60"></label><label>${t('common.start')} ${t('common.date')}<input name="startDate" type="date" required value="${today()}"></label><label>${t('common.end')} ${t('common.date')}<input name="endDate" type="date" value="${today()}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('classes.create')}</button></div></form>`;
 }
 function openClassModal(courts: Court[]) {
-  openModal('Add class', classForm(courts));
+  openModal(t('classes.add'), classForm(courts));
   const form = app.querySelector<HTMLFormElement>('#class-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {
@@ -1390,7 +1433,7 @@ function openClassModal(courts: Court[]) {
         }),
       });
       closeModal();
-      toast('Class created.');
+      toast(t('classes.created'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
@@ -1404,8 +1447,8 @@ function openEnrollmentModal(
   returnFocus: HTMLElement,
 ) {
   openModal(
-    'Enroll customer',
-    `<form id="enroll-form" class="form-grid"><label class="full">Customer<select name="customerId" required>${customerOptions(customers)}</select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Enroll</button></div></form>`,
+    t('classes.enrollCustomer'),
+    `<form id="enroll-form" class="form-grid"><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('classes.enroll')}</button></div></form>`,
     returnFocus,
   );
   const form = app.querySelector<HTMLFormElement>('#enroll-form');
@@ -1420,7 +1463,7 @@ function openEnrollmentModal(
         body: JSON.stringify({ customerId: values.customerId }),
       });
       closeModal();
-      toast('Customer enrolled.');
+      toast(t('classes.enrolled'));
     } catch (error) {
       showFormError(form, error);
       setBusy(form, false);
@@ -1450,8 +1493,8 @@ function wireClasses(data: SportClass[], customers: Customer[]) {
 }
 function openAttendanceModal(classId: string, customers: Customer[]) {
   openModal(
-    'Record attendance',
-    `<form id="attendance-form" class="form-grid"><input type="hidden" name="classId" value="${escapeText(classId)}"><label class="full">Customer<select name="customerId" required>${customerOptions(customers)}</select></label><label>Date<input name="date" type="date" required value="${today()}"></label><label>Status<select name="status"><option>PRESENT</option><option>ABSENT</option><option>EXCUSED</option></select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Save attendance</button></div></form>`,
+    t('classes.recordAttendance'),
+    `<form id="attendance-form" class="form-grid"><input type="hidden" name="classId" value="${escapeText(classId)}"><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><label>${t('common.date')}<input name="date" type="date" required value="${today()}"></label><label>${t('common.status')}<select name="status"><option value="PRESENT">${attendanceStatusLabel('PRESENT')}</option><option value="ABSENT">${attendanceStatusLabel('ABSENT')}</option><option value="EXCUSED">${attendanceStatusLabel('EXCUSED')}</option></select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('classes.saveAttendance')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#attendance-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -1465,7 +1508,7 @@ function openAttendanceModal(classId: string, customers: Customer[]) {
         body: JSON.stringify(values),
       });
       closeModal();
-      toast('Attendance saved.');
+      toast(t('classes.attendanceSaved'));
     } catch (error) {
       showFormError(form, error);
       setBusy(form, false);
@@ -1475,7 +1518,7 @@ function openAttendanceModal(classId: string, customers: Customer[]) {
 async function reports() {
   await shell(async () => {
     const data = await request<Record<string, unknown>>('/reports/summary');
-    return `<div class="toolbar"><h2>Reports</h2></div><article class="card"><div class="metrics"><div class="metric"><span>Reservations</span><strong>${data.reservationCount}</strong></div><div class="metric"><span>Expected revenue</span><strong>${formatMoney(Number(data.expectedRevenue))}</strong></div><div class="metric"><span>Recorded payments</span><strong>${formatMoney(Number(data.recordedPayments))}</strong></div></div></article>`;
+    return `<div class="toolbar"><h2>${t('reports.title')}</h2></div><article class="card"><div class="metrics"><div class="metric"><span>${t('dashboard.reservations')}</span><strong>${data.reservationCount}</strong></div><div class="metric"><span>${t('dashboard.expectedRevenue')}</span><strong>${formatMoney(Number(data.expectedRevenue))}</strong></div><div class="metric"><span>${t('finance.recorded' as never)}</span><strong>${formatMoney(Number(data.recordedPayments))}</strong></div></div></article>`;
   });
 }
 async function render() {
@@ -1502,7 +1545,7 @@ async function render() {
   } catch (error) {
     const target = screen();
     if (target)
-      target.innerHTML = `<article class="card error-state"><h2>Could not load this screen</h2><p>${escapeText(errorMessage(error))}</p><button class="button" onclick="location.reload()">Try again</button></article>`;
+      target.innerHTML = `<article class="card error-state"><h2>${t('errors.couldNotLoad')}</h2><p>${escapeText(errorMessage(error))}</p><button class="button" onclick="location.reload()">${t('common.tryAgain')}</button></article>`;
   }
 }
 async function publicBooking(slug: string) {
@@ -1517,7 +1560,9 @@ async function publicBooking(slug: string) {
         slotMinutes: number;
       }[];
     }>(`/public/venues/${encodeURIComponent(slug)}`);
-    app.innerHTML = `<main class="login"><section class="card public-booking"><h1>${escapeText(venue.name)}</h1><p class="muted">Request a court reservation</p><form id="public-form"><label>Court<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} — ${escapeText(court.sport)}</option>`).join('')}</select></label><label>Date<input type="date" name="date" required></label><label>Start time<input type="time" name="time" required></label><label>Duration<select name="durationMinutes"><option value="30">30 minutes</option><option value="60">60 minutes</option><option value="120">2 hours</option></select></label><label>Name<input name="customerName" required></label><label>Phone<input name="phone" required></label><label>Email (optional)<input name="email" type="email"></label><label>Notes (optional)<textarea name="notes"></textarea></label><p class="notice">This is a reservation request. Your reservation is not confirmed yet. The venue will contact you after reviewing it.</p><button class="button primary">Send request</button><p id="public-result" role="status"></p></form></section></main>`;
+      app.innerHTML = `<main class="login"><section class="card public-booking"><div class="public-head"><h1>${escapeText(venue.name)}</h1>${languageSelector()}</div><p class="muted">${t('public.title')}</p><form id="public-form"><label>${t('common.court')}<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} — ${escapeText(court.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input type="date" name="date" required></label><label>${t('common.startTime')}<input type="time" name="time" required></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.hours', { count: 2 })}</option></select></label><label>${t('common.name')}<input name="customerName" required></label><label>${t('common.phone')}<input name="phone" required></label><label>${t('common.email')} (${t('common.optional')})<input name="email" type="email"></label><label>${t('common.notes')} (${t('common.optional')})<textarea name="notes"></textarea></label><p class="notice">${t('public.disclaimer')}</p><button class="button primary">${t('public.sendRequest')}</button><p id="public-result" role="status"></p></form></section></main>`;
+      wireLanguageSelector();
+      localizeEnumOptions(app);
     const publicForm = app.querySelector<HTMLFormElement>('#public-form');
     const publicTime = publicForm?.elements.namedItem(
       'time',
@@ -1526,7 +1571,7 @@ async function publicBooking(slug: string) {
       Object.assign(document.createElement('select'), {
         name: 'time',
         required: true,
-        innerHTML: '<option value="">Loading…</option>',
+        innerHTML: `<option value="">${t('common.loading')}</option>`,
       }),
     );
     const loadPublicAvailability = async () => {
@@ -1542,7 +1587,7 @@ async function publicBooking(slug: string) {
           .value,
       );
       const start = publicForm.elements.namedItem('time') as HTMLSelectElement;
-      start.innerHTML = '<option>Loading…</option>';
+      start.innerHTML = `<option>${t('common.loading')}</option>`;
       try {
         const data = await request<{ available: string[] }>(
           `/public/venues/${encodeURIComponent(slug)}/availability?courtId=${encodeURIComponent(courtId)}&date=${encodeURIComponent(date)}&durationMinutes=${duration}`,
@@ -1554,7 +1599,7 @@ async function publicBooking(slug: string) {
                   `<option value="${escapeText(value)}">${escapeText(value)}</option>`,
               )
               .join('')
-          : '<option value="">No available times</option>';
+          : `<option value="">${t('common.noAvailableTimes')}</option>`;
       } catch (error) {
         start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
       }
@@ -1600,15 +1645,15 @@ async function publicBooking(slug: string) {
               notes: values.notes || undefined,
             }),
           });
-          result.textContent =
-            'Request sent. The venue will contact you after reviewing it.';
+          result.textContent = t('public.requestSent');
           form.reset();
         } catch (error) {
           result.textContent = errorMessage(error);
         }
       });
   } catch (error) {
-    app.innerHTML = `<main class="login"><article class="card error-state"><h2>Venue unavailable</h2><p>${escapeText(errorMessage(error))}</p></article></main>`;
+    app.innerHTML = `<main class="login"><article class="card error-state"><div class="public-head"><h2>${t('errors.venueUnavailable')}</h2>${languageSelector()}</div><p>${escapeText(errorMessage(error))}</p></article></main>`;
+    wireLanguageSelector();
   }
 }
 const renderRoute = async () => {
