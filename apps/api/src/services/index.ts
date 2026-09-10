@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { AuthContext, Court, Customer, Reservation, User } from '@court-manager/contracts';
+import type {
+  AuthContext,
+  Court,
+  Customer,
+  Reservation,
+  User,
+} from '@court-manager/contracts';
 import type { Key, RecordItem, Repository } from '../db.js';
 import {
   assertTransition,
@@ -29,19 +35,28 @@ const orgKey = (org: string, entity: string, value: string): Key => ({
 });
 const as = <T = Record<string, unknown>>(item: RecordItem): T =>
   Object.fromEntries(
-    Object.entries(item).filter(([name]) => !['PK', 'SK', 'entity'].includes(name)),
+    Object.entries(item).filter(
+      ([name]) => !['PK', 'SK', 'entity'].includes(name),
+    ),
   ) as T;
 const stored = (
   value: Record<string, unknown>,
   PK: string,
   SK = 'META',
   entity?: RecordItem['entity'],
-): RecordItem => ({ ...value, PK, SK, ...(entity ? { entity } : {}) }) as RecordItem;
+): RecordItem =>
+  ({ ...value, PK, SK, ...(entity ? { entity } : {}) }) as RecordItem;
 const withOrg = (ctx: AuthContext, entity: string, items: RecordItem[]) =>
-  items.filter((item) => item.organizationId === ctx.organizationId && item.entity === entity);
+  items.filter(
+    (item) =>
+      item.organizationId === ctx.organizationId && item.entity === entity,
+  );
 const assertRole = (ctx: AuthContext, roles: AuthContext['role'][]) => {
   if (!roles.includes(ctx.role))
-    throw new AppError('FORBIDDEN', 'You do not have permission for this operation.');
+    throw new AppError(
+      'FORBIDDEN',
+      'You do not have permission for this operation.',
+    );
 };
 
 export class AuthService {
@@ -51,7 +66,11 @@ export class AuthService {
       (x) => x.entity === 'user' && x.email === email.toLowerCase(),
     );
     const record = users[0];
-    if (!record || !record.active || !(await verifyPassword(password, String(record.passwordHash))))
+    if (
+      !record ||
+      !record.active ||
+      !(await verifyPassword(password, String(record.passwordHash)))
+    )
       throw new AppError('UNAUTHORIZED', 'Invalid email or password.');
     const token = createToken();
     const ttl = Number(process.env.SESSION_TTL_SECONDS ?? 86400);
@@ -86,7 +105,8 @@ export class AuthService {
     const user = await this.repo.get<RecordItem>(
       orgKey(String(session.organizationId), 'USER', String(session.userId)),
     );
-    if (!user || !user.active) throw new AppError('UNAUTHORIZED', 'User is disabled.');
+    if (!user || !user.active)
+      throw new AppError('UNAUTHORIZED', 'User is disabled.');
     return {
       organizationId: String(user.organizationId),
       userId: String(user.userId),
@@ -101,7 +121,10 @@ export class AuthService {
 export class OrganizationService {
   constructor(private readonly repo: Repository) {}
   async get(ctx: AuthContext) {
-    const value = await this.repo.get<RecordItem>({ PK: `ORG#${ctx.organizationId}`, SK: 'META' });
+    const value = await this.repo.get<RecordItem>({
+      PK: `ORG#${ctx.organizationId}`,
+      SK: 'META',
+    });
     if (!value) throw new AppError('NOT_FOUND', 'Organization was not found.');
     return as(value);
   }
@@ -111,9 +134,15 @@ export class OrganizationService {
       PK: `ORG#${ctx.organizationId}`,
       SK: 'META',
     });
-    if (!current) throw new AppError('NOT_FOUND', 'Organization was not found.');
+    if (!current)
+      throw new AppError('NOT_FOUND', 'Organization was not found.');
     const value = stored(
-      { ...as(current), ...input, organizationId: ctx.organizationId, updatedAt: now() },
+      {
+        ...as(current),
+        ...input,
+        organizationId: ctx.organizationId,
+        updatedAt: now(),
+      },
       current.PK,
       current.SK,
       'organization',
@@ -126,13 +155,18 @@ export class OrganizationService {
 export class CourtService {
   constructor(private readonly repo: Repository) {}
   private async find(ctx: AuthContext, courtId: string) {
-    const court = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'COURT', courtId));
-    if (!court || court.archivedAt) throw new AppError('NOT_FOUND', 'Court was not found.');
+    const court = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'COURT', courtId),
+    );
+    if (!court || court.archivedAt)
+      throw new AppError('NOT_FOUND', 'Court was not found.');
     return court;
   }
   async list(ctx: AuthContext, includeArchived = false) {
     return (
-      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, { beginsWith: 'COURT#' })
+      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'COURT#',
+      })
     )
       .filter((x) => includeArchived || !x.archivedAt)
       .map(as);
@@ -164,7 +198,13 @@ export class CourtService {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const current = await this.find(ctx, courtId);
     const value = stored(
-      { ...as(current), ...input, courtId, organizationId: ctx.organizationId, updatedAt: now() },
+      {
+        ...as(current),
+        ...input,
+        courtId,
+        organizationId: ctx.organizationId,
+        updatedAt: now(),
+      },
       current.PK,
       current.SK,
       'court',
@@ -186,7 +226,9 @@ export class CourtService {
   }
   async restore(ctx: AuthContext, courtId: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const current = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'COURT', courtId));
+    const current = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'COURT', courtId),
+    );
     if (!current) throw new AppError('NOT_FOUND', 'Court was not found.');
     const rest = as(current);
     delete rest.archivedAt;
@@ -228,9 +270,13 @@ export class CustomerService {
   }
   async duplicates(ctx: AuthContext, input: Input) {
     const phone = normalizePhone(String(input.phone ?? '')),
-      email = normalizeEmail(typeof input.email === 'string' ? input.email : undefined);
+      email = normalizeEmail(
+        typeof input.email === 'string' ? input.email : undefined,
+      );
     return (await this.list(ctx, undefined, true)).filter(
-      (x) => (phone && x.normalizedPhone === phone) || (email && x.normalizedEmail === email),
+      (x) =>
+        (phone && x.normalizedPhone === phone) ||
+        (email && x.normalizedEmail === email),
     );
   }
   async create(ctx: AuthContext, input: Input) {
@@ -243,7 +289,9 @@ export class CustomerService {
         customerId,
         organizationId: ctx.organizationId,
         normalizedPhone: normalizePhone(String(input.phone ?? '')),
-        normalizedEmail: normalizeEmail(typeof input.email === 'string' ? input.email : undefined),
+        normalizedEmail: normalizeEmail(
+          typeof input.email === 'string' ? input.email : undefined,
+        ),
         tags: Array.isArray(input.tags) ? input.tags : [],
         archived: false,
         createdAt: timestamp,
@@ -266,8 +314,12 @@ export class CustomerService {
       {
         ...as(current),
         ...input,
-        normalizedPhone: normalizePhone(String(input.phone ?? current.phone ?? '')),
-        normalizedEmail: normalizeEmail(String(input.email ?? current.email ?? '')),
+        normalizedPhone: normalizePhone(
+          String(input.phone ?? current.phone ?? ''),
+        ),
+        normalizedEmail: normalizeEmail(
+          String(input.email ?? current.email ?? ''),
+        ),
         updatedAt: now(),
       },
       current.PK,
@@ -295,12 +347,18 @@ export class ScheduleService {
     type: string,
     occupancyId: string,
   ): Key {
-    return { PK: `SCHEDULE#${org}#${court}#${date}`, SK: `ITEM#${type}#${occupancyId}` };
+    return {
+      PK: `SCHEDULE#${org}#${court}#${date}`,
+      SK: `ITEM#${type}#${occupancyId}`,
+    };
   }
   async locks(ctx: AuthContext, courtId: string, date: string) {
-    return this.repo.query<RecordItem>(`SCHEDULE#${ctx.organizationId}#${courtId}#${date}`, {
-      beginsWith: 'LOCK#',
-    });
+    return this.repo.query<RecordItem>(
+      `SCHEDULE#${ctx.organizationId}#${courtId}#${date}`,
+      {
+        beginsWith: 'LOCK#',
+      },
+    );
   }
   async occupy(
     ctx: AuthContext,
@@ -362,15 +420,30 @@ export class ScheduleService {
       newStart = new Date(newStartAt),
       newEnd = new Date(newEndAt);
     calculateDuration(newStart, newEnd);
-    if (!isWithinOpeningHours(newStart, newEnd, court.openingHours, court.slotMinutes))
+    if (
+      !isWithinOpeningHours(
+        newStart,
+        newEnd,
+        court.openingHours,
+        court.slotMinutes,
+      )
+    )
       throw new AppError(
         'VALIDATION_ERROR',
         'Time is outside court opening hours or slot boundaries.',
       );
     const format = (value: Date) =>
       `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
-    const oldSlots = expandSlots(format(oldStart), format(oldEnd), court.slotMinutes),
-      newSlots = expandSlots(format(newStart), format(newEnd), court.slotMinutes),
+    const oldSlots = expandSlots(
+        format(oldStart),
+        format(oldEnd),
+        court.slotMinutes,
+      ),
+      newSlots = expandSlots(
+        format(newStart),
+        format(newEnd),
+        court.slotMinutes,
+      ),
       oldDate = dayKey(oldStartAt),
       newDate = dayKey(newStartAt),
       oldSet = new Set(oldSlots),
@@ -387,7 +460,12 @@ export class ScheduleService {
         writes.push({
           type: 'put',
           item: stored(
-            { occupancyType, occupancyId, startAt: newStartAt, endAt: newEndAt },
+            {
+              occupancyType,
+              occupancyId,
+              startAt: newStartAt,
+              endAt: newEndAt,
+            },
             `SCHEDULE#${ctx.organizationId}#${court.courtId}#${newDate}`,
             `LOCK#${slot}`,
           ),
@@ -427,19 +505,44 @@ export class ScheduleService {
       })),
       {
         type: 'delete',
-        key: this.metaKey(ctx.organizationId, courtId, dayKey(startAt), occupancyType, occupancyId),
+        key: this.metaKey(
+          ctx.organizationId,
+          courtId,
+          dayKey(startAt),
+          occupancyType,
+          occupancyId,
+        ),
       },
     ]);
   }
-  async availability(ctx: AuthContext, court: Court, date: string, durationMinutes: number) {
-    if (![30, 60].includes(durationMinutes) || durationMinutes % court.slotMinutes !== 0)
+  async availability(
+    ctx: AuthContext,
+    court: Court,
+    date: string,
+    durationMinutes: number,
+  ) {
+    if (
+      ![30, 60].includes(durationMinutes) ||
+      durationMinutes % court.slotMinutes !== 0
+    )
       throw new AppError('VALIDATION_ERROR', 'Invalid duration.');
-    const weekdays = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-    const weekday = weekdays[new Date(`${date}T12:00:00Z`).getUTCDay()] ?? 'SUNDAY';
+    const weekdays = [
+      'SUNDAY',
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+    ];
+    const weekday =
+      weekdays[new Date(`${date}T12:00:00Z`).getUTCDay()] ?? 'SUNDAY';
     const opening = court.openingHours[weekday as keyof Court['openingHours']];
     if (!opening) return [];
     const occupied = new Set(
-      (await this.locks(ctx, court.courtId, date)).map((x) => x.SK.replace('LOCK#', '')),
+      (await this.locks(ctx, court.courtId, date)).map((x) =>
+        x.SK.replace('LOCK#', ''),
+      ),
     );
     const starts = expandSlots(opening.open, opening.close, court.slotMinutes);
     const count = durationMinutes / court.slotMinutes;
@@ -458,7 +561,9 @@ export class ReservationService {
     private readonly courts: CourtService,
   ) {}
   private async get(ctx: AuthContext, reservationId: string) {
-    const r = await this.repo.get<RecordItem>(key('reservation', reservationId));
+    const r = await this.repo.get<RecordItem>(
+      key('reservation', reservationId),
+    );
     if (!r || r.organizationId !== ctx.organizationId)
       throw new AppError('NOT_FOUND', 'Reservation was not found.');
     return r;
@@ -469,7 +574,9 @@ export class ReservationService {
       .filter((x) => !filters.status || x.status === filters.status)
       .filter((x) => !filters.courtId || x.courtId === filters.courtId)
       .filter((x) => !filters.customerId || x.customerId === filters.customerId)
-      .filter((x) => !filters.date || dayKey(String(x.startAt)) === filters.date)
+      .filter(
+        (x) => !filters.date || dayKey(String(x.startAt)) === filters.date,
+      )
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)))
       .map(as);
   }
@@ -479,7 +586,8 @@ export class ReservationService {
     const customer = await this.repo.get<RecordItem>(
       orgKey(ctx.organizationId, 'CUSTOMER', String(input.customerId)),
     );
-    if (!customer || customer.archived) throw new AppError('NOT_FOUND', 'Customer was not found.');
+    if (!customer || customer.archived)
+      throw new AppError('NOT_FOUND', 'Customer was not found.');
     const start = new Date(String(input.startAt)),
       end = new Date(String(input.endAt));
     const duration = calculateDuration(start, end);
@@ -521,9 +629,15 @@ export class ReservationService {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const current = await this.get(ctx, reservationId);
     if (current.status !== 'CONFIRMED')
-      throw new AppError('INVALID_STATE', 'Only confirmed reservations can be edited.');
+      throw new AppError(
+        'INVALID_STATE',
+        'Only confirmed reservations can be edited.',
+      );
     if (input.startAt || input.endAt) {
-      const court = (await this.courts.get(ctx, String(current.courtId))) as Court;
+      const court = (await this.courts.get(
+        ctx,
+        String(current.courtId),
+      )) as Court;
       await this.schedule.move(
         ctx,
         court,
@@ -558,9 +672,15 @@ export class ReservationService {
   ) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const current = await this.get(ctx, reservationId);
-    assertTransition(String(current.status) as ReservationServiceStatus, status);
+    assertTransition(
+      String(current.status) as ReservationServiceStatus,
+      status,
+    );
     if (status === 'CANCELLED') {
-      const court = (await this.courts.get(ctx, String(current.courtId))) as Court;
+      const court = (await this.courts.get(
+        ctx,
+        String(current.courtId),
+      )) as Court;
       await this.schedule.release(
         ctx,
         String(current.courtId),
@@ -601,8 +721,14 @@ export class ReservationService {
     const court = (await this.courts.get(ctx, String(input.courtId))) as Court;
     const start = new Date(String(input.startAt)),
       until = String(input.untilDate);
-    if (Number(input.intervalWeeks ?? 1) < 1 || String(input.frequency ?? 'WEEKLY') !== 'WEEKLY')
-      throw new AppError('VALIDATION_ERROR', 'Only weekly recurrence is supported.');
+    if (
+      Number(input.intervalWeeks ?? 1) < 1 ||
+      String(input.frequency ?? 'WEEKLY') !== 'WEEKLY'
+    )
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Only weekly recurrence is supported.',
+      );
     const dates = recurrenceDates(
       dayKey(String(input.startAt)),
       until,
@@ -614,14 +740,23 @@ export class ReservationService {
       `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
     const conflicts: string[] = [];
     for (const date of dates) {
-      const available = await this.schedule.availability(ctx, court, date, duration);
+      const available = await this.schedule.availability(
+        ctx,
+        court,
+        date,
+        duration,
+      );
       if (!available.includes(time(start))) conflicts.push(date);
     }
     if (input.preview === true) return { dates, conflicts };
     if (conflicts.length && !input.skipConflicts)
-      throw new AppError('SCHEDULE_CONFLICT', 'Some recurring occurrences are unavailable.', {
-        conflicts,
-      });
+      throw new AppError(
+        'SCHEDULE_CONFLICT',
+        'Some recurring occurrences are unavailable.',
+        {
+          conflicts,
+        },
+      );
     const seriesId = id(),
       series = stored(
         {
@@ -664,7 +799,8 @@ export class ReservationService {
     return { seriesId, created, conflicts };
   }
 }
-type ReservationServiceStatus = 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+type ReservationServiceStatus =
+  'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export class RequestService {
   constructor(
@@ -676,13 +812,19 @@ export class RequestService {
   ) {}
   async publicVenue(slug: string) {
     const orgs = await this.repo.scan<RecordItem>(
-      (x) => x.entity === 'organization' && x.slug === slug && x.active === true,
+      (x) =>
+        x.entity === 'organization' && x.slug === slug && x.active === true,
     );
     const org = orgs[0];
     if (!org) throw new AppError('NOT_FOUND', 'Venue was not found.');
     const courts = (
-      await this.repo.query<RecordItem>(`ORG#${org.organizationId}`, { beginsWith: 'COURT#' })
-    ).filter((x) => x.active === true && x.publiclyRequestable === true && !x.archivedAt);
+      await this.repo.query<RecordItem>(`ORG#${org.organizationId}`, {
+        beginsWith: 'COURT#',
+      })
+    ).filter(
+      (x) =>
+        x.active === true && x.publiclyRequestable === true && !x.archivedAt,
+    );
     return {
       organizationId: org.organizationId,
       name: org.name,
@@ -699,7 +841,12 @@ export class RequestService {
       })),
     };
   }
-  async publicAvailability(slug: string, courtId: string, date: string, duration: number) {
+  async publicAvailability(
+    slug: string,
+    courtId: string,
+    date: string,
+    duration: number,
+  ) {
     const venue = await this.publicVenue(slug);
     const ctx: AuthContext = {
       organizationId: String(venue.organizationId),
@@ -707,7 +854,9 @@ export class RequestService {
       role: 'STAFF',
     };
     const court = (await this.courts.get(ctx, courtId)) as Court;
-    return { available: await this.schedule.availability(ctx, court, date, duration) };
+    return {
+      available: await this.schedule.availability(ctx, court, date, duration),
+    };
   }
   async createPublic(slug: string, input: Input) {
     const venue = await this.publicVenue(slug);
@@ -718,16 +867,27 @@ export class RequestService {
     };
     const court = (await this.courts.get(ctx, String(input.courtId))) as Court;
     if (!court.active || !court.publiclyRequestable)
-      throw new AppError('VALIDATION_ERROR', 'Court is not publicly available.');
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Court is not publicly available.',
+      );
     const start = new Date(String(input.requestedStartAt)),
       end = new Date(String(input.requestedEndAt));
     if (start.getTime() < Date.now())
       throw new AppError('VALIDATION_ERROR', 'Past dates cannot be requested.');
     const duration = calculateDuration(start, end);
     if (duration > 240)
-      throw new AppError('VALIDATION_ERROR', 'Requests may be at most four hours.');
-    if (!isWithinOpeningHours(start, end, court.openingHours, court.slotMinutes))
-      throw new AppError('VALIDATION_ERROR', 'Time is outside court opening hours.');
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Requests may be at most four hours.',
+      );
+    if (
+      !isWithinOpeningHours(start, end, court.openingHours, court.slotMinutes)
+    )
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Time is outside court opening hours.',
+      );
     const requestId = id();
     const value = stored(
       {
@@ -785,7 +945,10 @@ export class RequestService {
       throw new AppError('NOT_FOUND', 'Request was not found.');
     if (request.status !== 'REQUESTED')
       throw new AppError('INVALID_STATE', 'Request has already been reviewed.');
-    const court = (await this.courts.get(ctx, String(request.courtId))) as Court;
+    const court = (await this.courts.get(
+      ctx,
+      String(request.courtId),
+    )) as Court;
     const customer = customerId
       ? await this.customers.get(ctx, customerId)
       : await this.customers.create(ctx, {
@@ -971,12 +1134,24 @@ export class ClassService {
     await this.repo.put(value);
     const first = String(input.startDate),
       until = String(input.endDate ?? first);
-    for (const date of recurrenceDates(first, until, Number(input.weekday), 1)) {
+    for (const date of recurrenceDates(
+      first,
+      until,
+      Number(input.weekday),
+      1,
+    )) {
       const start = `${date}T${String(input.startTime)}:00.000Z`;
       const endDate = new Date(
         new Date(start).getTime() + Number(input.durationMinutes) * 60000,
       ).toISOString();
-      await this.schedule.occupy(ctx, c, String(start), endDate, 'CLASS', classId + '-' + date);
+      await this.schedule.occupy(
+        ctx,
+        c,
+        String(start),
+        endDate,
+        'CLASS',
+        classId + '-' + date,
+      );
     }
     return as(value);
   }
@@ -985,7 +1160,9 @@ export class ClassService {
     const enrollments = withOrg(
       ctx,
       'enrollment',
-      (await this.repo.scan()).filter((x) => x.classId === classId && x.status === 'ACTIVE'),
+      (await this.repo.scan()).filter(
+        (x) => x.classId === classId && x.status === 'ACTIVE',
+      ),
     );
     const cls = await this.repo.get<RecordItem>(key('class', classId));
     if (!cls || cls.organizationId !== ctx.organizationId)
@@ -1041,7 +1218,13 @@ export const buildServices = (repo: Repository) => {
     customers,
     schedule,
     reservations,
-    requests: new RequestService(repo, courts, schedule, reservations, customers),
+    requests: new RequestService(
+      repo,
+      courts,
+      schedule,
+      reservations,
+      customers,
+    ),
     payments: new PaymentService(repo),
     expenses: new ExpenseService(repo),
     blocks: new BlockService(repo, courts, schedule),

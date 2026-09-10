@@ -1,1 +1,6 @@
-export { calculateDuration, calculatePrice, expandSlots, isWithinOpeningHours } from './domain.js';
+export {
+  calculateDuration,
+  calculatePrice,
+  expandSlots,
+  isWithinOpeningHours,
+} from './domain.js';

@@ -1,1 +1,6 @@
-export { CourtInputSchema, CourtSchema, OpeningHourSchema, OpeningHoursSchema } from './index.js';
+export {
+  CourtInputSchema,
+  CourtSchema,
+  OpeningHourSchema,
+  OpeningHoursSchema,
+} from './index.js';

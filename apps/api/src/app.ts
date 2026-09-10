@@ -31,7 +31,10 @@ const csv = (rows: Record<string, unknown>[]) => {
     ...rows.map((row) => headers.map((h) => quote(row[h])).join(',')),
   ].join('\n');
 };
-const body = async <T>(c: { req: { json: () => Promise<unknown> } }, schema: ZodType<T>) => {
+const body = async <T>(
+  c: { req: { json: () => Promise<unknown> } },
+  schema: ZodType<T>,
+) => {
   const parsed = schema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success)
     throw new AppError(
@@ -50,10 +53,19 @@ export const createApp = (repo: Repository) => {
     const requestId = c.get('requestId') ?? randomUUID();
     if (error instanceof AppError)
       return c.json(
-        { error: { code: error.code, message: error.message, details: error.details, requestId } },
+        {
+          error: {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            requestId,
+          },
+        },
         error.status as 400,
       );
-    console.error(JSON.stringify({ requestId, error: error.message, route: c.req.path }));
+    console.error(
+      JSON.stringify({ requestId, error: error.message, route: c.req.path }),
+    );
     return c.json(
       {
         error: {
@@ -102,7 +114,8 @@ export const createApp = (repo: Repository) => {
         publicRequests.set(address, { started: timestamp, count: 1 });
       else {
         current.count += 1;
-        if (current.count > 30) throw new AppError('RATE_LIMITED', 'Too many public requests.');
+        if (current.count > 30)
+          throw new AppError('RATE_LIMITED', 'Too many public requests.');
       }
     }
     await next();
@@ -145,7 +158,10 @@ export const createApp = (repo: Repository) => {
   });
   app.post('/public/venues/:slug/requests', async (c) => {
     const input = await body(c, RequestInputSchema);
-    return c.json(ok(await services.requests.createPublic(c.req.param('slug'), input)), 201);
+    return c.json(
+      ok(await services.requests.createPublic(c.req.param('slug'), input)),
+      201,
+    );
   });
   app.use('/organization/*', protectedRoute);
   app.use('/courts/*', protectedRoute);
@@ -161,17 +177,34 @@ export const createApp = (repo: Repository) => {
   app.use('/dashboard', protectedRoute);
   app.use('/reports/*', protectedRoute);
   app.use('/exports/*', protectedRoute);
-  app.get('/organization', async (c) => c.json(ok(await services.organizations.get(ctx(c)))));
+  app.get('/organization', async (c) =>
+    c.json(ok(await services.organizations.get(ctx(c)))),
+  );
   app.patch('/organization', async (c) =>
-    c.json(ok(await services.organizations.update(ctx(c), await body(c, z.record(z.unknown()))))),
+    c.json(
+      ok(
+        await services.organizations.update(
+          ctx(c),
+          await body(c, z.record(z.unknown())),
+        ),
+      ),
+    ),
   );
   app.get('/courts', async (c) =>
     c.json(
-      collection(await services.courts.list(ctx(c), c.req.query('includeArchived') === 'true')),
+      collection(
+        await services.courts.list(
+          ctx(c),
+          c.req.query('includeArchived') === 'true',
+        ),
+      ),
     ),
   );
   app.post('/courts', async (c) =>
-    c.json(ok(await services.courts.create(ctx(c), await body(c, CourtInputSchema))), 201),
+    c.json(
+      ok(await services.courts.create(ctx(c), await body(c, CourtInputSchema))),
+      201,
+    ),
   );
   app.get('/courts/:id', async (c) =>
     c.json(ok(await services.courts.get(ctx(c), c.req.param('id')))),
@@ -196,11 +229,23 @@ export const createApp = (repo: Repository) => {
   app.get('/customers', async (c) => {
     const q = c.req.query(),
       p = PaginationSchema.parse(q);
-    const data = await services.customers.list(ctx(c), q.search, q.archived === 'true');
+    const data = await services.customers.list(
+      ctx(c),
+      q.search,
+      q.archived === 'true',
+    );
     return c.json(collection(data.slice(0, p.limit), null));
   });
   app.post('/customers', async (c) =>
-    c.json(ok(await services.customers.create(ctx(c), await body(c, CustomerInputSchema))), 201),
+    c.json(
+      ok(
+        await services.customers.create(
+          ctx(c),
+          await body(c, CustomerInputSchema),
+        ),
+      ),
+      201,
+    ),
   );
   app.get('/customers/:id', async (c) =>
     c.json(ok(await services.customers.get(ctx(c), c.req.param('id')))),
@@ -226,18 +271,31 @@ export const createApp = (repo: Repository) => {
     const q = c.req.query(),
       p = PaginationSchema.parse(q);
     return c.json(
-      collection((await services.reservations.list(ctx(c), q)).slice(0, p.limit), null),
+      collection(
+        (await services.reservations.list(ctx(c), q)).slice(0, p.limit),
+        null,
+      ),
     );
   });
   app.post('/reservations', async (c) =>
     c.json(
-      ok(await services.reservations.create(ctx(c), await body(c, ReservationInputSchema))),
+      ok(
+        await services.reservations.create(
+          ctx(c),
+          await body(c, ReservationInputSchema),
+        ),
+      ),
       201,
     ),
   );
   app.post('/reservations/recurring', async (c) =>
     c.json(
-      ok(await services.reservations.recurring(ctx(c), await body(c, z.record(z.unknown())))),
+      ok(
+        await services.reservations.recurring(
+          ctx(c),
+          await body(c, z.record(z.unknown())),
+        ),
+      ),
       201,
     ),
   );
@@ -256,18 +314,49 @@ export const createApp = (repo: Repository) => {
     ),
   );
   app.post('/reservations/:id/complete', async (c) =>
-    c.json(ok(await services.reservations.transition(ctx(c), c.req.param('id'), 'COMPLETED'))),
+    c.json(
+      ok(
+        await services.reservations.transition(
+          ctx(c),
+          c.req.param('id'),
+          'COMPLETED',
+        ),
+      ),
+    ),
   );
   app.post('/reservations/:id/cancel', async (c) =>
-    c.json(ok(await services.reservations.transition(ctx(c), c.req.param('id'), 'CANCELLED'))),
+    c.json(
+      ok(
+        await services.reservations.transition(
+          ctx(c),
+          c.req.param('id'),
+          'CANCELLED',
+        ),
+      ),
+    ),
   );
   app.post('/reservations/:id/no-show', async (c) =>
-    c.json(ok(await services.reservations.transition(ctx(c), c.req.param('id'), 'NO_SHOW'))),
+    c.json(
+      ok(
+        await services.reservations.transition(
+          ctx(c),
+          c.req.param('id'),
+          'NO_SHOW',
+        ),
+      ),
+    ),
   );
   app.get('/schedule', async (c) => {
     const q = c.req.query();
-    if (q.from && q.to && new Date(q.to).getTime() - new Date(q.from).getTime() > 7 * 86400000)
-      throw new AppError('VALIDATION_ERROR', 'Schedule range cannot exceed seven days.');
+    if (
+      q.from &&
+      q.to &&
+      new Date(q.to).getTime() - new Date(q.from).getTime() > 7 * 86400000
+    )
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Schedule range cannot exceed seven days.',
+      );
     const date = q.date ?? q.from ?? new Date().toISOString().slice(0, 10);
     const courts = await services.courts.list(ctx(c));
     const reservations = await services.reservations.list(ctx(c), { date });
@@ -288,55 +377,123 @@ export const createApp = (repo: Repository) => {
       }),
     );
   });
-  app.get('/blocks', async (c) => c.json(collection(await services.blocks.list(ctx(c)))));
+  app.get('/blocks', async (c) =>
+    c.json(collection(await services.blocks.list(ctx(c)))),
+  );
   app.post('/blocks', async (c) =>
-    c.json(ok(await services.blocks.create(ctx(c), await body(c, z.record(z.unknown())))), 201),
+    c.json(
+      ok(
+        await services.blocks.create(
+          ctx(c),
+          await body(c, z.record(z.unknown())),
+        ),
+      ),
+      201,
+    ),
   );
   app.post('/blocks/:id/cancel', async (c) =>
     c.json(ok(await services.blocks.cancel(ctx(c), c.req.param('id')))),
   );
-  app.get('/requests', async (c) => c.json(collection(await services.requests.list(ctx(c)))));
+  app.get('/requests', async (c) =>
+    c.json(collection(await services.requests.list(ctx(c)))),
+  );
   app.get('/requests/:id', async (c) => {
-    const request = ((await services.requests.list(ctx(c))) as Record<string, unknown>[]).find(
-      (item) => String(item['requestId']) === c.req.param('id'),
-    );
+    const request = (
+      (await services.requests.list(ctx(c))) as Record<string, unknown>[]
+    ).find((item) => String(item['requestId']) === c.req.param('id'));
     if (!request) throw new AppError('NOT_FOUND', 'Request was not found.');
     return c.json(ok(request));
   });
   app.post('/requests/:id/confirm', async (c) => {
-    const input = await body(c, z.object({ customerId: z.string().optional() }));
-    return c.json(ok(await services.requests.confirm(ctx(c), c.req.param('id'), input.customerId)));
+    const input = await body(
+      c,
+      z.object({ customerId: z.string().optional() }),
+    );
+    return c.json(
+      ok(
+        await services.requests.confirm(
+          ctx(c),
+          c.req.param('id'),
+          input.customerId,
+        ),
+      ),
+    );
   });
   app.post('/requests/:id/reject', async (c) => {
     const input = await body(c, z.object({ reason: z.string().optional() }));
-    return c.json(ok(await services.requests.reject(ctx(c), c.req.param('id'), input.reason)));
+    return c.json(
+      ok(
+        await services.requests.reject(ctx(c), c.req.param('id'), input.reason),
+      ),
+    );
   });
-  app.get('/payments', async (c) => c.json(collection(await services.payments.list(ctx(c)))));
+  app.get('/payments', async (c) =>
+    c.json(collection(await services.payments.list(ctx(c)))),
+  );
   app.post('/payments', async (c) =>
-    c.json(ok(await services.payments.create(ctx(c), await body(c, PaymentInputSchema))), 201),
+    c.json(
+      ok(
+        await services.payments.create(
+          ctx(c),
+          await body(c, PaymentInputSchema),
+        ),
+      ),
+      201,
+    ),
   );
   app.delete('/payments/:id', async (c) => {
     await services.payments.remove(ctx(c), c.req.param('id'));
     return c.json(ok({ deleted: true }));
   });
-  app.get('/expenses', async (c) => c.json(collection(await services.expenses.list(ctx(c)))));
-  app.post('/expenses', async (c) =>
-    c.json(ok(await services.expenses.create(ctx(c), await body(c, ExpenseInputSchema))), 201),
+  app.get('/expenses', async (c) =>
+    c.json(collection(await services.expenses.list(ctx(c)))),
   );
-  app.get('/classes', async (c) => c.json(collection(await services.classes.list(ctx(c)))));
+  app.post('/expenses', async (c) =>
+    c.json(
+      ok(
+        await services.expenses.create(
+          ctx(c),
+          await body(c, ExpenseInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.get('/classes', async (c) =>
+    c.json(collection(await services.classes.list(ctx(c)))),
+  );
   app.post('/classes', async (c) =>
-    c.json(ok(await services.classes.create(ctx(c), await body(c, z.record(z.unknown())))), 201),
+    c.json(
+      ok(
+        await services.classes.create(
+          ctx(c),
+          await body(c, z.record(z.unknown())),
+        ),
+      ),
+      201,
+    ),
   );
   app.post('/classes/:id/enroll', async (c) => {
     const input = await body(c, z.object({ customerId: z.string() }));
     return c.json(
-      ok(await services.classes.enroll(ctx(c), c.req.param('id'), input.customerId)),
+      ok(
+        await services.classes.enroll(
+          ctx(c),
+          c.req.param('id'),
+          input.customerId,
+        ),
+      ),
       201,
     );
   });
   app.post('/classes/attendance', async (c) =>
     c.json(
-      ok(await services.classes.attendance(ctx(c), await body(c, z.record(z.unknown())))),
+      ok(
+        await services.classes.attendance(
+          ctx(c),
+          await body(c, z.record(z.unknown())),
+        ),
+      ),
       201,
     ),
   );
@@ -346,15 +503,21 @@ export const createApp = (repo: Repository) => {
       reservations = await services.reservations.list(ctx(c), { date }),
       requests = await services.requests.list(ctx(c)),
       payments = await services.payments.list(ctx(c));
-    const expected = reservations.reduce((n, r) => n + Number(r.expectedAmount), 0),
+    const expected = reservations.reduce(
+        (n, r) => n + Number(r.expectedAmount),
+        0,
+      ),
       paid = payments
-        .filter((p) => reservations.some((r) => r.reservationId === p.reservationId))
+        .filter((p) =>
+          reservations.some((r) => r.reservationId === p.reservationId),
+        )
         .reduce((n, p) => n + Number(p.amount), 0);
     return c.json(
       ok({
         date,
         reservationsToday: reservations.length,
-        pendingRequests: requests.filter((r) => r.status === 'REQUESTED').length,
+        pendingRequests: requests.filter((r) => r.status === 'REQUESTED')
+          .length,
         expectedRevenue: expected,
         recordedPayments: paid,
         outstanding: Math.max(0, expected - paid),
@@ -363,23 +526,38 @@ export const createApp = (repo: Repository) => {
     );
   });
   app.get('/reports/summary', async (c) => {
-    const reservations = await services.reservations.list(ctx(c), c.req.query()),
+    const reservations = await services.reservations.list(
+        ctx(c),
+        c.req.query(),
+      ),
       payments = await services.payments.list(ctx(c));
     return c.json(
       ok({
         reservationCount: reservations.length,
-        expectedRevenue: reservations.reduce((n, r) => n + Number(r.expectedAmount), 0),
+        expectedRevenue: reservations.reduce(
+          (n, r) => n + Number(r.expectedAmount),
+          0,
+        ),
         recordedPayments: payments.reduce((n, p) => n + Number(p.amount), 0),
         sources: Object.fromEntries(
-          ['PUBLIC_REQUEST', 'WHATSAPP', 'PHONE', 'WALK_IN', 'STAFF', 'OTHER'].map((s) => [
-            s,
-            reservations.filter((r) => r.source === s).length,
-          ]),
+          [
+            'PUBLIC_REQUEST',
+            'WHATSAPP',
+            'PHONE',
+            'WALK_IN',
+            'STAFF',
+            'OTHER',
+          ].map((s) => [s, reservations.filter((r) => r.source === s).length]),
         ),
       }),
     );
   });
-  for (const entity of ['customers', 'reservations', 'payments', 'expenses'] as const)
+  for (const entity of [
+    'customers',
+    'reservations',
+    'payments',
+    'expenses',
+  ] as const)
     app.get(`/exports/${entity}`, async (c) => {
       const data =
         entity === 'customers'

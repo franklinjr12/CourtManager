@@ -6,22 +6,22 @@ Build a small, focused web application for sports centers that rent courts by th
 
 The system must primarily solve:
 
-* court scheduling;
-* manual reservation management;
-* public reservation requests;
-* customer organization;
-* recurring reservations;
-* court blocks and maintenance;
-* reservation payment tracking without processing payments;
-* simple financial organization;
-* operational dashboard and reports.
+- court scheduling;
+- manual reservation management;
+- public reservation requests;
+- customer organization;
+- recurring reservations;
+- court blocks and maintenance;
+- reservation payment tracking without processing payments;
+- simple financial organization;
+- operational dashboard and reports.
 
 A secondary feature set should support:
 
-* recurring sports classes;
-* coaches;
-* student enrollment;
-* attendance.
+- recurring sports classes;
+- coaches;
+- student enrollment;
+- attendance.
 
 The application should deliberately avoid becoming a large sports-management platform.
 
@@ -123,11 +123,11 @@ The UI should tell the employee that the requested time is no longer available a
 
 The application must never:
 
-* process credit cards;
-* collect PIX;
-* integrate with payment gateways;
-* store card information;
-* automatically charge customers.
+- process credit cards;
+- collect PIX;
+- integrate with payment gateways;
+- store card information;
+- automatically charge customers.
 
 It may record that an external payment occurred.
 
@@ -204,15 +204,15 @@ The same application code must run locally and in Lambda.
 
 Use:
 
-* pnpm workspace;
-* Node.js 22;
-* TypeScript 5;
-* strict TypeScript configuration;
-* ES2022;
-* ESLint;
-* Prettier;
-* Vitest;
-* Playwright.
+- pnpm workspace;
+- Node.js 22;
+- TypeScript 5;
+- strict TypeScript configuration;
+- ES2022;
+- ESLint;
+- Prettier;
+- Vitest;
+- Playwright.
 
 Repository:
 
@@ -242,26 +242,26 @@ Repository:
 
 Do NOT use:
 
-* React;
-* Vue;
-* Angular;
-* Svelte;
-* Solid;
-* Tailwind;
-* Bootstrap;
-* Material UI;
-* component libraries;
-* frontend state-management libraries;
-* frontend router libraries.
+- React;
+- Vue;
+- Angular;
+- Svelte;
+- Solid;
+- Tailwind;
+- Bootstrap;
+- Material UI;
+- component libraries;
+- frontend state-management libraries;
+- frontend router libraries.
 
 Use:
 
-* Vite;
-* TypeScript;
-* native DOM APIs;
-* native History API;
-* native Fetch API;
-* custom CSS.
+- Vite;
+- TypeScript;
+- native DOM APIs;
+- native History API;
+- native Fetch API;
+- custom CSS.
 
 A small number of development/test dependencies are acceptable.
 
@@ -273,14 +273,14 @@ The frontend should remain understandable without knowledge of a framework.
 
 Use:
 
-* Hono;
-* `@hono/node-server`;
-* `hono/aws-lambda`;
-* Zod;
-* AWS SDK v3;
-* DynamoDBDocumentClient;
-* esbuild;
-* Node `crypto`.
+- Hono;
+- `@hono/node-server`;
+- `hono/aws-lambda`;
+- Zod;
+- AWS SDK v3;
+- DynamoDBDocumentClient;
+- esbuild;
+- Node `crypto`.
 
 The backend should use the architecture:
 
@@ -459,10 +459,10 @@ Do not use `any` except when unavoidable at external boundaries.
 
 Configure:
 
-* ESLint;
-* Prettier;
-* consistent imports;
-* unused import detection.
+- ESLint;
+- Prettier;
+- consistent imports;
+- unused import detection.
 
 ---
 
@@ -534,10 +534,10 @@ pnpm dev
 
 must result in:
 
-* DynamoDB Local running;
-* API available;
-* frontend available;
-* table automatically created when missing.
+- DynamoDB Local running;
+- API available;
+- frontend available;
+- table automatically created when missing.
 
 ---
 
@@ -949,11 +949,11 @@ Application services must not import raw DynamoDB commands.
 
 Integration tests must confirm:
 
-* records can be written/read;
-* partitions query correctly;
-* TTL field is persisted;
-* transaction conditions work;
-* local repository behavior matches expected production behavior.
+- records can be written/read;
+- partitions query correctly;
+- TTL field is persisted;
+- transaction conditions work;
+- local repository behavior matches expected production behavior.
 
 ---
 
@@ -1055,24 +1055,24 @@ Can access everything.
 
 Can:
 
-* manage schedule;
-* manage reservations;
-* process requests;
-* manage customers;
-* record payments;
-* manage classes.
+- manage schedule;
+- manage reservations;
+- process requests;
+- manage customers;
+- record payments;
+- manage classes.
 
 Cannot:
 
-* change owner;
-* perform organization-destructive operations.
+- change owner;
+- perform organization-destructive operations.
 
 ### COACH
 
 Initially restricted to:
 
-* own classes;
-* attendance.
+- own classes;
+- attendance.
 
 If classes are not yet implemented, COACH may remain unused.
 
@@ -1082,13 +1082,13 @@ If classes are not yet implemented, COACH may remain unused.
 
 Test:
 
-* valid login;
-* invalid password;
-* missing token;
-* expired session;
-* disabled user;
-* cross-organization access;
-* authorization by role.
+- valid login;
+- invalid password;
+- missing token;
+- expired session;
+- disabled user;
+- cross-organization access;
+- authorization by role.
 
 ---
 
@@ -1137,8 +1137,8 @@ pnpm bootstrap:owner
 
 Interactive or environment-driven bootstrap must create:
 
-* organization;
-* owner.
+- organization;
+- owner.
 
 Must be idempotent.
 
@@ -1271,11 +1271,7 @@ calculatePrice()
 Example:
 
 ```ts
-expandSlots(
-  "18:00",
-  "19:30",
-  30
-)
+expandSlots('18:00', '19:30', 30);
 ```
 
 returns:
@@ -1322,9 +1318,9 @@ to:
 
 must atomically:
 
-* create new locks;
-* update occupancy;
-* remove old locks.
+- create new locks;
+- update occupancy;
+- remove old locks.
 
 Make sure failures cannot leave the reservation without locks.
 
@@ -1334,10 +1330,10 @@ Make sure failures cannot leave the reservation without locks.
 
 Cancellation must:
 
-* preserve reservation history;
-* change reservation status;
-* remove active schedule locks;
-* retain schedule/audit information where useful.
+- preserve reservation history;
+- change reservation status;
+- remove active schedule locks;
+- retain schedule/audit information where useful.
 
 ---
 
@@ -1393,14 +1389,14 @@ Useful during request conflicts.
 
 Test:
 
-* reservation A blocks reservation B;
-* different courts may overlap;
-* cancellation releases slot;
-* class blocks reservation;
-* block prevents reservation;
-* concurrent creation produces one winner;
-* reservations outside opening hours fail;
-* invalid durations fail.
+- reservation A blocks reservation B;
+- different courts may overlap;
+- cancellation releases slot;
+- class blocks reservation;
+- block prevents reservation;
+- concurrent creation produces one winner;
+- reservations outside opening hours fail;
+- invalid durations fail.
 
 ---
 
@@ -1648,9 +1644,9 @@ Alternatively use court tabs plus chronological cards.
 
 After schedule mutation:
 
-* refetch schedule;
-* show success toast;
-* preserve selected date.
+- refetch schedule;
+- show success toast;
+- preserve selected date.
 
 ---
 
@@ -1690,11 +1686,11 @@ OTHER
 
 Blocks:
 
-* use normal schedule locks;
-* prevent reservations;
-* appear on calendar;
-* can be edited;
-* can be cancelled/deleted while preserving relevant history.
+- use normal schedule locks;
+- prevent reservations;
+- appear on calendar;
+- can be edited;
+- can be cancelled/deleted while preserving relevant history.
 
 ---
 
@@ -1726,8 +1722,8 @@ At least one contact method should normally exist, but staff-created walk-ins ma
 
 Normalize:
 
-* phone;
-* email.
+- phone;
+- email.
 
 Use normalization for duplicate suggestions.
 
@@ -1882,11 +1878,11 @@ POST /public/venues/:slug/requests
 
 Never expose:
 
-* customer details;
-* booking names;
-* financial data;
-* employee accounts;
-* internal notes.
+- customer details;
+- booking names;
+- financial data;
+- employee accounts;
+- internal notes.
 
 Availability response contains free slots only.
 
@@ -1896,11 +1892,11 @@ Availability response contains free slots only.
 
 Add basic protections:
 
-* maximum request body size;
-* server validation;
-* request rate limiting strategy;
-* hidden honeypot field;
-* reject obviously invalid phone/email values.
+- maximum request body size;
+- server validation;
+- request rate limiting strategy;
+- hidden honeypot field;
+- reject obviously invalid phone/email values.
 
 Do not add CAPTCHA unless abuse actually becomes a problem.
 
@@ -2237,12 +2233,12 @@ OTHER
 
 Do not implement:
 
-* double-entry accounting;
-* taxation;
-* fiscal documents;
-* invoice generation;
-* bank reconciliation;
-* payroll.
+- double-entry accounting;
+- taxation;
+- fiscal documents;
+- invoice generation;
+- bank reconciliation;
+- payroll.
 
 ---
 
@@ -2469,11 +2465,11 @@ dated operational overrides
 
 Persist dated session records when:
 
-* cancelled;
-* attendance recorded;
-* time changed;
-* court changed;
-* notes added.
+- cancelled;
+- attendance recorded;
+- time changed;
+- court changed;
+- notes added.
 
 ---
 
@@ -2583,9 +2579,9 @@ Implement small History API router.
 API example:
 
 ```ts
-router.add("/dashboard", renderDashboard);
-router.add("/schedule", renderSchedule);
-router.add("/customers/:id", renderCustomerDetail);
+router.add('/dashboard', renderDashboard);
+router.add('/schedule', renderSchedule);
+router.add('/customers/:id', renderCustomerDetail);
 ```
 
 Support:
@@ -2603,9 +2599,9 @@ Intercept internal `<a>` links.
 
 Do not intercept:
 
-* external URLs;
-* downloads;
-* modifier-clicks.
+- external URLs;
+- downloads;
+- modifier-clicks.
 
 ---
 
@@ -2753,15 +2749,15 @@ font sizes
 
 Use:
 
-* light main workspace;
-* strong readable typography;
-* dark/navy navigation shell;
-* restrained primary accent;
-* white content cards;
-* subtle borders;
-* subtle shadows;
-* clear status indicators;
-* generous but efficient spacing.
+- light main workspace;
+- strong readable typography;
+- dark/navy navigation shell;
+- restrained primary accent;
+- white content cards;
+- subtle borders;
+- subtle shadows;
+- clear status indicators;
+- generous but efficient spacing.
 
 Do not make it look like a marketing website.
 
@@ -2801,14 +2797,14 @@ metric-card
 
 Ensure:
 
-* keyboard navigation;
-* visible focus states;
-* labels for every input;
-* adequate contrast;
-* modal focus management;
-* Escape closes appropriate overlays;
-* buttons are real buttons;
-* links are real links.
+- keyboard navigation;
+- visible focus states;
+- labels for every input;
+- adequate contrast;
+- modal focus management;
+- Escape closes appropriate overlays;
+- buttons are real buttons;
+- links are real links.
 
 ---
 
@@ -3316,10 +3312,10 @@ Initial deployment must be manual.
 
 Do not create:
 
-* GitHub Actions;
-* CI deployment;
-* automatic production deployment;
-* push-to-deploy.
+- GitHub Actions;
+- CI deployment;
+- automatic production deployment;
+- push-to-deploy.
 
 ---
 
@@ -3476,19 +3472,19 @@ docs/
 
 Before first real customer deployment verify:
 
-* passwords hashed;
-* tokens cryptographically random;
-* raw tokens not persisted;
-* organization isolation tested;
-* authorization enforced in services;
-* public endpoints expose only safe information;
-* request inputs validated;
-* HTML does not interpolate unsafe customer content;
-* AWS credentials never reach frontend;
-* Lambda permissions scoped;
-* production errors do not expose stack traces;
-* session expiration enforced in application code;
-* rate limiting strategy exists for authentication/public requests.
+- passwords hashed;
+- tokens cryptographically random;
+- raw tokens not persisted;
+- organization isolation tested;
+- authorization enforced in services;
+- public endpoints expose only safe information;
+- request inputs validated;
+- HTML does not interpolate unsafe customer content;
+- AWS credentials never reach frontend;
+- Lambda permissions scoped;
+- production errors do not expose stack traces;
+- session expiration enforced in application code;
+- rate limiting strategy exists for authentication/public requests.
 
 ---
 
@@ -3498,11 +3494,11 @@ Do not prematurely optimize.
 
 Before first production use confirm:
 
-* schedule query does not scan entire table;
-* customer listing is bounded;
-* request inbox is indexed/queryable;
-* reservation list filters do not require unrestricted scans for ordinary operations;
-* dashboard scans are acceptable for initial dataset.
+- schedule query does not scan entire table;
+- customer listing is bounded;
+- request inbox is indexed/queryable;
+- reservation list filters do not require unrestricted scans for ordinary operations;
+- dashboard scans are acceptable for initial dataset.
 
 Broad scans may be accepted temporarily for low-volume reports.
 
@@ -3684,9 +3680,9 @@ Requests  [4]
 
 Refresh:
 
-* when requests screen opens;
-* when navigating dashboard;
-* periodically only if needed.
+- when requests screen opens;
+- when navigating dashboard;
+- periodically only if needed.
 
 Do not add WebSockets.
 
@@ -3916,11 +3912,11 @@ Forms must be fully keyboard usable.
 
 Before deployment:
 
-* no reset command can target production accidentally;
-* seed command must refuse production environment by default;
-* destructive scripts require explicit confirmation;
-* table names differ between local/staging/production;
-* bootstrap does not overwrite existing owner.
+- no reset command can target production accidentally;
+- seed command must refuse production environment by default;
+- destructive scripts require explicit confirmation;
+- table names differ between local/staging/production;
+- bootstrap does not overwrite existing owner.
 
 ---
 

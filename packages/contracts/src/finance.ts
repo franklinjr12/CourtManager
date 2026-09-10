@@ -1,1 +1,7 @@
-export { ExpenseInputSchema, ExpenseSchema, PaymentInputSchema, PaymentSchema, PaymentMethodSchema } from './index.js';
+export {
+  ExpenseInputSchema,
+  ExpenseSchema,
+  PaymentInputSchema,
+  PaymentSchema,
+  PaymentMethodSchema,
+} from './index.js';

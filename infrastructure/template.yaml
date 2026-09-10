@@ -12,15 +12,32 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       BillingMode: PAY_PER_REQUEST
-      KeySchema: [{AttributeName: PK, KeyType: HASH}, {AttributeName: SK, KeyType: RANGE}]
-      AttributeDefinitions: [{AttributeName: PK, AttributeType: S}, {AttributeName: SK, AttributeType: S}]
-      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+      KeySchema:
+        [
+          { AttributeName: PK, KeyType: HASH },
+          { AttributeName: SK, KeyType: RANGE },
+        ]
+      AttributeDefinitions:
+        [
+          { AttributeName: PK, AttributeType: S },
+          { AttributeName: SK, AttributeType: S },
+        ]
+      TimeToLiveSpecification: { AttributeName: expiresAt, Enabled: true }
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../apps/api/dist/
       Handler: lambda.handler
-      FunctionUrlConfig: {AuthType: NONE, Cors: {AllowOrigins: ['*'], AllowMethods: ['GET','POST','PATCH','DELETE','OPTIONS'], AllowHeaders: ['Authorization','Content-Type']}}
+      FunctionUrlConfig:
+        {
+          AuthType: NONE,
+          Cors:
+            {
+              AllowOrigins: ['*'],
+              AllowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+              AllowHeaders: ['Authorization', 'Content-Type'],
+            },
+        }
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref CourtManagerTable
@@ -28,7 +45,18 @@ Resources:
       Policies:
         - Statement:
             - Effect: Allow
-              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:Scan, dynamodb:TransactWriteItems, dynamodb:BatchGetItem, dynamodb:BatchWriteItem]
+              Action:
+                [
+                  dynamodb:GetItem,
+                  dynamodb:PutItem,
+                  dynamodb:UpdateItem,
+                  dynamodb:DeleteItem,
+                  dynamodb:Query,
+                  dynamodb:Scan,
+                  dynamodb:TransactWriteItems,
+                  dynamodb:BatchGetItem,
+                  dynamodb:BatchWriteItem,
+                ]
               Resource: !GetAtt CourtManagerTable.Arn
 Outputs:
   ApiUrl:

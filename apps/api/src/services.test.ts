@@ -5,7 +5,11 @@ import { calculatePrice } from './domain.js';
 import { AppError } from './errors.js';
 import { buildServices } from './services/index.js';
 
-const context: AuthContext = { organizationId: 'org-1', userId: 'staff-1', role: 'STAFF' };
+const context: AuthContext = {
+  organizationId: 'org-1',
+  userId: 'staff-1',
+  role: 'STAFF',
+};
 const hours = {
   MONDAY: { open: '07:00', close: '23:00' },
   TUESDAY: { open: '07:00', close: '23:00' },
@@ -41,7 +45,10 @@ async function setup() {
     active: true,
     openingHours: hours,
   });
-  const customer = await services.customers.create(context, { name: 'Ana', phone: '41999991234' });
+  const customer = await services.customers.create(context, {
+    name: 'Ana',
+    phone: '41999991234',
+  });
   return { repo, services, court, customer };
 }
 describe('reservation workflows', () => {
@@ -56,9 +63,16 @@ describe('reservation workflows', () => {
     };
     const reservation = await services.reservations.create(context, input);
     await expect(
-      services.reservations.create(context, { ...input, customerId: String(customer.customerId) }),
+      services.reservations.create(context, {
+        ...input,
+        customerId: String(customer.customerId),
+      }),
     ).rejects.toMatchObject({ code: 'SCHEDULE_CONFLICT' });
-    await services.reservations.transition(context, String(reservation.reservationId), 'CANCELLED');
+    await services.reservations.transition(
+      context,
+      String(reservation.reservationId),
+      'CANCELLED',
+    );
     const second = await services.reservations.create(context, input);
     expect(second.status).toBe('CONFIRMED');
   });
@@ -96,9 +110,16 @@ describe('reservation workflows', () => {
     });
     expect(request.status).toBe('REQUESTED');
     expect(
-      await services.schedule.locks(context, String(court.courtId), '2026-12-06'),
+      await services.schedule.locks(
+        context,
+        String(court.courtId),
+        '2026-12-06',
+      ),
     ).toHaveLength(0);
-    const reservation = await services.requests.confirm(context, String(request.requestId));
+    const reservation = await services.requests.confirm(
+      context,
+      String(request.requestId),
+    );
     expect(reservation.status).toBe('CONFIRMED');
   });
   it('derives payment summary and preserves historical price', async () => {
@@ -119,8 +140,12 @@ describe('reservation workflows', () => {
       paidAt: '2026-01-05T19:00:00Z',
     });
     expect(
-      (await services.reservations.detail(context, String(reservation.reservationId)))
-        .paymentStatus,
+      (
+        await services.reservations.detail(
+          context,
+          String(reservation.reservationId),
+        )
+      ).paymentStatus,
     ).toBe('PARTIAL');
   });
 });

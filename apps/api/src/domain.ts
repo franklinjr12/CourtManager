@@ -1,15 +1,98 @@
 import { AppError } from './errors.js';
 import type { ReservationStatus } from './types.js';
-export const allowedTransition = (from:ReservationStatus,to:ReservationStatus) => from==='CONFIRMED' && ['COMPLETED','CANCELLED','NO_SHOW'].includes(to);
-export const assertTransition = (from:ReservationStatus,to:ReservationStatus) => { if(!allowedTransition(from,to)) throw new AppError('INVALID_STATE', `Cannot change reservation from ${from} to ${to}.`); };
-export const normalizePhone = (phone:string) => phone.replace(/\D/g,'');
-export const normalizeEmail = (email?:string) => (email??'').trim().toLowerCase();
-export const paymentStatus = (expected:number, paid:number) => paid<=0?'UNPAID':paid<expected?'PARTIAL':paid===expected?'PAID':'OVERPAID';
-export const dayKey = (iso:string) => iso.slice(0,10);
-export const minutes = (time:string) => { const [h,m]=time.split(':').map(Number); return (h??0)*60+(m??0); };
-export const expandSlots = (start:string,end:string,slotMinutes:number) => { const result:string[]=[]; for(let t=minutes(start);t<minutes(end);t+=slotMinutes) result.push(`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`); return result; };
-export const calculateDuration = (start:Date,end:Date) => { const value=(end.getTime()-start.getTime())/60000; if(value<=0||!Number.isInteger(value)) throw new AppError('VALIDATION_ERROR','End time must be after start time.'); return value; };
-export const calculatePrice = (hourlyPrice:number,durationMinutes:number) => Math.round(hourlyPrice*durationMinutes/60*100)/100;
-export const weekdayName = (date:Date) => ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][date.getUTCDay()] ?? 'SUNDAY';
-export const isWithinOpeningHours = (start:Date,end:Date,openingHours:Record<string,{open:string;close:string}|null>,slotMinutes:number) => { const day=openingHours[weekdayName(start)]; if(!day||day.open===day.close)return false; const startMinutes=start.getUTCHours()*60+start.getUTCMinutes(); const endMinutes=end.getUTCHours()*60+end.getUTCMinutes(); return startMinutes>=minutes(day.open)&&endMinutes<=minutes(day.close)&&startMinutes%slotMinutes===0&&endMinutes%slotMinutes===0; };
-export const recurrenceDates = (startDate:string,untilDate:string,weekday:number,intervalWeeks=1) => { const out:string[]=[]; const current=new Date(`${startDate}T00:00:00Z`); const until=new Date(`${untilDate}T00:00:00Z`); while(current<=until){if(current.getUTCDay()===weekday)out.push(current.toISOString().slice(0,10));current.setUTCDate(current.getUTCDate()+1);} return out.filter((_,i)=>i%intervalWeeks===0); };
+export const allowedTransition = (
+  from: ReservationStatus,
+  to: ReservationStatus,
+) => from === 'CONFIRMED' && ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(to);
+export const assertTransition = (
+  from: ReservationStatus,
+  to: ReservationStatus,
+) => {
+  if (!allowedTransition(from, to))
+    throw new AppError(
+      'INVALID_STATE',
+      `Cannot change reservation from ${from} to ${to}.`,
+    );
+};
+export const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
+export const normalizeEmail = (email?: string) =>
+  (email ?? '').trim().toLowerCase();
+export const paymentStatus = (expected: number, paid: number) =>
+  paid <= 0
+    ? 'UNPAID'
+    : paid < expected
+      ? 'PARTIAL'
+      : paid === expected
+        ? 'PAID'
+        : 'OVERPAID';
+export const dayKey = (iso: string) => iso.slice(0, 10);
+export const minutes = (time: string) => {
+  const [h, m] = time.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
+export const expandSlots = (
+  start: string,
+  end: string,
+  slotMinutes: number,
+) => {
+  const result: string[] = [];
+  for (let t = minutes(start); t < minutes(end); t += slotMinutes)
+    result.push(
+      `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`,
+    );
+  return result;
+};
+export const calculateDuration = (start: Date, end: Date) => {
+  const value = (end.getTime() - start.getTime()) / 60000;
+  if (value <= 0 || !Number.isInteger(value))
+    throw new AppError(
+      'VALIDATION_ERROR',
+      'End time must be after start time.',
+    );
+  return value;
+};
+export const calculatePrice = (hourlyPrice: number, durationMinutes: number) =>
+  Math.round(((hourlyPrice * durationMinutes) / 60) * 100) / 100;
+export const weekdayName = (date: Date) =>
+  [
+    'SUNDAY',
+    'MONDAY',
+    'TUESDAY',
+    'WEDNESDAY',
+    'THURSDAY',
+    'FRIDAY',
+    'SATURDAY',
+  ][date.getUTCDay()] ?? 'SUNDAY';
+export const isWithinOpeningHours = (
+  start: Date,
+  end: Date,
+  openingHours: Record<string, { open: string; close: string } | null>,
+  slotMinutes: number,
+) => {
+  const day = openingHours[weekdayName(start)];
+  if (!day || day.open === day.close) return false;
+  const startMinutes = start.getUTCHours() * 60 + start.getUTCMinutes();
+  const endMinutes = end.getUTCHours() * 60 + end.getUTCMinutes();
+  return (
+    startMinutes >= minutes(day.open) &&
+    endMinutes <= minutes(day.close) &&
+    startMinutes % slotMinutes === 0 &&
+    endMinutes % slotMinutes === 0
+  );
+};
+export const recurrenceDates = (
+  startDate: string,
+  untilDate: string,
+  weekday: number,
+  intervalWeeks = 1,
+) => {
+  const out: string[] = [];
+  const current = new Date(`${startDate}T00:00:00Z`);
+  const until = new Date(`${untilDate}T00:00:00Z`);
+  while (current <= until) {
+    if (current.getUTCDay() === weekday)
+      out.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return out.filter((_, i) => i % intervalWeeks === 0);
+};

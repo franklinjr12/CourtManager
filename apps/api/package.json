@@ -1,6 +1,23 @@
 {
-  "name":"@court-manager/api","private":true,"type":"module",
-  "scripts":{"dev":"tsx watch src/dev.ts","build":"esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda.mjs","bootstrap:owner":"tsx src/scripts/bootstrap-owner.ts","seed:dev":"tsx src/scripts/seed-dev.ts"},
-  "dependencies":{"@aws-sdk/client-dynamodb":"^3.700.0","@aws-sdk/lib-dynamodb":"^3.700.0","@hono/node-server":"^1.13.7","@court-manager/contracts":"workspace:*","hono":"^4.6.14","zod":"^3.24.1"},
-  "devDependencies":{"esbuild":"^0.24.2","tsx":"^4.19.2"}
+  "name": "@court-manager/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "build": "esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda.mjs",
+    "bootstrap:owner": "tsx src/scripts/bootstrap-owner.ts",
+    "seed:dev": "tsx src/scripts/seed-dev.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@hono/node-server": "^1.13.7",
+    "@court-manager/contracts": "workspace:*",
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2"
+  }
 }

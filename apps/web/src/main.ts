@@ -3,7 +3,10 @@ import './styles.css';
 type Session = {
   token: string;
   user: { userId: string; name: string; role: string };
-  organization?: { name: string; features?: { classes: boolean; finance: boolean } };
+  organization?: {
+    name: string;
+    features?: { classes: boolean; finance: boolean };
+  };
 };
 type OpeningHours = Record<string, { open: string; close: string } | null>;
 type Organization = {
@@ -98,18 +101,26 @@ const app = root;
 const escapeText = (value: unknown) =>
   String(value ?? '').replace(
     /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ] ?? c,
   );
 const session = () =>
-  JSON.parse(localStorage.getItem('court-manager-session') ?? 'null') as Session | null;
+  JSON.parse(
+    localStorage.getItem('court-manager-session') ?? 'null',
+  ) as Session | null;
 const setSession = (value: Session | null) =>
   value
     ? localStorage.setItem('court-manager-session', JSON.stringify(value))
     : localStorage.removeItem('court-manager-session');
 const formatMoney = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(n) || 0);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+    Number(n) || 0,
+  );
 const today = () => new Date().toISOString().slice(0, 10);
-const isoFromInputs = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString();
+const isoFromInputs = (date: string, time: string) =>
+  new Date(`${date}T${time}:00`).toISOString();
 const timeValue = (date: string) =>
   new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const dateValue = (date: string) => new Date(date).toLocaleDateString();
@@ -149,7 +160,10 @@ const navigate = (path: string) => {
   history.pushState({}, '', path);
   void renderRoute();
 };
-const renderToast = (message: string, kind: 'success' | 'error' = 'success') => {
+const renderToast = (
+  message: string,
+  kind: 'success' | 'error' = 'success',
+) => {
   app.querySelector('.toast')?.remove();
   app.insertAdjacentHTML(
     'beforeend',
@@ -158,7 +172,10 @@ const renderToast = (message: string, kind: 'success' | 'error' = 'success') => 
   window.setTimeout(() => app.querySelector('.toast')?.remove(), 3500);
 };
 const toast = (message: string, kind: 'success' | 'error' = 'success') => {
-  sessionStorage.setItem('court-manager-toast', JSON.stringify({ message, kind }));
+  sessionStorage.setItem(
+    'court-manager-toast',
+    JSON.stringify({ message, kind }),
+  );
   renderToast(message, kind);
   window.setTimeout(() => sessionStorage.removeItem('court-manager-toast'), 0);
 };
@@ -185,14 +202,17 @@ const openModal = (title: string, body: string, returnFocus?: HTMLElement) => {
   backdrop?.addEventListener('click', (event) => {
     if (event.target === backdrop) closeModal();
   });
-  backdrop?.querySelector<HTMLElement>('[data-close]')?.addEventListener('click', closeModal);
+  backdrop
+    ?.querySelector<HTMLElement>('[data-close]')
+    ?.addEventListener('click', closeModal);
   modalKeyHandler = (event) => {
     if (event.key === 'Escape') closeModal();
   };
   document.addEventListener('keydown', modalKeyHandler);
   backdrop?.querySelector<HTMLElement>('input,select,textarea,button')?.focus();
 };
-const formData = (form: HTMLFormElement) => Object.fromEntries(new FormData(form).entries());
+const formData = (form: HTMLFormElement) =>
+  Object.fromEntries(new FormData(form).entries());
 const setBusy = (form: HTMLFormElement, busy: boolean) => {
   form.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
     button.disabled = busy;
@@ -211,9 +231,19 @@ const showFormError = (form: HTMLFormElement, error: unknown) => {
 };
 const button = (label: string, attrs = '') =>
   `<button type="button" class="button" ${attrs}>${escapeText(label)}</button>`;
-const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+const days = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+];
 const defaultHours = (): OpeningHours =>
-  Object.fromEntries(days.map((day) => [day, { open: '07:00', close: '23:00' }]));
+  Object.fromEntries(
+    days.map((day) => [day, { open: '07:00', close: '23:00' }]),
+  );
 const hourFields = (hours: OpeningHours) =>
   days
     .map((day) => {
@@ -232,22 +262,24 @@ const organizationForm = (org: Organization) =>
 
 function login() {
   app.innerHTML = `<main class="login"><form id="login-form" class="card"><h1>Court Manager</h1><p class="muted">Sign in to manage your courts.</p><label>Email<input name="email" type="email" required autocomplete="email"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button class="button primary">Sign in</button><p id="login-error" class="error" role="alert"></p></form></main>`;
-  app.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    setBusy(form, true);
-    try {
-      const data = await request<Session>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(formData(form)),
-      });
-      setSession(data);
-      navigate('/dashboard');
-    } catch (error) {
-      showFormError(form, error);
-      setBusy(form, false);
-    }
-  });
+  app
+    .querySelector<HTMLFormElement>('#login-form')
+    ?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      setBusy(form, true);
+      try {
+        const data = await request<Session>('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(formData(form)),
+        });
+        setSession(data);
+        navigate('/dashboard');
+      } catch (error) {
+        showFormError(form, error);
+        setBusy(form, false);
+      }
+    });
 }
 async function shell(content: () => Promise<string> | string) {
   const current = session();
@@ -259,7 +291,10 @@ async function shell(content: () => Promise<string> | string) {
   const queuedToast = sessionStorage.getItem('court-manager-toast');
   if (queuedToast) {
     sessionStorage.removeItem('court-manager-toast');
-    const queued = JSON.parse(queuedToast) as { message: string; kind: 'success' | 'error' };
+    const queued = JSON.parse(queuedToast) as {
+      message: string;
+      kind: 'success' | 'error';
+    };
     window.setTimeout(() => renderToast(queued.message, queued.kind), 0);
   }
   app.querySelector('#logout')?.addEventListener('click', async () => {
@@ -306,8 +341,12 @@ function openingHoursFrom(form: HTMLFormElement) {
     days.map((day) => [
       day,
       {
-        open: String((form.elements.namedItem(`open-${day}`) as HTMLInputElement).value),
-        close: String((form.elements.namedItem(`close-${day}`) as HTMLInputElement).value),
+        open: String(
+          (form.elements.namedItem(`open-${day}`) as HTMLInputElement).value,
+        ),
+        close: String(
+          (form.elements.namedItem(`close-${day}`) as HTMLInputElement).value,
+        ),
       },
     ]),
   );
@@ -360,15 +399,20 @@ function wireSettings() {
     ?.addEventListener('click', () => void openCourtModal(undefined));
   app.querySelectorAll<HTMLElement>('[data-edit-court]').forEach((element) =>
     element.addEventListener('click', async () => {
-      const court = await request<Court>(`/courts/${element.dataset.editCourt}`);
+      const court = await request<Court>(
+        `/courts/${element.dataset.editCourt}`,
+      );
       await openCourtModal(court);
     }),
   );
   app.querySelectorAll<HTMLElement>('[data-archive-court]').forEach((element) =>
     element.addEventListener('click', async () => {
-      if (!window.confirm('Archive this court? Existing history will remain.')) return;
+      if (!window.confirm('Archive this court? Existing history will remain.'))
+        return;
       try {
-        await request(`/courts/${element.dataset.archiveCourt}/archive`, { method: 'POST' });
+        await request(`/courts/${element.dataset.archiveCourt}/archive`, {
+          method: 'POST',
+        });
         toast('Court archived.');
         await renderRoute();
       } catch (error) {
@@ -379,7 +423,9 @@ function wireSettings() {
   app.querySelectorAll<HTMLElement>('[data-restore-court]').forEach((element) =>
     element.addEventListener('click', async () => {
       try {
-        await request(`/courts/${element.dataset.restoreCourt}/restore`, { method: 'POST' });
+        await request(`/courts/${element.dataset.restoreCourt}/restore`, {
+          method: 'POST',
+        });
         toast('Court restored.');
         await renderRoute();
       } catch (error) {
@@ -417,10 +463,15 @@ function wireSettings() {
     });
 }
 async function loadAvailability(form: HTMLFormElement) {
-  const court = String((form.elements.namedItem('courtId') as HTMLSelectElement)?.value ?? ''),
-    date = String((form.elements.namedItem('date') as HTMLInputElement)?.value ?? ''),
+  const court = String(
+      (form.elements.namedItem('courtId') as HTMLSelectElement)?.value ?? '',
+    ),
+    date = String(
+      (form.elements.namedItem('date') as HTMLInputElement)?.value ?? '',
+    ),
     duration = String(
-      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)?.value ?? '30',
+      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)
+        ?.value ?? '30',
     ),
     start = form.elements.namedItem('startTime') as HTMLSelectElement;
   if (!court || !date) return;
@@ -431,15 +482,24 @@ async function loadAvailability(form: HTMLFormElement) {
     );
     start.innerHTML = data.available.length
       ? data.available
-          .map((value) => `<option value="${escapeText(value)}">${escapeText(value)}</option>`)
+          .map(
+            (value) =>
+              `<option value="${escapeText(value)}">${escapeText(value)}</option>`,
+          )
           .join('')
       : '<option value="">No available times</option>';
   } catch (error) {
     start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
   }
 }
-async function openCustomerModal(onCreated?: (customer: Customer) => void, customer?: Customer) {
-  openModal(customer ? 'Edit customer' : 'Create customer', customerForm(customer));
+async function openCustomerModal(
+  onCreated?: (customer: Customer) => void,
+  customer?: Customer,
+) {
+  openModal(
+    customer ? 'Edit customer' : 'Create customer',
+    customerForm(customer),
+  );
   const form = app.querySelector<HTMLFormElement>('#customer-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {
@@ -489,12 +549,19 @@ async function openReservationModal(
   if (!form) return;
   form.querySelector('[data-close]')?.addEventListener('click', closeModal);
   const updatePrice = () => {
-    const selected = form.querySelector<HTMLSelectElement>('[name="courtId"]')?.selectedOptions[0];
+    const selected =
+      form.querySelector<HTMLSelectElement>('[name="courtId"]')
+        ?.selectedOptions[0];
     const duration = Number(
-      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)?.value ?? 30,
+      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)
+        ?.value ?? 30,
     );
     const price = form.elements.namedItem('expectedAmount') as HTMLInputElement;
-    if (selected) price.value = ((Number(selected.dataset.price ?? 0) * duration) / 60).toFixed(2);
+    if (selected)
+      price.value = (
+        (Number(selected.dataset.price ?? 0) * duration) /
+        60
+      ).toFixed(2);
   };
   const refresh = () => {
     void loadAvailability(form);
@@ -502,43 +569,58 @@ async function openReservationModal(
   };
   form.querySelector('[name="courtId"]')?.addEventListener('change', refresh);
   form.querySelector('[name="date"]')?.addEventListener('change', refresh);
-  form.querySelector('[name="durationMinutes"]')?.addEventListener('change', refresh);
+  form
+    .querySelector('[name="durationMinutes"]')
+    ?.addEventListener('change', refresh);
   form.querySelector('#quick-customer')?.addEventListener('click', () => {
     const fields = form.querySelector<HTMLElement>('#quick-customer-fields');
     if (fields) fields.hidden = !fields.hidden;
   });
-  form.querySelector('#create-quick-customer')?.addEventListener('click', async () => {
-    const name = String((form.elements.namedItem('quickName') as HTMLInputElement).value).trim(),
-      phone = String((form.elements.namedItem('quickPhone') as HTMLInputElement).value).trim(),
-      error = form.querySelector<HTMLElement>('#quick-customer-error');
-    if (!name) {
-      if (error) error.textContent = 'Name is required.';
-      return;
-    }
-    try {
-      const customer = await request<Customer>('/customers', {
-        method: 'POST',
-        body: JSON.stringify({ name, phone: phone || undefined }),
-      });
-      const select = form.elements.namedItem('customerId') as HTMLSelectElement;
-      select.insertAdjacentHTML(
-        'beforeend',
-        `<option value="${escapeText(customer.customerId)}">${escapeText(customer.name)}</option>`,
-      );
-      select.value = customer.customerId;
-      const fields = form.querySelector<HTMLElement>('#quick-customer-fields');
-      if (fields) fields.hidden = true;
-    } catch (errorValue) {
-      if (error) error.textContent = errorMessage(errorValue);
-    }
-  });
+  form
+    .querySelector('#create-quick-customer')
+    ?.addEventListener('click', async () => {
+      const name = String(
+          (form.elements.namedItem('quickName') as HTMLInputElement).value,
+        ).trim(),
+        phone = String(
+          (form.elements.namedItem('quickPhone') as HTMLInputElement).value,
+        ).trim(),
+        error = form.querySelector<HTMLElement>('#quick-customer-error');
+      if (!name) {
+        if (error) error.textContent = 'Name is required.';
+        return;
+      }
+      try {
+        const customer = await request<Customer>('/customers', {
+          method: 'POST',
+          body: JSON.stringify({ name, phone: phone || undefined }),
+        });
+        const select = form.elements.namedItem(
+          'customerId',
+        ) as HTMLSelectElement;
+        select.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeText(customer.customerId)}">${escapeText(customer.name)}</option>`,
+        );
+        select.value = customer.customerId;
+        const fields = form.querySelector<HTMLElement>(
+          '#quick-customer-fields',
+        );
+        if (fields) fields.hidden = true;
+      } catch (errorValue) {
+        if (error) error.textContent = errorMessage(errorValue);
+      }
+    });
   refresh();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     setBusy(form, true);
     try {
       const values = formData(form);
-      const start = isoFromInputs(String(values.date), String(values.startTime));
+      const start = isoFromInputs(
+        String(values.date),
+        String(values.startTime),
+      );
       const end = new Date(
         new Date(start).getTime() + Number(values.durationMinutes) * 60000,
       ).toISOString();
@@ -667,7 +749,8 @@ async function schedule() {
         .forEach((element) =>
           element.addEventListener(
             'click',
-            () => void openReservationDetail(String(element.dataset.reservation)),
+            () =>
+              void openReservationDetail(String(element.dataset.reservation)),
           ),
         );
       screen()
@@ -676,7 +759,9 @@ async function schedule() {
           element.addEventListener('click', async () => {
             if (!window.confirm('Cancel this court block?')) return;
             try {
-              await request(`/blocks/${element.dataset.block}/cancel`, { method: 'POST' });
+              await request(`/blocks/${element.dataset.block}/cancel`, {
+                method: 'POST',
+              });
               toast('Court block cancelled.');
               await renderRoute();
             } catch (error) {
@@ -688,10 +773,13 @@ async function schedule() {
     return `<div class="toolbar"><div><h2>Schedule</h2><p class="muted">${escapeText(date)}</p></div><div class="row-actions"><button class="button" id="previous-day">Previous day</button><button class="button" id="today">Today</button><button class="button" id="next-day">Next day</button><button class="button" id="block-court">Block court</button><button class="button primary" id="new-booking">New reservation</button></div></div><div class="schedule-grid">${
       data.courts
         .map((court) => {
-          const items = data.items.filter((item) => item.courtId === court.courtId);
+          const items = data.items.filter(
+            (item) => item.courtId === court.courtId,
+          );
           return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Reservation · ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>Blocked · ${escapeText(item.reason)}</span>${item.blockId ? button('Cancel', `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : '<p class="empty">Available</p>'}</article>`;
         })
-        .join('') || '<p class="empty">Create a court in Settings to start scheduling.</p>'
+        .join('') ||
+      '<p class="empty">Create a court in Settings to start scheduling.</p>'
     }</div>`;
   });
   const move = (amount: number) => {
@@ -725,31 +813,40 @@ function wireCustomerList() {
   app
     .querySelector<HTMLButtonElement>('#add-customer')
     ?.addEventListener('click', () => void openCustomerModal());
-  app.querySelector<HTMLFormElement>('#customer-search')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const values = formData(event.currentTarget as HTMLFormElement);
-    navigate(
-      `/customers${values.search ? `?search=${encodeURIComponent(String(values.search))}` : ''}`,
-    );
-  });
+  app
+    .querySelector<HTMLFormElement>('#customer-search')
+    ?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = formData(event.currentTarget as HTMLFormElement);
+      navigate(
+        `/customers${values.search ? `?search=${encodeURIComponent(String(values.search))}` : ''}`,
+      );
+    });
   app.querySelectorAll<HTMLElement>('[data-edit-customer]').forEach((element) =>
     element.addEventListener('click', async () => {
-      const customer = await request<Customer>(`/customers/${element.dataset.editCustomer}`);
+      const customer = await request<Customer>(
+        `/customers/${element.dataset.editCustomer}`,
+      );
       await openCustomerModal(undefined, customer);
     }),
   );
-  app.querySelectorAll<HTMLElement>('[data-archive-customer]').forEach((element) =>
-    element.addEventListener('click', async () => {
-      if (!window.confirm('Archive this customer?')) return;
-      try {
-        await request(`/customers/${element.dataset.archiveCustomer}/archive`, { method: 'POST' });
-        toast('Customer archived.');
-        await renderRoute();
-      } catch (error) {
-        toast(errorMessage(error), 'error');
-      }
-    }),
-  );
+  app
+    .querySelectorAll<HTMLElement>('[data-archive-customer]')
+    .forEach((element) =>
+      element.addEventListener('click', async () => {
+        if (!window.confirm('Archive this customer?')) return;
+        try {
+          await request(
+            `/customers/${element.dataset.archiveCustomer}/archive`,
+            { method: 'POST' },
+          );
+          toast('Customer archived.');
+          await renderRoute();
+        } catch (error) {
+          toast(errorMessage(error), 'error');
+        }
+      }),
+    );
 }
 async function reservations() {
   const data = await request<Reservation[]>('/reservations');
@@ -763,7 +860,8 @@ async function reservations() {
         .forEach((element) =>
           element.addEventListener(
             'click',
-            () => void openReservationDetail(String(element.dataset.reservation)),
+            () =>
+              void openReservationDetail(String(element.dataset.reservation)),
           ),
         );
     }, 0);
@@ -781,22 +879,30 @@ async function requests() {
   });
 }
 function wireRequests(data: RequestItem[], customers: Customer[]) {
-  app.querySelectorAll<HTMLElement>('[data-review-request]').forEach((element) =>
-    element.addEventListener('click', () => {
-      const item = data.find((value) => value.requestId === element.dataset.reviewRequest);
-      if (item)
-        openModal(
-          'Request review',
-          `<div class="detail-grid"><div><span class="muted">Customer</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">Contact</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">Requested</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || 'No notes.')}</p>`,
+  app
+    .querySelectorAll<HTMLElement>('[data-review-request]')
+    .forEach((element) =>
+      element.addEventListener('click', () => {
+        const item = data.find(
+          (value) => value.requestId === element.dataset.reviewRequest,
         );
-    }),
-  );
-  app.querySelectorAll<HTMLElement>('[data-confirm-request]').forEach((element) =>
-    element.addEventListener('click', () => {
-      const item = data.find((value) => value.requestId === element.dataset.confirmRequest);
-      if (item) openConfirmRequest(item, customers);
-    }),
-  );
+        if (item)
+          openModal(
+            'Request review',
+            `<div class="detail-grid"><div><span class="muted">Customer</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">Contact</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">Requested</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || 'No notes.')}</p>`,
+          );
+      }),
+    );
+  app
+    .querySelectorAll<HTMLElement>('[data-confirm-request]')
+    .forEach((element) =>
+      element.addEventListener('click', () => {
+        const item = data.find(
+          (value) => value.requestId === element.dataset.confirmRequest,
+        );
+        if (item) openConfirmRequest(item, customers);
+      }),
+    );
   app
     .querySelectorAll<HTMLElement>('[data-reject-request]')
     .forEach((element) =>
@@ -820,7 +926,9 @@ function openConfirmRequest(item: RequestItem, customers: Customer[]) {
       const values = formData(form);
       await request(`/requests/${item.requestId}/confirm`, {
         method: 'POST',
-        body: JSON.stringify(values.customerId ? { customerId: values.customerId } : {}),
+        body: JSON.stringify(
+          values.customerId ? { customerId: values.customerId } : {},
+        ),
       });
       closeModal();
       toast('Request confirmed.');
@@ -868,14 +976,18 @@ async function openPaymentModal(reservation?: Reservation) {
   );
   const form = app.querySelector<HTMLFormElement>('#payment-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
-  form?.querySelector('[name="reservationId"]')?.addEventListener('change', (event) => {
-    const option = (event.target as HTMLSelectElement).selectedOptions[0];
-    if (!option) return;
-    const customer = form.elements.namedItem('customerId') as HTMLSelectElement;
-    customer.value = String(option.dataset.customer ?? '');
-    const amount = form.elements.namedItem('amount') as HTMLInputElement;
-    amount.value = String(option.dataset.remaining ?? '');
-  });
+  form
+    ?.querySelector('[name="reservationId"]')
+    ?.addEventListener('change', (event) => {
+      const option = (event.target as HTMLSelectElement).selectedOptions[0];
+      if (!option) return;
+      const customer = form.elements.namedItem(
+        'customerId',
+      ) as HTMLSelectElement;
+      customer.value = String(option.dataset.customer ?? '');
+      const amount = form.elements.namedItem('amount') as HTMLInputElement;
+      amount.value = String(option.dataset.remaining ?? '');
+    });
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const currentForm = event.currentTarget as HTMLFormElement;
@@ -912,7 +1024,9 @@ async function finance() {
           element.addEventListener('click', async () => {
             if (!window.confirm('Delete this payment record?')) return;
             try {
-              await request(`/payments/${element.dataset.deletePayment}`, { method: 'DELETE' });
+              await request(`/payments/${element.dataset.deletePayment}`, {
+                method: 'DELETE',
+              });
               toast('Payment deleted.');
               await renderRoute();
             } catch (error) {
@@ -978,7 +1092,11 @@ function openClassModal(courts: Court[]) {
     }
   });
 }
-function openEnrollmentModal(classId: string, customers: Customer[], returnFocus: HTMLElement) {
+function openEnrollmentModal(
+  classId: string,
+  customers: Customer[],
+  returnFocus: HTMLElement,
+) {
   openModal(
     'Enroll customer',
     `<form id="enroll-form" class="form-grid"><label class="full">Customer<select name="customerId" required>${customerOptions(customers)}</select></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>Cancel</button><button class="button primary">Enroll</button></div></form>`,
@@ -1009,7 +1127,11 @@ function wireClasses(data: SportClass[], customers: Customer[]) {
     .querySelectorAll<HTMLElement>('[data-enroll-class]')
     .forEach((element) =>
       element.addEventListener('click', () =>
-        openEnrollmentModal(String(element.dataset.enrollClass), customers, element),
+        openEnrollmentModal(
+          String(element.dataset.enrollClass),
+          customers,
+          element,
+        ),
       ),
     );
   app
@@ -1032,7 +1154,10 @@ function openAttendanceModal(classId: string, customers: Customer[]) {
     setBusy(form, true);
     try {
       const values = formData(form);
-      await request('/classes/attendance', { method: 'POST', body: JSON.stringify(values) });
+      await request('/classes/attendance', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
       closeModal();
       toast('Attendance saved.');
     } catch (error) {
@@ -1105,7 +1230,8 @@ async function publicBooking(slug: string) {
               notes: values.notes || undefined,
             }),
           });
-          result.textContent = 'Request sent. The venue will contact you after reviewing it.';
+          result.textContent =
+            'Request sent. The venue will contact you after reviewing it.';
           form.reset();
         } catch (error) {
           result.textContent = errorMessage(error);
