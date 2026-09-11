@@ -35,12 +35,12 @@ export async function schedule() {
       item.reservationId
         ? {
             ...item,
-            status: `${item.customerName ?? t('common.customer')} Ãƒâ€šÃ‚Â· ${reservationStatusLabel(item.status)} Ãƒâ€šÃ‚Â· ${paymentStatusLabel(item.paymentStatus ?? 'UNPAID')}`,
+            status: `${item.customerName ?? t('common.customer')} · ${reservationStatusLabel(item.status)} · ${paymentStatusLabel(item.paymentStatus ?? 'UNPAID')}`,
           }
         : item.classId
           ? {
               ...item,
-              reason: `${t('schedule.class')} Ãƒâ€šÃ‚Â· ${item.name ?? t('schedule.class')}`,
+              reason: `${t('schedule.class')} · ${item.name ?? t('schedule.class')}`,
             }
           : item,
     );
@@ -52,7 +52,7 @@ export async function schedule() {
           const items = displayItems.filter(
             (item) => item.courtId === court.courtId,
           );
-          return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“${escapeText(timeValue(item.endAt))}</strong><span>${t('schedule.reservation')} Ãƒâ€šÃ‚Â· ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“${escapeText(timeValue(item.endAt))}</strong><span>${item.classId ? `${t('schedule.class')} Ãƒâ€šÃ‚Â· ${escapeText(item.reason)}` : `${t('schedule.blocked')} Ãƒâ€šÃ‚Â· ${blockReasonLabel(item.reason ?? '')}`}</span>${item.blockId ? button(t('schedule.cancelBlock'), `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : `<p class="empty">${t('common.available')}</p>`}</article>`;
+          return `<article class="card court"><h3>${escapeText(court.name)} <small>${escapeText(court.sport)}</small></h3>${items.length ? items.map((item) => (item.reservationId ? `<button class="schedule-item" data-reservation="${escapeText(item.reservationId)}"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>${t('schedule.reservation')} · ${escapeText(item.status)}</span></button>` : `<div class="schedule-item blocked"><strong>${escapeText(timeValue(item.startAt))}–${escapeText(timeValue(item.endAt))}</strong><span>${item.classId ? `${t('schedule.class')} · ${escapeText(item.reason)}` : `${t('schedule.blocked')} · ${blockReasonLabel(item.reason ?? '')}`}</span>${item.blockId ? button(t('schedule.cancelBlock'), `data-block="${escapeText(item.blockId)}"`) : ''}</div>`)).join('') : `<p class="empty">${t('common.available')}</p>`}</article>`;
         })
         .join('') || `<p class="empty">${t('schedule.createCourtHint')}</p>`
     }</div>`;
@@ -96,7 +96,7 @@ export async function schedule() {
       );
       const strong = element.querySelector('strong');
       if (reservation && strong)
-        strong.textContent = `${strong.textContent} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${reservation.customerName ?? t('common.customer')}`;
+        strong.textContent = `${strong.textContent} — ${reservation.customerName ?? t('common.customer')}`;
     });
   const move = (amount: number) => {
     const next = new Date(`${date}T12:00:00Z`);
