@@ -385,7 +385,8 @@ export const PaymentInputSchema = z
     notes: z.string().max(2000).optional(),
   })
   .refine(
-    (v) => [v.chargeId, v.reservationId, v.classId].filter(Boolean).length === 1,
+    (v) =>
+      [v.chargeId, v.reservationId, v.classId].filter(Boolean).length === 1,
     'Exactly one charge, reservation or class is required',
   );
 export const BlockInputSchema = z.object({
@@ -421,30 +422,43 @@ export const StaffUpdateInputSchema = StaffCreateInputSchema.partial()
 export const StaffPasswordResetInputSchema = z.object({
   password: z.string().min(1).max(200),
 });
-export const ClassInputSchema = z.object({
-  name: z.string().min(1).max(160),
-  sport: z.string().min(1).max(80),
-  sportId: IdentifierSchema.optional(),
-  type: z.enum(['GROUP', 'PRIVATE']).default('GROUP'),
-  coachId: IdentifierSchema,
-  courtId: IdentifierSchema,
-  capacity: z.number().int().positive().max(500),
-  pricePerParticipant: MoneySchema.optional(),
-  price: MoneySchema.optional(),
-  scheduleType: z.enum(['SINGLE', 'WEEKLY']).default('WEEKLY'),
-  weekday: z.number().int().min(0).max(6).optional(),
-  intervalWeeks: z.number().int().min(1).max(52).default(1),
-  startTime: LocalTimeSchema,
-  durationMinutes: z.number().int().positive().max(1440),
-  startDate: DateSchema,
-  endDate: DateSchema.optional(),
-  notes: z.string().max(2000).optional(),
-}).superRefine((value, ctx) => {
-  if (value.type === 'PRIVATE' && value.capacity !== 1)
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capacity'], message: 'Private lessons have capacity 1.' });
-  if (value.scheduleType === 'WEEKLY' && (value.weekday === undefined || !value.endDate))
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: 'Weekly classes require weekday and end date.' });
-});
+export const ClassInputSchema = z
+  .object({
+    name: z.string().min(1).max(160),
+    sport: z.string().min(1).max(80),
+    sportId: IdentifierSchema.optional(),
+    type: z.enum(['GROUP', 'PRIVATE']).default('GROUP'),
+    coachId: IdentifierSchema,
+    courtId: IdentifierSchema,
+    capacity: z.number().int().positive().max(500),
+    pricePerParticipant: MoneySchema.optional(),
+    price: MoneySchema.optional(),
+    scheduleType: z.enum(['SINGLE', 'WEEKLY']).default('WEEKLY'),
+    weekday: z.number().int().min(0).max(6).optional(),
+    intervalWeeks: z.number().int().min(1).max(52).default(1),
+    startTime: LocalTimeSchema,
+    durationMinutes: z.number().int().positive().max(1440),
+    startDate: DateSchema,
+    endDate: DateSchema.optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.type === 'PRIVATE' && value.capacity !== 1)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['capacity'],
+        message: 'Private lessons have capacity 1.',
+      });
+    if (
+      value.scheduleType === 'WEEKLY' &&
+      (value.weekday === undefined || !value.endDate)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message: 'Weekly classes require weekday and end date.',
+      });
+  });
 
 export type Organization = z.infer<typeof OrganizationSchema>;
 export type User = z.infer<typeof UserSchema>;

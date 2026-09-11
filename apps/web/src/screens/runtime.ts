@@ -17,8 +17,9 @@ export const escapeText = escapeHtml;
 export const request = <T>(path: string, init: RequestInit = {}) =>
   getAppContext().request<T>(path, init);
 export const session = () => getAppContext().getSession();
-export const setSession = (session: Parameters<ReturnType<typeof getAppContext>['setSession']>[0]) =>
-  getAppContext().setSession(session);
+export const setSession = (
+  session: Parameters<ReturnType<typeof getAppContext>['setSession']>[0],
+) => getAppContext().setSession(session);
 export const timezone = () => getAppContext().timezone();
 export const navigate = (path: string) => getAppContext().navigate(path);
 export const renderRoute = () => getAppContext().renderRoute();

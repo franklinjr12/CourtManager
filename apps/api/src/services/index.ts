@@ -25,7 +25,12 @@ import {
   recurrenceDates,
 } from '../domain.js';
 import { AppError } from '../errors.js';
-import { createToken, hashPassword, hashToken, verifyPassword } from '../security.js';
+import {
+  createToken,
+  hashPassword,
+  hashToken,
+  verifyPassword,
+} from '../security.js';
 
 type Input = Record<string, unknown>;
 const now = () => new Date().toISOString();
@@ -196,12 +201,17 @@ export class SportService {
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER']);
     const name = String(input.name ?? '').trim();
-    if (!name) throw new AppError('VALIDATION_ERROR', 'Sport name is required.');
+    if (!name)
+      throw new AppError('VALIDATION_ERROR', 'Sport name is required.');
     const existing = await this.repo.query<RecordItem>(
       `ORG#${ctx.organizationId}`,
       { beginsWith: 'SPORT#' },
     );
-    if (existing.some((sport) => String(sport.name).toLowerCase() === name.toLowerCase()))
+    if (
+      existing.some(
+        (sport) => String(sport.name).toLowerCase() === name.toLowerCase(),
+      )
+    )
       throw new AppError('DUPLICATE', 'A sport with this name already exists.');
     const sportId = id();
     const value = stored(
@@ -223,19 +233,32 @@ export class SportService {
   async update(ctx: AuthContext, sportId: string, input: Input) {
     assertRole(ctx, ['OWNER']);
     const current = await this.getRecord(ctx, sportId);
-    const name = input.name === undefined ? String(current.name) : String(input.name).trim();
-    if (!name) throw new AppError('VALIDATION_ERROR', 'Sport name is required.');
+    const name =
+      input.name === undefined
+        ? String(current.name)
+        : String(input.name).trim();
+    if (!name)
+      throw new AppError('VALIDATION_ERROR', 'Sport name is required.');
     const existing = await this.repo.query<RecordItem>(
       `ORG#${ctx.organizationId}`,
       { beginsWith: 'SPORT#' },
     );
-    if (existing.some((sport) => sport.sportId !== sportId && String(sport.name).toLowerCase() === name.toLowerCase()))
+    if (
+      existing.some(
+        (sport) =>
+          sport.sportId !== sportId &&
+          String(sport.name).toLowerCase() === name.toLowerCase(),
+      )
+    )
       throw new AppError('DUPLICATE', 'A sport with this name already exists.');
     const value = stored(
       {
         ...as(current),
         name,
-        active: input.active === undefined ? current.active === true : input.active === true,
+        active:
+          input.active === undefined
+            ? current.active === true
+            : input.active === true,
         updatedAt: now(),
       },
       current.PK,
@@ -630,9 +653,11 @@ export class ScheduleService {
     }
     if (batch.length || !batches.length) batches.push(batch);
     const last = batches[batches.length - 1] ?? [];
-    if (last.length + additionalWrites.length <= 100) last.push(...additionalWrites);
+    if (last.length + additionalWrites.length <= 100)
+      last.push(...additionalWrites);
     else batches.push([...additionalWrites]);
-    for (const writes of batches) if (writes.length) await this.repo.transactWrite(writes);
+    for (const writes of batches)
+      if (writes.length) await this.repo.transactWrite(writes);
     return result;
   }
   async move(
@@ -838,7 +863,12 @@ export class ReservationService {
           dayKeyInTimezone(String(x.startAt), timezone) === filters.date,
       )
       .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)))
-      .map((item) => ({ ...as<Reservation>(item), status: (item.status === 'CONFIRMED' ? 'BOOKED' : item.status) as Reservation['status'] }));
+      .map((item) => ({
+        ...as<Reservation>(item),
+        status: (item.status === 'CONFIRMED'
+          ? 'BOOKED'
+          : item.status) as Reservation['status'],
+      }));
     return Promise.all(
       result.map(async (reservation) => {
         const customer = await this.repo.get<RecordItem>(
@@ -954,7 +984,11 @@ export class ReservationService {
       String(input.endAt),
       'RESERVATION',
       reservationId,
-      [{ type: 'put', item: record }, { type: 'put', item: charge }, ...additionalWrites],
+      [
+        { type: 'put', item: record },
+        { type: 'put', item: charge },
+        ...additionalWrites,
+      ],
     );
     return as(record);
   }
@@ -996,17 +1030,35 @@ export class ReservationService {
         [{ type: 'put', item: value }],
       );
       if (input.expectedAmount !== undefined) {
-        const charge = await this.repo.get<RecordItem>(key('charge', `reservation-${reservationId}`));
+        const charge = await this.repo.get<RecordItem>(
+          key('charge', `reservation-${reservationId}`),
+        );
         if (charge && charge.status === 'ACTIVE')
-          await this.repo.put(stored({ ...as(charge), amount: input.expectedAmount }, charge.PK, charge.SK, 'charge'));
+          await this.repo.put(
+            stored(
+              { ...as(charge), amount: input.expectedAmount },
+              charge.PK,
+              charge.SK,
+              'charge',
+            ),
+          );
       }
       return as(value);
     }
     await this.repo.put(value);
     if (input.expectedAmount !== undefined) {
-      const charge = await this.repo.get<RecordItem>(key('charge', `reservation-${reservationId}`));
+      const charge = await this.repo.get<RecordItem>(
+        key('charge', `reservation-${reservationId}`),
+      );
       if (charge && charge.status === 'ACTIVE')
-        await this.repo.put(stored({ ...as(charge), amount: input.expectedAmount }, charge.PK, charge.SK, 'charge'));
+        await this.repo.put(
+          stored(
+            { ...as(charge), amount: input.expectedAmount },
+            charge.PK,
+            charge.SK,
+            'charge',
+          ),
+        );
     }
     return as(value);
   }
@@ -1028,10 +1080,18 @@ export class ReservationService {
         status,
         updatedBy: ctx.userId,
         updatedAt: timestamp,
-        ...(status === 'CHECKED_IN' ? { checkedInAt: timestamp, checkedInBy: ctx.userId } : {}),
-        ...(status === 'COMPLETED' ? { completedAt: timestamp, completedBy: ctx.userId } : {}),
-        ...(status === 'CANCELLED' ? { cancelledAt: timestamp, cancelledBy: ctx.userId } : {}),
-        ...(status === 'NO_SHOW' ? { noShowAt: timestamp, noShowBy: ctx.userId } : {}),
+        ...(status === 'CHECKED_IN'
+          ? { checkedInAt: timestamp, checkedInBy: ctx.userId }
+          : {}),
+        ...(status === 'COMPLETED'
+          ? { completedAt: timestamp, completedBy: ctx.userId }
+          : {}),
+        ...(status === 'CANCELLED'
+          ? { cancelledAt: timestamp, cancelledBy: ctx.userId }
+          : {}),
+        ...(status === 'NO_SHOW'
+          ? { noShowAt: timestamp, noShowBy: ctx.userId }
+          : {}),
       },
       current.PK,
       current.SK,
@@ -1053,13 +1113,25 @@ export class ReservationService {
         [
           { type: 'put', item: value },
           ...(status === 'CANCELLED'
-            ? [{
-                type: 'put' as const,
-                item: stored({
-                  ...(await this.repo.get<RecordItem>(key('charge', `reservation-${reservationId}`)) ?? {}),
-                  status: 'VOID', voidedAt: timestamp, voidedBy: ctx.userId, voidReason: 'Reservation cancelled',
-                }, `CHARGE#reservation-${reservationId}`, 'META', 'charge'),
-              }]
+            ? [
+                {
+                  type: 'put' as const,
+                  item: stored(
+                    {
+                      ...((await this.repo.get<RecordItem>(
+                        key('charge', `reservation-${reservationId}`),
+                      )) ?? {}),
+                      status: 'VOID',
+                      voidedAt: timestamp,
+                      voidedBy: ctx.userId,
+                      voidReason: 'Reservation cancelled',
+                    },
+                    `CHARGE#reservation-${reservationId}`,
+                    'META',
+                    'charge',
+                  ),
+                },
+              ]
             : []),
         ],
       );
@@ -1175,8 +1247,15 @@ export class ReservationService {
           seriesId,
         });
         records.push(
-          await this.repo.get<RecordItem>(key('reservation', reservationId)) ??
-            stored(record, `RESERVATION#${reservationId}`, 'META', 'reservation'),
+          (await this.repo.get<RecordItem>(
+            key('reservation', reservationId),
+          )) ??
+            stored(
+              record,
+              `RESERVATION#${reservationId}`,
+              'META',
+              'reservation',
+            ),
         );
       }
       await this.repo.put(series);
@@ -1191,7 +1270,12 @@ export class ReservationService {
             court.slotMinutes,
             'RESERVATION',
             String(record.reservationId),
-            [{ type: 'delete', key: key('reservation', String(record.reservationId)) }],
+            [
+              {
+                type: 'delete',
+                key: key('reservation', String(record.reservationId)),
+              },
+            ],
           );
         } catch {
           // Preserve the original failure; cleanup is best effort.
@@ -1411,90 +1495,298 @@ export class StaffService {
   constructor(private readonly repo: Repository) {}
   async list(ctx: AuthContext) {
     assertRole(ctx, ['OWNER']);
-    return (await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, { beginsWith: 'USER#' }))
-      .map((user) => { const value = as(user); delete value.passwordHash; return value; });
+    return (
+      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'USER#',
+      })
+    ).map((user) => {
+      const value = as(user);
+      delete value.passwordHash;
+      return value;
+    });
   }
   async coaches(ctx: AuthContext) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    return (await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, { beginsWith: 'USER#' }))
+    return (
+      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'USER#',
+      })
+    )
       .filter((user) => user.role === 'COACH' && user.active === true)
-      .map((user) => ({ userId: String(user.userId), name: String(user.name) }));
+      .map((user) => ({
+        userId: String(user.userId),
+        name: String(user.name),
+      }));
   }
   private async get(ctx: AuthContext, userId: string) {
-    const user = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'USER', userId));
+    const user = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'USER', userId),
+    );
     if (!user) throw new AppError('NOT_FOUND', 'Staff member was not found.');
     return user;
   }
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER']);
     const email = normalizeEmail(String(input.email));
-    const users = await this.repo.scan<RecordItem>((x) => x.entity === 'user' && x.organizationId === ctx.organizationId);
-    if (users.some((x) => normalizeEmail(String(x.email)) === email)) throw new AppError('CONFLICT', 'A staff member with this email already exists.');
-    const userId = id(), timestamp = now();
-    const value = stored({ userId, organizationId: ctx.organizationId, name: String(input.name).trim(), email, role: input.role, passwordHash: await hashPassword(String(input.password)), active: true, createdAt: timestamp, updatedAt: timestamp }, `ORG#${ctx.organizationId}`, `USER#${userId}`, 'user');
+    const users = await this.repo.scan<RecordItem>(
+      (x) => x.entity === 'user' && x.organizationId === ctx.organizationId,
+    );
+    if (users.some((x) => normalizeEmail(String(x.email)) === email))
+      throw new AppError(
+        'CONFLICT',
+        'A staff member with this email already exists.',
+      );
+    const userId = id(),
+      timestamp = now();
+    const value = stored(
+      {
+        userId,
+        organizationId: ctx.organizationId,
+        name: String(input.name).trim(),
+        email,
+        role: input.role,
+        passwordHash: await hashPassword(String(input.password)),
+        active: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      `ORG#${ctx.organizationId}`,
+      `USER#${userId}`,
+      'user',
+    );
     await this.repo.put(value);
-    const result = as(value); delete result.passwordHash; return result;
+    const result = as(value);
+    delete result.passwordHash;
+    return result;
   }
   async update(ctx: AuthContext, userId: string, input: Input) {
     assertRole(ctx, ['OWNER']);
     const current = await this.get(ctx, userId);
-    const email = input.email === undefined ? String(current.email) : normalizeEmail(String(input.email));
-    const users = await this.repo.scan<RecordItem>((x) => x.entity === 'user' && x.organizationId === ctx.organizationId);
-    if (current.role === 'OWNER' && current.active === true && input.active === false && users.filter((x) => x.role === 'OWNER' && x.active === true && x.userId !== userId).length === 0) throw new AppError('CONFLICT', 'The final active owner cannot be deactivated.');
-    if (users.some((x) => x.userId !== userId && normalizeEmail(String(x.email)) === email)) throw new AppError('CONFLICT', 'A staff member with this email already exists.');
-    if (current.role === 'OWNER' && current.active === true && input.role && input.role !== 'OWNER' && users.filter((x) => x.role === 'OWNER' && x.active === true && x.userId !== userId).length === 0) throw new AppError('CONFLICT', 'The final active owner cannot be demoted.');
-    const value = stored({ ...as(current), ...input, email, updatedAt: now() }, current.PK, current.SK, 'user');
-    await this.repo.put(value); const result = as(value); delete result.passwordHash; return result;
+    const email =
+      input.email === undefined
+        ? String(current.email)
+        : normalizeEmail(String(input.email));
+    const users = await this.repo.scan<RecordItem>(
+      (x) => x.entity === 'user' && x.organizationId === ctx.organizationId,
+    );
+    if (
+      current.role === 'OWNER' &&
+      current.active === true &&
+      input.active === false &&
+      users.filter(
+        (x) => x.role === 'OWNER' && x.active === true && x.userId !== userId,
+      ).length === 0
+    )
+      throw new AppError(
+        'CONFLICT',
+        'The final active owner cannot be deactivated.',
+      );
+    if (
+      users.some(
+        (x) => x.userId !== userId && normalizeEmail(String(x.email)) === email,
+      )
+    )
+      throw new AppError(
+        'CONFLICT',
+        'A staff member with this email already exists.',
+      );
+    if (
+      current.role === 'OWNER' &&
+      current.active === true &&
+      input.role &&
+      input.role !== 'OWNER' &&
+      users.filter(
+        (x) => x.role === 'OWNER' && x.active === true && x.userId !== userId,
+      ).length === 0
+    )
+      throw new AppError(
+        'CONFLICT',
+        'The final active owner cannot be demoted.',
+      );
+    const value = stored(
+      { ...as(current), ...input, email, updatedAt: now() },
+      current.PK,
+      current.SK,
+      'user',
+    );
+    await this.repo.put(value);
+    const result = as(value);
+    delete result.passwordHash;
+    return result;
   }
   async resetPassword(ctx: AuthContext, userId: string, password: string) {
     assertRole(ctx, ['OWNER']);
     const current = await this.get(ctx, userId);
-    const value = stored({ ...as(current), passwordHash: await hashPassword(password), updatedAt: now() }, current.PK, current.SK, 'user');
-    await this.repo.put(value); return { reset: true };
+    const value = stored(
+      {
+        ...as(current),
+        passwordHash: await hashPassword(password),
+        updatedAt: now(),
+      },
+      current.PK,
+      current.SK,
+      'user',
+    );
+    await this.repo.put(value);
+    return { reset: true };
   }
   async deactivate(ctx: AuthContext, userId: string) {
     assertRole(ctx, ['OWNER']);
-    const users = await this.repo.scan<RecordItem>((x) => x.entity === 'user' && x.organizationId === ctx.organizationId);
+    const users = await this.repo.scan<RecordItem>(
+      (x) => x.entity === 'user' && x.organizationId === ctx.organizationId,
+    );
     const current = await this.get(ctx, userId);
-    if (current.role === 'OWNER' && current.active === true && users.filter((x) => x.role === 'OWNER' && x.active === true).length <= 1) throw new AppError('CONFLICT', 'The final active owner cannot be deactivated.');
+    if (
+      current.role === 'OWNER' &&
+      current.active === true &&
+      users.filter((x) => x.role === 'OWNER' && x.active === true).length <= 1
+    )
+      throw new AppError(
+        'CONFLICT',
+        'The final active owner cannot be deactivated.',
+      );
     return this.update(ctx, userId, { active: false });
   }
-  async activate(ctx: AuthContext, userId: string) { return this.update(ctx, userId, { active: true }); }
+  async activate(ctx: AuthContext, userId: string) {
+    return this.update(ctx, userId, { active: true });
+  }
 }
 
 export class ChargeService {
   constructor(private readonly repo: Repository) {}
   async list(ctx: AuthContext, filters: Input = {}) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const from = filters.from ? String(filters.from) : undefined, to = filters.to ? String(filters.to) : undefined;
+    const from = filters.from ? String(filters.from) : undefined,
+      to = filters.to ? String(filters.to) : undefined;
     const payments = withOrg(ctx, 'payment', await this.repo.scan());
-    return withOrg(ctx, 'charge', await this.repo.scan()).filter((charge) =>
-      (!filters.customerId || charge.customerId === filters.customerId) &&
-      (!filters.sourceType || charge.sourceType === filters.sourceType) &&
-      (!from || String(charge.serviceAt).slice(0, 10) >= from) &&
-      (!to || String(charge.serviceAt).slice(0, 10) <= to) &&
-      (String(filters.outstandingOnly) !== 'true' || this.paidFor(charge, payments) < Number(charge.amount)),
-    ).map((charge) => ({ ...as<Record<string, unknown>>(charge), paidAmount: this.paidFor(charge, payments), outstanding: Math.max(0, Number(charge.amount) - this.paidFor(charge, payments)), paymentStatus: paymentStatus(Number(charge.amount), this.paidFor(charge, payments)) }));
+    return withOrg(ctx, 'charge', await this.repo.scan())
+      .filter(
+        (charge) =>
+          (!filters.customerId || charge.customerId === filters.customerId) &&
+          (!filters.sourceType || charge.sourceType === filters.sourceType) &&
+          (!from || String(charge.serviceAt).slice(0, 10) >= from) &&
+          (!to || String(charge.serviceAt).slice(0, 10) <= to) &&
+          (String(filters.outstandingOnly) !== 'true' ||
+            this.paidFor(charge, payments) < Number(charge.amount)),
+      )
+      .map((charge) => ({
+        ...as<Record<string, unknown>>(charge),
+        paidAmount: this.paidFor(charge, payments),
+        outstanding: Math.max(
+          0,
+          Number(charge.amount) - this.paidFor(charge, payments),
+        ),
+        paymentStatus: paymentStatus(
+          Number(charge.amount),
+          this.paidFor(charge, payments),
+        ),
+      }));
   }
   private paidFor(charge: RecordItem, payments: RecordItem[]) {
-    return payments.filter((payment) => payment.chargeId === charge.chargeId || (!payment.chargeId && ((charge.reservationId && payment.reservationId === charge.reservationId) || (charge.classId && payment.classId === charge.classId)))).reduce((sum, payment) => sum + Number(payment.amount), 0);
+    return payments
+      .filter(
+        (payment) =>
+          payment.chargeId === charge.chargeId ||
+          (!payment.chargeId &&
+            ((charge.reservationId &&
+              payment.reservationId === charge.reservationId) ||
+              (charge.classId && payment.classId === charge.classId))),
+      )
+      .reduce((sum, payment) => sum + Number(payment.amount), 0);
   }
   async get(ctx: AuthContext, chargeId: string) {
     const charge = await this.repo.get<RecordItem>(key('charge', chargeId));
-    if (!charge || charge.organizationId !== ctx.organizationId) throw new AppError('NOT_FOUND', 'Charge was not found.');
+    if (!charge || charge.organizationId !== ctx.organizationId)
+      throw new AppError('NOT_FOUND', 'Charge was not found.');
     const payments = withOrg(ctx, 'payment', await this.repo.scan());
-    return { ...as<Record<string, unknown>>(charge), paidAmount: this.paidFor(charge, payments), outstanding: Math.max(0, Number(charge.amount) - this.paidFor(charge, payments)), paymentStatus: paymentStatus(Number(charge.amount), this.paidFor(charge, payments)) };
+    return {
+      ...as<Record<string, unknown>>(charge),
+      paidAmount: this.paidFor(charge, payments),
+      outstanding: Math.max(
+        0,
+        Number(charge.amount) - this.paidFor(charge, payments),
+      ),
+      paymentStatus: paymentStatus(
+        Number(charge.amount),
+        this.paidFor(charge, payments),
+      ),
+    };
   }
   async summary(ctx: AuthContext, filters: Input = {}) {
-    const charges = (await this.list(ctx, filters)) as Array<Record<string, unknown> & { paidAmount: number; outstanding: number; paymentStatus: string }>, expenses = withOrg(ctx, 'expense', await this.repo.scan());
-    const payments = withOrg(ctx, 'payment', await this.repo.scan()).filter((p) => !filters.from || String(p.paidAt).slice(0, 10) >= String(filters.from)).filter((p) => !filters.to || String(p.paidAt).slice(0, 10) <= String(filters.to));
-    return { expectedRevenue: charges.filter((x) => x.status === 'ACTIVE').reduce((n, x) => n + Number(x.amount), 0), recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0), outstanding: charges.filter((x) => x.status === 'ACTIVE').reduce((n, x) => n + Number(x.outstanding), 0), expenses: expenses.filter((x) => (!filters.from || String(x.date) >= String(filters.from)) && (!filters.to || String(x.date) <= String(filters.to))).reduce((n, x) => n + Number(x.amount), 0) };
+    const charges = (await this.list(ctx, filters)) as Array<
+        Record<string, unknown> & {
+          paidAmount: number;
+          outstanding: number;
+          paymentStatus: string;
+        }
+      >,
+      expenses = withOrg(ctx, 'expense', await this.repo.scan());
+    const payments = withOrg(ctx, 'payment', await this.repo.scan())
+      .filter(
+        (p) =>
+          !filters.from ||
+          String(p.paidAt).slice(0, 10) >= String(filters.from),
+      )
+      .filter(
+        (p) =>
+          !filters.to || String(p.paidAt).slice(0, 10) <= String(filters.to),
+      );
+    return {
+      expectedRevenue: charges
+        .filter((x) => x.status === 'ACTIVE')
+        .reduce((n, x) => n + Number(x.amount), 0),
+      recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0),
+      outstanding: charges
+        .filter((x) => x.status === 'ACTIVE')
+        .reduce((n, x) => n + Number(x.outstanding), 0),
+      expenses: expenses
+        .filter(
+          (x) =>
+            (!filters.from || String(x.date) >= String(filters.from)) &&
+            (!filters.to || String(x.date) <= String(filters.to)),
+        )
+        .reduce((n, x) => n + Number(x.amount), 0),
+    };
   }
   async balances(ctx: AuthContext) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const charges = (await this.list(ctx)) as Array<Record<string, unknown> & { paidAmount: number; outstanding: number; paymentStatus: string }>, customers = new Map(withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [String(x.customerId), x]));
-    const result = new Map<string, { customerId: string; customerName: string; charges: number; payments: number; outstanding: number }>();
-    for (const charge of charges.filter((x) => x.status === 'ACTIVE')) { const customerId = String(charge.customerId), row = result.get(customerId) ?? { customerId, customerName: String(customers.get(customerId)?.name ?? ''), charges: 0, payments: 0, outstanding: 0 }; row.charges += Number(charge.amount); row.payments += Number(charge.paidAmount); row.outstanding += Number(charge.outstanding); result.set(customerId, row); }
+    const charges = (await this.list(ctx)) as Array<
+        Record<string, unknown> & {
+          paidAmount: number;
+          outstanding: number;
+          paymentStatus: string;
+        }
+      >,
+      customers = new Map(
+        withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [
+          String(x.customerId),
+          x,
+        ]),
+      );
+    const result = new Map<
+      string,
+      {
+        customerId: string;
+        customerName: string;
+        charges: number;
+        payments: number;
+        outstanding: number;
+      }
+    >();
+    for (const charge of charges.filter((x) => x.status === 'ACTIVE')) {
+      const customerId = String(charge.customerId),
+        row = result.get(customerId) ?? {
+          customerId,
+          customerName: String(customers.get(customerId)?.name ?? ''),
+          charges: 0,
+          payments: 0,
+          outstanding: 0,
+        };
+      row.charges += Number(charge.amount);
+      row.payments += Number(charge.paidAmount);
+      row.outstanding += Number(charge.outstanding);
+      result.set(customerId, row);
+    }
     return [...result.values()].sort((a, b) => b.outstanding - a.outstanding);
   }
 }
@@ -1510,10 +1802,21 @@ export class PaymentService {
     let classId = input.classId ? String(input.classId) : undefined;
     if (chargeId) {
       const charge = await this.repo.get<RecordItem>(key('charge', chargeId));
-      if (!charge || charge.organizationId !== ctx.organizationId || charge.status !== 'ACTIVE') throw new AppError('NOT_FOUND', 'Active charge was not found.');
+      if (
+        !charge ||
+        charge.organizationId !== ctx.organizationId ||
+        charge.status !== 'ACTIVE'
+      )
+        throw new AppError('NOT_FOUND', 'Active charge was not found.');
       reservationId = charge.reservationId as string | undefined;
       classId = charge.classId as string | undefined;
-      input = { ...input, customerId: charge.customerId, reservationId, classId, chargeId };
+      input = {
+        ...input,
+        customerId: charge.customerId,
+        reservationId,
+        classId,
+        chargeId,
+      };
     }
     if ((reservationId ? 1 : 0) + (classId ? 1 : 0) !== 1)
       throw new AppError(
@@ -1597,7 +1900,8 @@ export class ExpenseService {
     const expense = await this.repo.get<RecordItem>(key('expense', expenseId));
     if (!expense || expense.organizationId !== ctx.organizationId)
       throw new AppError('NOT_FOUND', 'Expense was not found.');
-    if (ctx.role !== 'OWNER') throw new AppError('FORBIDDEN', 'Only owners can correct expenses.');
+    if (ctx.role !== 'OWNER')
+      throw new AppError('FORBIDDEN', 'Only owners can correct expenses.');
     await this.repo.delete(key('expense', expenseId));
   }
 }
@@ -1624,7 +1928,7 @@ export class BlockService {
     const blockId = id();
     const value = stored(
       {
-          ...input,
+        ...input,
         blockId,
         organizationId: ctx.organizationId,
         active: true,
@@ -1701,9 +2005,10 @@ export class ClassService {
   async list(ctx: AuthContext) {
     assertRole(ctx, ['OWNER', 'STAFF', 'COACH']);
     const values = withOrg(ctx, 'class', await this.repo.scan());
-    return (ctx.role === 'COACH'
-      ? values.filter((x) => x.coachId === ctx.userId)
-      : values
+    return (
+      ctx.role === 'COACH'
+        ? values.filter((x) => x.coachId === ctx.userId)
+        : values
     ).map(as);
   }
   async occurrences(ctx: AuthContext, date: string) {
@@ -1715,19 +2020,36 @@ export class ClassService {
     for (const value of values) {
       const cls = await this.getClass(ctx, String(value.classId));
       if (ctx.role === 'COACH' && cls.coachId !== ctx.userId) continue;
-      const enrollments = withOrg(ctx, 'enrollment', (await this.repo.scan()).filter(
-        (x) => x.classId === value.classId && x.status === 'ACTIVE',
-      ));
-      const attendance = withOrg(ctx, 'attendance', (await this.repo.scan()).filter(
-        (x) => x.sessionId === value.sessionId,
-      ));
-      result.push({ ...as(value), name: cls.name, sport: cls.sport, occupancyType: 'CLASS', enrolled: enrollments.length, checkedIn: attendance.filter((x) => ['CHECKED_IN', 'COMPLETED'].includes(String(x.status))).length });
+      const enrollments = withOrg(
+        ctx,
+        'enrollment',
+        (await this.repo.scan()).filter(
+          (x) => x.classId === value.classId && x.status === 'ACTIVE',
+        ),
+      );
+      const attendance = withOrg(
+        ctx,
+        'attendance',
+        (await this.repo.scan()).filter((x) => x.sessionId === value.sessionId),
+      );
+      result.push({
+        ...as(value),
+        name: cls.name,
+        sport: cls.sport,
+        occupancyType: 'CLASS',
+        enrolled: enrollments.length,
+        checkedIn: attendance.filter((x) =>
+          ['CHECKED_IN', 'COMPLETED'].includes(String(x.status)),
+        ).length,
+      });
     }
     return result;
   }
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const coach = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'USER', String(input.coachId)));
+    const coach = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'USER', String(input.coachId)),
+    );
     if (!coach || coach.active !== true || coach.role !== 'COACH')
       throw new AppError('NOT_FOUND', 'Active coach was not found.');
     const court = (await this.courts.get(ctx, String(input.courtId))) as Court;
@@ -1739,32 +2061,114 @@ export class ClassService {
     const scheduleType = String(input.scheduleType ?? 'WEEKLY');
     const first = String(input.startDate);
     const until = String(input.endDate ?? first);
-    const weekday = Number(input.weekday ?? new Date(`${first}T12:00:00Z`).getUTCDay());
-    const dates = scheduleType === 'SINGLE' ? [first] : recurrenceDates(first, until, weekday, Number(input.intervalWeeks ?? 1));
+    const weekday = Number(
+      input.weekday ?? new Date(`${first}T12:00:00Z`).getUTCDay(),
+    );
+    const dates =
+      scheduleType === 'SINGLE'
+        ? [first]
+        : recurrenceDates(
+            first,
+            until,
+            weekday,
+            Number(input.intervalWeeks ?? 1),
+          );
     const timezone = await organizationTimezone(this.repo, ctx.organizationId);
     const timestamp = now();
-    const value = stored({ ...input, classId, organizationId: ctx.organizationId, type, capacity, scheduleType, weekday, intervalWeeks: Number(input.intervalWeeks ?? 1), pricePerParticipant: Number(input.pricePerParticipant ?? input.price ?? 0), active: true, createdAt: timestamp, updatedAt: timestamp }, `CLASS#${classId}`, 'META', 'class');
-    const occupancies: { startAt: string; endAt: string; occupancyType: 'CLASS'; occupancyId: string }[] = [];
+    const value = stored(
+      {
+        ...input,
+        classId,
+        organizationId: ctx.organizationId,
+        type,
+        capacity,
+        scheduleType,
+        weekday,
+        intervalWeeks: Number(input.intervalWeeks ?? 1),
+        pricePerParticipant: Number(
+          input.pricePerParticipant ?? input.price ?? 0,
+        ),
+        active: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      `CLASS#${classId}`,
+      'META',
+      'class',
+    );
+    const occupancies: {
+      startAt: string;
+      endAt: string;
+      occupancyType: 'CLASS';
+      occupancyId: string;
+    }[] = [];
     const sessionWrites: Write[] = [];
     for (const date of dates) {
-      const startAt = zonedDateTimeToIso(date, String(input.startTime), timezone);
-      const endAt = addLocalMinutes(date, String(input.startTime), Number(input.durationMinutes), timezone);
+      const startAt = zonedDateTimeToIso(
+        date,
+        String(input.startTime),
+        timezone,
+      );
+      const endAt = addLocalMinutes(
+        date,
+        String(input.startTime),
+        Number(input.durationMinutes),
+        timezone,
+      );
       const sessionId = `${classId}-${date}`;
-      const session = stored({ sessionId, organizationId: ctx.organizationId, classId, courtId: input.courtId, coachId: input.coachId, startAt, endAt, status: 'SCHEDULED', capacity, createdAt: timestamp, updatedAt: timestamp }, `CLASS_SESSION#${sessionId}`, 'META', 'classSession');
-      sessionWrites.push({ type: 'put', item: session, condition: 'attribute_not_exists(PK)' });
-      occupancies.push({ startAt, endAt, occupancyType: 'CLASS', occupancyId: sessionId });
+      const session = stored(
+        {
+          sessionId,
+          organizationId: ctx.organizationId,
+          classId,
+          courtId: input.courtId,
+          coachId: input.coachId,
+          startAt,
+          endAt,
+          status: 'SCHEDULED',
+          capacity,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        `CLASS_SESSION#${sessionId}`,
+        'META',
+        'classSession',
+      );
+      sessionWrites.push({
+        type: 'put',
+        item: session,
+        condition: 'attribute_not_exists(PK)',
+      });
+      occupancies.push({
+        startAt,
+        endAt,
+        occupancyType: 'CLASS',
+        occupancyId: sessionId,
+      });
     }
     try {
-      await this.schedule.occupyMany(ctx, court, occupancies, [{ type: 'put', item: value }, ...sessionWrites]);
+      await this.schedule.occupyMany(ctx, court, occupancies, [
+        { type: 'put', item: value },
+        ...sessionWrites,
+      ]);
     } catch (error) {
-      for (const session of sessionWrites) if (session.type === 'put') {
-        try {
-          await this.schedule.release(ctx, String(session.item.courtId), String(session.item.startAt), String(session.item.endAt), court.slotMinutes, 'CLASS', String(session.item.sessionId));
-        } catch {
-          // Cleanup is best effort; retain the original schedule conflict.
+      for (const session of sessionWrites)
+        if (session.type === 'put') {
+          try {
+            await this.schedule.release(
+              ctx,
+              String(session.item.courtId),
+              String(session.item.startAt),
+              String(session.item.endAt),
+              court.slotMinutes,
+              'CLASS',
+              String(session.item.sessionId),
+            );
+          } catch {
+            // Cleanup is best effort; retain the original schedule conflict.
+          }
+          await this.repo.delete(session.item);
         }
-        await this.repo.delete(session.item);
-      }
       await this.repo.delete(value);
       throw error;
     }
@@ -1773,177 +2177,861 @@ export class ClassService {
   async getDetail(ctx: AuthContext, classId: string) {
     const cls = await this.getClass(ctx, classId);
     await this.authorizeClass(ctx, cls);
-    const sessions = (await this.sessions(ctx, classId)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
-    const enrollments = withOrg(ctx, 'enrollment', (await this.repo.scan()).filter((x) => x.classId === classId));
-    return { ...as(cls), enrollments: enrollments.map(as), sessions: sessions.map(as) };
+    const sessions = (await this.sessions(ctx, classId)).sort((a, b) =>
+      String(a.startAt).localeCompare(String(b.startAt)),
+    );
+    const enrollments = withOrg(
+      ctx,
+      'enrollment',
+      (await this.repo.scan()).filter((x) => x.classId === classId),
+    );
+    return {
+      ...as(cls),
+      enrollments: enrollments.map(as),
+      sessions: sessions.map(as),
+    };
   }
   async enrollments(ctx: AuthContext, classId: string) {
     const cls = await this.getClass(ctx, classId);
     await this.authorizeClass(ctx, cls);
-    return withOrg(ctx, 'enrollment', (await this.repo.scan()).filter((x) => x.classId === classId)).map(as);
+    return withOrg(
+      ctx,
+      'enrollment',
+      (await this.repo.scan()).filter((x) => x.classId === classId),
+    ).map(as);
   }
   async enroll(ctx: AuthContext, classId: string, customerId: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const cls = await this.getClass(ctx, classId);
-    if (cls.active !== true) throw new AppError('INVALID_STATE', 'Class is inactive.');
-    const customer = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'CUSTOMER', customerId));
-    if (!customer || customer.archived) throw new AppError('NOT_FOUND', 'Customer was not found.');
-    const existing = withOrg(ctx, 'enrollment', (await this.repo.scan()).filter((x) => x.classId === classId));
-    if (existing.some((x) => x.customerId === customerId && x.status === 'ACTIVE')) throw new AppError('CONFLICT', 'Customer is already enrolled in this class.');
-    if (existing.filter((x) => x.status === 'ACTIVE').length >= Number(cls.capacity)) throw new AppError('CONFLICT', 'Class capacity has been reached.');
+    if (cls.active !== true)
+      throw new AppError('INVALID_STATE', 'Class is inactive.');
+    const customer = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'CUSTOMER', customerId),
+    );
+    if (!customer || customer.archived)
+      throw new AppError('NOT_FOUND', 'Customer was not found.');
+    const existing = withOrg(
+      ctx,
+      'enrollment',
+      (await this.repo.scan()).filter((x) => x.classId === classId),
+    );
+    if (
+      existing.some((x) => x.customerId === customerId && x.status === 'ACTIVE')
+    )
+      throw new AppError(
+        'CONFLICT',
+        'Customer is already enrolled in this class.',
+      );
+    if (
+      existing.filter((x) => x.status === 'ACTIVE').length >=
+      Number(cls.capacity)
+    )
+      throw new AppError('CONFLICT', 'Class capacity has been reached.');
     const enrollmentId = id();
-    const value = stored({ enrollmentId, organizationId: ctx.organizationId, classId, customerId, status: 'ACTIVE', joinedAt: now() }, `ENROLLMENT#${enrollmentId}`, 'META', 'enrollment');
+    const value = stored(
+      {
+        enrollmentId,
+        organizationId: ctx.organizationId,
+        classId,
+        customerId,
+        status: 'ACTIVE',
+        joinedAt: now(),
+      },
+      `ENROLLMENT#${enrollmentId}`,
+      'META',
+      'enrollment',
+    );
     await this.repo.put(value);
     const price = Number(cls.pricePerParticipant ?? cls.price ?? 0);
-    if (price > 0) for (const session of await this.sessions(ctx, classId)) if (Date.parse(String(session.startAt)) >= Date.now()) {
-      const chargeId = `class-${session.sessionId}-${customerId}`;
-      await this.repo.put(stored({ chargeId, organizationId: ctx.organizationId, customerId, sourceType: 'CLASS', sourceId: String(session.sessionId), classId, classSessionId: session.sessionId, description: String(cls.name), amount: price, serviceAt: session.startAt, status: 'ACTIVE', createdBy: ctx.userId, createdAt: now() }, `CHARGE#${chargeId}`, 'META', 'charge'), 'attribute_not_exists(PK)').catch((error) => { if (!(error instanceof AppError) || error.code !== 'CONFLICT') throw error; });
-    }
+    if (price > 0)
+      for (const session of await this.sessions(ctx, classId))
+        if (Date.parse(String(session.startAt)) >= Date.now()) {
+          const chargeId = `class-${session.sessionId}-${customerId}`;
+          await this.repo
+            .put(
+              stored(
+                {
+                  chargeId,
+                  organizationId: ctx.organizationId,
+                  customerId,
+                  sourceType: 'CLASS',
+                  sourceId: String(session.sessionId),
+                  classId,
+                  classSessionId: session.sessionId,
+                  description: String(cls.name),
+                  amount: price,
+                  serviceAt: session.startAt,
+                  status: 'ACTIVE',
+                  createdBy: ctx.userId,
+                  createdAt: now(),
+                },
+                `CHARGE#${chargeId}`,
+                'META',
+                'charge',
+              ),
+              'attribute_not_exists(PK)',
+            )
+            .catch((error) => {
+              if (!(error instanceof AppError) || error.code !== 'CONFLICT')
+                throw error;
+            });
+        }
     return as(value);
   }
-  async cancelEnrollment(ctx: AuthContext, classId: string, enrollmentId: string) {
+  async cancelEnrollment(
+    ctx: AuthContext,
+    classId: string,
+    enrollmentId: string,
+  ) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const cls = await this.getClass(ctx, classId);
-    const enrollment = await this.repo.get<RecordItem>(key('enrollment', enrollmentId));
-    if (!enrollment || enrollment.organizationId !== ctx.organizationId || enrollment.classId !== classId) throw new AppError('NOT_FOUND', 'Enrollment was not found.');
+    const enrollment = await this.repo.get<RecordItem>(
+      key('enrollment', enrollmentId),
+    );
+    if (
+      !enrollment ||
+      enrollment.organizationId !== ctx.organizationId ||
+      enrollment.classId !== classId
+    )
+      throw new AppError('NOT_FOUND', 'Enrollment was not found.');
     const timestamp = now();
-    const value = stored({ ...as(enrollment), status: 'CANCELLED', leftAt: timestamp, cancelledAt: timestamp }, enrollment.PK, enrollment.SK, 'enrollment');
+    const value = stored(
+      {
+        ...as(enrollment),
+        status: 'CANCELLED',
+        leftAt: timestamp,
+        cancelledAt: timestamp,
+      },
+      enrollment.PK,
+      enrollment.SK,
+      'enrollment',
+    );
     await this.repo.put(value);
-    for (const charge of withOrg(ctx, 'charge', await this.repo.scan()).filter((x) => x.classId === classId && x.customerId === enrollment.customerId && x.status === 'ACTIVE' && Date.parse(String(x.serviceAt)) >= Date.now())) await this.repo.put(stored({ ...as(charge), status: 'VOID', voidedAt: timestamp, voidedBy: ctx.userId, voidReason: 'Enrollment cancelled' }, charge.PK, charge.SK, 'charge'));
+    for (const charge of withOrg(ctx, 'charge', await this.repo.scan()).filter(
+      (x) =>
+        x.classId === classId &&
+        x.customerId === enrollment.customerId &&
+        x.status === 'ACTIVE' &&
+        Date.parse(String(x.serviceAt)) >= Date.now(),
+    ))
+      await this.repo.put(
+        stored(
+          {
+            ...as(charge),
+            status: 'VOID',
+            voidedAt: timestamp,
+            voidedBy: ctx.userId,
+            voidReason: 'Enrollment cancelled',
+          },
+          charge.PK,
+          charge.SK,
+          'charge',
+        ),
+      );
     void cls;
     return as(value);
   }
   private async getSession(ctx: AuthContext, sessionId: string) {
-    const session = await this.repo.get<RecordItem>({ PK: `CLASS_SESSION#${sessionId}`, SK: 'META' });
-    if (!session || session.organizationId !== ctx.organizationId) throw new AppError('NOT_FOUND', 'Class session was not found.');
+    const session = await this.repo.get<RecordItem>({
+      PK: `CLASS_SESSION#${sessionId}`,
+      SK: 'META',
+    });
+    if (!session || session.organizationId !== ctx.organizationId)
+      throw new AppError('NOT_FOUND', 'Class session was not found.');
     const cls = await this.getClass(ctx, String(session.classId));
     await this.authorizeClass(ctx, cls);
     return { session, cls };
   }
   async roster(ctx: AuthContext, sessionId: string) {
     const { session, cls } = await this.getSession(ctx, sessionId);
-    const enrollments = withOrg(ctx, 'enrollment', (await this.repo.scan()).filter((x) => x.classId === session.classId && x.status === 'ACTIVE'));
-    const attendance = withOrg(ctx, 'attendance', (await this.repo.scan()).filter((x) => x.sessionId === sessionId));
-    const customers = new Map((await this.repo.scan<RecordItem>()).filter((x) => x.entity === 'customer' && x.organizationId === ctx.organizationId).map((x) => [String(x.customerId), x]));
-    const coach = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'USER', String(session.coachId)));
-    const court = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'COURT', String(session.courtId)));
-    return { session: as(session), class: as(cls), coach: coach ? { userId: coach.userId, name: coach.name } : undefined, court: court ? { courtId: court.courtId, name: court.name } : undefined, enrollmentCount: enrollments.length, participants: enrollments.map((enrollment) => ({ customerId: enrollment.customerId, name: customers.get(String(enrollment.customerId))?.name, enrollmentId: enrollment.enrollmentId, status: attendance.find((x) => x.customerId === enrollment.customerId)?.status ?? 'BOOKED', attendanceId: attendance.find((x) => x.customerId === enrollment.customerId)?.attendanceId })) };
+    const enrollments = withOrg(
+      ctx,
+      'enrollment',
+      (await this.repo.scan()).filter(
+        (x) => x.classId === session.classId && x.status === 'ACTIVE',
+      ),
+    );
+    const attendance = withOrg(
+      ctx,
+      'attendance',
+      (await this.repo.scan()).filter((x) => x.sessionId === sessionId),
+    );
+    const customers = new Map(
+      (await this.repo.scan<RecordItem>())
+        .filter(
+          (x) =>
+            x.entity === 'customer' && x.organizationId === ctx.organizationId,
+        )
+        .map((x) => [String(x.customerId), x]),
+    );
+    const coach = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'USER', String(session.coachId)),
+    );
+    const court = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'COURT', String(session.courtId)),
+    );
+    return {
+      session: as(session),
+      class: as(cls),
+      coach: coach ? { userId: coach.userId, name: coach.name } : undefined,
+      court: court ? { courtId: court.courtId, name: court.name } : undefined,
+      enrollmentCount: enrollments.length,
+      participants: enrollments.map((enrollment) => ({
+        customerId: enrollment.customerId,
+        name: customers.get(String(enrollment.customerId))?.name,
+        enrollmentId: enrollment.enrollmentId,
+        status:
+          attendance.find((x) => x.customerId === enrollment.customerId)
+            ?.status ?? 'BOOKED',
+        attendanceId: attendance.find(
+          (x) => x.customerId === enrollment.customerId,
+        )?.attendanceId,
+      })),
+    };
   }
-  async participantTransition(ctx: AuthContext, sessionId: string, customerId: string, status: 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW') {
+  async participantTransition(
+    ctx: AuthContext,
+    sessionId: string,
+    customerId: string,
+    status: 'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW',
+  ) {
     assertRole(ctx, ['OWNER', 'STAFF', 'COACH']);
     const { session } = await this.getSession(ctx, sessionId);
-    if (session.status === 'CANCELLED') throw new AppError('INVALID_STATE', 'Cancelled sessions have no attendance lifecycle.');
+    if (session.status === 'CANCELLED')
+      throw new AppError(
+        'INVALID_STATE',
+        'Cancelled sessions have no attendance lifecycle.',
+      );
     const roster = await this.roster(ctx, sessionId);
-    const participant = roster.participants.find((x) => x.customerId === customerId);
-    if (!participant) throw new AppError('NOT_FOUND', 'Customer is not enrolled in this class.');
+    const participant = roster.participants.find(
+      (x) => x.customerId === customerId,
+    );
+    if (!participant)
+      throw new AppError(
+        'NOT_FOUND',
+        'Customer is not enrolled in this class.',
+      );
     const from = String(participant.status);
-    if (!((from === 'BOOKED' && ['CHECKED_IN', 'NO_SHOW'].includes(status)) || (from === 'CHECKED_IN' && status === 'COMPLETED'))) throw new AppError('INVALID_STATE', `Cannot change attendance from ${from} to ${status}.`);
+    if (!(
+      (from === 'BOOKED' && ['CHECKED_IN', 'NO_SHOW'].includes(status)) ||
+      (from === 'CHECKED_IN' && status === 'COMPLETED')
+    ))
+      throw new AppError(
+        'INVALID_STATE',
+        `Cannot change attendance from ${from} to ${status}.`,
+      );
     const timestamp = now();
-    const attendanceId = String(participant.attendanceId ?? `${sessionId}-${customerId}`);
-    const current = attendanceId.includes('-') ? await this.repo.get<RecordItem>(key('attendance', attendanceId)) : undefined;
-    const value = stored({ ...(current ? as(current) : {}), attendanceId, organizationId: ctx.organizationId, classId: session.classId, sessionId, customerId, status, recordedBy: ctx.userId, createdAt: current?.createdAt ?? timestamp, ...(status === 'CHECKED_IN' ? { checkedInAt: timestamp, checkedInBy: ctx.userId } : {}), ...(status === 'COMPLETED' ? { completedAt: timestamp, completedBy: ctx.userId } : {}), ...(status === 'NO_SHOW' ? { noShowAt: timestamp, noShowBy: ctx.userId } : {}) }, `ATTENDANCE#${attendanceId}`, 'META', 'attendance');
+    const attendanceId = String(
+      participant.attendanceId ?? `${sessionId}-${customerId}`,
+    );
+    const current = attendanceId.includes('-')
+      ? await this.repo.get<RecordItem>(key('attendance', attendanceId))
+      : undefined;
+    const value = stored(
+      {
+        ...(current ? as(current) : {}),
+        attendanceId,
+        organizationId: ctx.organizationId,
+        classId: session.classId,
+        sessionId,
+        customerId,
+        status,
+        recordedBy: ctx.userId,
+        createdAt: current?.createdAt ?? timestamp,
+        ...(status === 'CHECKED_IN'
+          ? { checkedInAt: timestamp, checkedInBy: ctx.userId }
+          : {}),
+        ...(status === 'COMPLETED'
+          ? { completedAt: timestamp, completedBy: ctx.userId }
+          : {}),
+        ...(status === 'NO_SHOW'
+          ? { noShowAt: timestamp, noShowBy: ctx.userId }
+          : {}),
+      },
+      `ATTENDANCE#${attendanceId}`,
+      'META',
+      'attendance',
+    );
     await this.repo.put(value);
     return as(value);
   }
   async completeSession(ctx: AuthContext, sessionId: string) {
     assertRole(ctx, ['OWNER', 'STAFF', 'COACH']);
     const { session } = await this.getSession(ctx, sessionId);
-    if (session.status !== 'SCHEDULED') throw new AppError('INVALID_STATE', 'Session is not scheduled.');
+    if (session.status !== 'SCHEDULED')
+      throw new AppError('INVALID_STATE', 'Session is not scheduled.');
     const roster = await this.roster(ctx, sessionId);
-    for (const participant of roster.participants) if (participant.status === 'CHECKED_IN') await this.participantTransition(ctx, sessionId, String(participant.customerId), 'COMPLETED'); else if (participant.status === 'BOOKED') await this.participantTransition(ctx, sessionId, String(participant.customerId), 'NO_SHOW');
+    for (const participant of roster.participants)
+      if (participant.status === 'CHECKED_IN')
+        await this.participantTransition(
+          ctx,
+          sessionId,
+          String(participant.customerId),
+          'COMPLETED',
+        );
+      else if (participant.status === 'BOOKED')
+        await this.participantTransition(
+          ctx,
+          sessionId,
+          String(participant.customerId),
+          'NO_SHOW',
+        );
     const timestamp = now();
-    const value = stored({ ...as(session), status: 'COMPLETED', completedAt: timestamp, completedBy: ctx.userId, updatedAt: timestamp }, session.PK, session.SK, 'classSession');
+    const value = stored(
+      {
+        ...as(session),
+        status: 'COMPLETED',
+        completedAt: timestamp,
+        completedBy: ctx.userId,
+        updatedAt: timestamp,
+      },
+      session.PK,
+      session.SK,
+      'classSession',
+    );
     await this.repo.put(value);
     return as(value);
   }
   async cancelSession(ctx: AuthContext, sessionId: string, reason?: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const { session } = await this.getSession(ctx, sessionId);
-    if (session.status !== 'SCHEDULED') throw new AppError('INVALID_STATE', 'Session is not scheduled.');
-    const court = (await this.courts.get(ctx, String(session.courtId))) as Court;
+    if (session.status !== 'SCHEDULED')
+      throw new AppError('INVALID_STATE', 'Session is not scheduled.');
+    const court = (await this.courts.get(
+      ctx,
+      String(session.courtId),
+    )) as Court;
     const timestamp = now();
-    const value = stored({ ...as(session), status: 'CANCELLED', cancellationReason: reason, cancelledAt: timestamp, cancelledBy: ctx.userId, updatedAt: timestamp }, session.PK, session.SK, 'classSession');
-    await this.schedule.release(ctx, String(session.courtId), String(session.startAt), String(session.endAt), court.slotMinutes, 'CLASS', sessionId, [{ type: 'put', item: value }]);
-    for (const charge of withOrg(ctx, 'charge', await this.repo.scan()).filter((x) => x.classSessionId === sessionId && x.status === 'ACTIVE')) await this.repo.put(stored({ ...as(charge), status: 'VOID', voidedAt: timestamp, voidedBy: ctx.userId, voidReason: 'Class session cancelled' }, charge.PK, charge.SK, 'charge'));
+    const value = stored(
+      {
+        ...as(session),
+        status: 'CANCELLED',
+        cancellationReason: reason,
+        cancelledAt: timestamp,
+        cancelledBy: ctx.userId,
+        updatedAt: timestamp,
+      },
+      session.PK,
+      session.SK,
+      'classSession',
+    );
+    await this.schedule.release(
+      ctx,
+      String(session.courtId),
+      String(session.startAt),
+      String(session.endAt),
+      court.slotMinutes,
+      'CLASS',
+      sessionId,
+      [{ type: 'put', item: value }],
+    );
+    for (const charge of withOrg(ctx, 'charge', await this.repo.scan()).filter(
+      (x) => x.classSessionId === sessionId && x.status === 'ACTIVE',
+    ))
+      await this.repo.put(
+        stored(
+          {
+            ...as(charge),
+            status: 'VOID',
+            voidedAt: timestamp,
+            voidedBy: ctx.userId,
+            voidReason: 'Class session cancelled',
+          },
+          charge.PK,
+          charge.SK,
+          'charge',
+        ),
+      );
     return as(value);
   }
   async deactivate(ctx: AuthContext, classId: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const cls = await this.getClass(ctx, classId);
-    const value = stored({ ...as(cls), active: false, updatedAt: now() }, cls.PK, cls.SK, 'class');
+    const value = stored(
+      { ...as(cls), active: false, updatedAt: now() },
+      cls.PK,
+      cls.SK,
+      'class',
+    );
     await this.repo.put(value);
     const today = Date.now();
-    for (const session of (await this.sessions(ctx, classId)).filter((x) => x.status === 'SCHEDULED' && Date.parse(String(x.startAt)) >= today)) await this.cancelSession(ctx, String(session.sessionId), 'Class deactivated');
+    for (const session of (await this.sessions(ctx, classId)).filter(
+      (x) => x.status === 'SCHEDULED' && Date.parse(String(x.startAt)) >= today,
+    ))
+      await this.cancelSession(
+        ctx,
+        String(session.sessionId),
+        'Class deactivated',
+      );
     return as(value);
   }
   async attendance(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF', 'COACH']);
-    if (input.sessionId) return this.participantTransition(ctx, String(input.sessionId), String(input.customerId), String(input.status) === 'PRESENT' ? 'CHECKED_IN' : 'NO_SHOW');
+    if (input.sessionId)
+      return this.participantTransition(
+        ctx,
+        String(input.sessionId),
+        String(input.customerId),
+        String(input.status) === 'PRESENT' ? 'CHECKED_IN' : 'NO_SHOW',
+      );
     const date = String(input.date);
-    const session = (await this.sessions(ctx, String(input.classId))).find((x) => String(x.startAt).slice(0, 10) === date);
-    if (!session) throw new AppError('NOT_FOUND', 'Class session was not found.');
-    return this.participantTransition(ctx, String(session.sessionId), String(input.customerId), String(input.status) === 'PRESENT' ? 'CHECKED_IN' : 'NO_SHOW');
+    const session = (await this.sessions(ctx, String(input.classId))).find(
+      (x) => String(x.startAt).slice(0, 10) === date,
+    );
+    if (!session)
+      throw new AppError('NOT_FOUND', 'Class session was not found.');
+    return this.participantTransition(
+      ctx,
+      String(session.sessionId),
+      String(input.customerId),
+      String(input.status) === 'PRESENT' ? 'CHECKED_IN' : 'NO_SHOW',
+    );
   }
 }
 
 export class TodayService {
   constructor(private readonly repo: Repository) {}
   async get(ctx: AuthContext, instant = new Date()) {
-    const organization = await this.repo.get<RecordItem>(key('organization', ctx.organizationId));
+    const organization = await this.repo.get<RecordItem>(
+      key('organization', ctx.organizationId),
+    );
     const timezone = String(organization?.timezone ?? 'UTC');
     const date = dayKeyInTimezone(instant.toISOString(), timezone);
-    const courts = (await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, { beginsWith: 'COURT#' })).filter((x) => x.active === true && !x.archivedAt);
-    const reservations = ctx.role === 'COACH' ? [] : withOrg(ctx, 'reservation', await this.repo.scan()).filter((x) => dayKeyInTimezone(String(x.startAt), timezone) === date && x.status !== 'CANCELLED');
-    const sessions = withOrg(ctx, 'classSession', await this.repo.scan()).filter((x) => dayKeyInTimezone(String(x.startAt), timezone) === date && x.status !== 'CANCELLED' && (ctx.role !== 'COACH' || x.coachId === ctx.userId));
-    const blocks = ctx.role === 'COACH' ? [] : withOrg(ctx, 'block', await this.repo.scan()).filter((x) => x.active === true && dayKeyInTimezone(String(x.startAt), timezone) === date);
-    const customers = new Map(withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [String(x.customerId), x]));
-    const classRecords = new Map(withOrg(ctx, 'class', await this.repo.scan()).map((x) => [String(x.classId), x]));
-    const enrollments = withOrg(ctx, 'enrollment', await this.repo.scan()).filter((x) => x.status === 'ACTIVE');
+    const courts = (
+      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'COURT#',
+      })
+    ).filter((x) => x.active === true && !x.archivedAt);
+    const reservations =
+      ctx.role === 'COACH'
+        ? []
+        : withOrg(ctx, 'reservation', await this.repo.scan()).filter(
+            (x) =>
+              dayKeyInTimezone(String(x.startAt), timezone) === date &&
+              x.status !== 'CANCELLED',
+          );
+    const sessions = withOrg(
+      ctx,
+      'classSession',
+      await this.repo.scan(),
+    ).filter(
+      (x) =>
+        dayKeyInTimezone(String(x.startAt), timezone) === date &&
+        x.status !== 'CANCELLED' &&
+        (ctx.role !== 'COACH' || x.coachId === ctx.userId),
+    );
+    const blocks =
+      ctx.role === 'COACH'
+        ? []
+        : withOrg(ctx, 'block', await this.repo.scan()).filter(
+            (x) =>
+              x.active === true &&
+              dayKeyInTimezone(String(x.startAt), timezone) === date,
+          );
+    const customers = new Map(
+      withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [
+        String(x.customerId),
+        x,
+      ]),
+    );
+    const classRecords = new Map(
+      withOrg(ctx, 'class', await this.repo.scan()).map((x) => [
+        String(x.classId),
+        x,
+      ]),
+    );
+    const enrollments = withOrg(
+      ctx,
+      'enrollment',
+      await this.repo.scan(),
+    ).filter((x) => x.status === 'ACTIVE');
     const attendance = withOrg(ctx, 'attendance', await this.repo.scan());
-    const activity = ([...reservations.map((x) => ({ ...x, kind: 'RESERVATION' })), ...sessions.map((x) => ({ ...x, kind: 'CLASS' })), ...blocks.map((x) => ({ ...x, kind: 'BLOCK' }))] as (RecordItem & { kind: string })[]).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
+    const activity = (
+      [
+        ...reservations.map((x) => ({ ...x, kind: 'RESERVATION' })),
+        ...sessions.map((x) => ({ ...x, kind: 'CLASS' })),
+        ...blocks.map((x) => ({ ...x, kind: 'BLOCK' })),
+      ] as (RecordItem & { kind: string })[]
+    ).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
     const currentMs = instant.getTime();
-    const enrich = (item: RecordItem): Record<string, unknown> => ({ ...as<Record<string, unknown>>(item), startAt: item.startAt, endAt: item.endAt, customerName: item.customerId ? customers.get(String(item.customerId))?.name : undefined, className: item.classId ? classRecords.get(String(item.classId))?.name : undefined });
+    const enrich = (item: RecordItem): Record<string, unknown> => ({
+      ...as<Record<string, unknown>>(item),
+      startAt: item.startAt,
+      endAt: item.endAt,
+      customerName: item.customerId
+        ? customers.get(String(item.customerId))?.name
+        : undefined,
+      className: item.classId
+        ? classRecords.get(String(item.classId))?.name
+        : undefined,
+    });
     const courtStatus = courts.map((court) => {
-      const current = activity.find((x) => x.courtId === court.courtId && Date.parse(String(x.startAt)) <= currentMs && Date.parse(String(x.endAt)) > currentMs);
-      const next = activity.find((x) => x.courtId === court.courtId && Date.parse(String(x.startAt)) > currentMs);
-      return { court: as(court), status: current ? current.kind === 'BLOCK' ? 'BLOCKED' : current.kind : 'AVAILABLE', current: current ? enrich(current) : undefined, next: next ? enrich(next) : undefined };
+      const current = activity.find(
+        (x) =>
+          x.courtId === court.courtId &&
+          Date.parse(String(x.startAt)) <= currentMs &&
+          Date.parse(String(x.endAt)) > currentMs,
+      );
+      const next = activity.find(
+        (x) =>
+          x.courtId === court.courtId &&
+          Date.parse(String(x.startAt)) > currentMs,
+      );
+      return {
+        court: as(court),
+        status: current
+          ? current.kind === 'BLOCK'
+            ? 'BLOCKED'
+            : current.kind
+          : 'AVAILABLE',
+        current: current ? enrich(current) : undefined,
+        next: next ? enrich(next) : undefined,
+      };
     });
     const nextHour = currentMs + 60 * 60000;
-    const arrivals = reservations.filter((x) => x.status === 'BOOKED' && Date.parse(String(x.startAt)) >= currentMs && Date.parse(String(x.startAt)) <= nextHour).map(enrich);
-    const classArrivals = sessions.filter((x) => Date.parse(String(x.startAt)) >= currentMs && Date.parse(String(x.startAt)) <= nextHour).map((x) => ({ ...enrich(x), participants: enrollments.filter((e) => e.classId === x.classId).map((e) => ({ customerId: e.customerId, name: customers.get(String(e.customerId))?.name, status: attendance.find((a) => a.sessionId === x.sessionId && a.customerId === e.customerId)?.status ?? 'BOOKED' })) }));
-    const overdue = reservations.filter((x) => x.status === 'BOOKED' && Date.parse(String(x.startAt)) <= currentMs).map((x) => ({ type: 'LATE_RESERVATION_CHECKIN', label: `${String(customers.get(String(x.customerId))?.name ?? 'Customer')} has not checked in`, reservationId: x.reservationId, startAt: x.startAt }));
-    const lateClass = sessions.flatMap((x) => enrollments.filter((e) => e.classId === x.classId).filter((e) => Date.parse(String(x.startAt)) <= currentMs && !attendance.some((a) => a.sessionId === x.sessionId && a.customerId === e.customerId)).map((e) => ({ type: 'LATE_CLASS_CHECKIN', label: `${String(customers.get(String(e.customerId))?.name ?? 'Customer')} has not checked in`, sessionId: x.sessionId, customerId: e.customerId })));
-    const pendingRequests = ctx.role === 'COACH' ? [] : withOrg(ctx, 'request', await this.repo.scan()).filter((x) => x.status === 'REQUESTED').map(as);
-    const charges = ctx.role === 'COACH' ? [] : withOrg(ctx, 'charge', await this.repo.scan()).filter((x) => x.status === 'ACTIVE' && String(x.serviceAt).slice(0, 10) === date);
-    const payments = ctx.role === 'COACH' ? [] : withOrg(ctx, 'payment', await this.repo.scan());
-    const paymentAttention = charges.filter((charge) => {
-      const paid = payments.filter((payment) => payment.chargeId === charge.chargeId || (!payment.chargeId && ((charge.reservationId && payment.reservationId === charge.reservationId) || (charge.classId && payment.classId === charge.classId)))).reduce((n, payment) => n + Number(payment.amount), 0);
-      return paid < Number(charge.amount);
-    }).map((charge) => ({ type: 'OUTSTANDING_TODAY_PAYMENT', label: `${String(customers.get(String(charge.customerId))?.name ?? 'Customer')} has an outstanding balance`, customerId: charge.customerId, chargeId: charge.chargeId }));
-    return { date, generatedAt: instant.toISOString(), summary: { reservations: reservations.length, classSessions: sessions.length, pendingRequests: pendingRequests.length, uncheckedIn: overdue.length + lateClass.length, outstandingActions: pendingRequests.length + overdue.length + lateClass.length + paymentAttention.length }, courts: courtStatus, arrivalsNextHour: [...arrivals, ...classArrivals].sort((a, b) => String((a as Record<string, unknown>)['startAt']).localeCompare(String((b as Record<string, unknown>)['startAt']))), overdueCheckIns: overdue, pendingRequests, attention: [...overdue, ...lateClass, ...paymentAttention] };
+    const arrivals = reservations
+      .filter(
+        (x) =>
+          x.status === 'BOOKED' &&
+          Date.parse(String(x.startAt)) >= currentMs &&
+          Date.parse(String(x.startAt)) <= nextHour,
+      )
+      .map(enrich);
+    const classArrivals = sessions
+      .filter(
+        (x) =>
+          Date.parse(String(x.startAt)) >= currentMs &&
+          Date.parse(String(x.startAt)) <= nextHour,
+      )
+      .map((x) => ({
+        ...enrich(x),
+        participants: enrollments
+          .filter((e) => e.classId === x.classId)
+          .map((e) => ({
+            customerId: e.customerId,
+            name: customers.get(String(e.customerId))?.name,
+            status:
+              attendance.find(
+                (a) =>
+                  a.sessionId === x.sessionId && a.customerId === e.customerId,
+              )?.status ?? 'BOOKED',
+          })),
+      }));
+    const overdue = reservations
+      .filter(
+        (x) =>
+          x.status === 'BOOKED' && Date.parse(String(x.startAt)) <= currentMs,
+      )
+      .map((x) => ({
+        type: 'LATE_RESERVATION_CHECKIN',
+        label: `${String(customers.get(String(x.customerId))?.name ?? 'Customer')} has not checked in`,
+        reservationId: x.reservationId,
+        startAt: x.startAt,
+      }));
+    const lateClass = sessions.flatMap((x) =>
+      enrollments
+        .filter((e) => e.classId === x.classId)
+        .filter(
+          (e) =>
+            Date.parse(String(x.startAt)) <= currentMs &&
+            !attendance.some(
+              (a) =>
+                a.sessionId === x.sessionId && a.customerId === e.customerId,
+            ),
+        )
+        .map((e) => ({
+          type: 'LATE_CLASS_CHECKIN',
+          label: `${String(customers.get(String(e.customerId))?.name ?? 'Customer')} has not checked in`,
+          sessionId: x.sessionId,
+          customerId: e.customerId,
+        })),
+    );
+    const pendingRequests =
+      ctx.role === 'COACH'
+        ? []
+        : withOrg(ctx, 'request', await this.repo.scan())
+            .filter((x) => x.status === 'REQUESTED')
+            .map(as);
+    const charges =
+      ctx.role === 'COACH'
+        ? []
+        : withOrg(ctx, 'charge', await this.repo.scan()).filter(
+            (x) =>
+              x.status === 'ACTIVE' &&
+              String(x.serviceAt).slice(0, 10) === date,
+          );
+    const payments =
+      ctx.role === 'COACH'
+        ? []
+        : withOrg(ctx, 'payment', await this.repo.scan());
+    const paymentAttention = charges
+      .filter((charge) => {
+        const paid = payments
+          .filter(
+            (payment) =>
+              payment.chargeId === charge.chargeId ||
+              (!payment.chargeId &&
+                ((charge.reservationId &&
+                  payment.reservationId === charge.reservationId) ||
+                  (charge.classId && payment.classId === charge.classId))),
+          )
+          .reduce((n, payment) => n + Number(payment.amount), 0);
+        return paid < Number(charge.amount);
+      })
+      .map((charge) => ({
+        type: 'OUTSTANDING_TODAY_PAYMENT',
+        label: `${String(customers.get(String(charge.customerId))?.name ?? 'Customer')} has an outstanding balance`,
+        customerId: charge.customerId,
+        chargeId: charge.chargeId,
+      }));
+    return {
+      date,
+      generatedAt: instant.toISOString(),
+      summary: {
+        reservations: reservations.length,
+        classSessions: sessions.length,
+        pendingRequests: pendingRequests.length,
+        uncheckedIn: overdue.length + lateClass.length,
+        outstandingActions:
+          pendingRequests.length +
+          overdue.length +
+          lateClass.length +
+          paymentAttention.length,
+      },
+      courts: courtStatus,
+      arrivalsNextHour: [...arrivals, ...classArrivals].sort((a, b) =>
+        String((a as Record<string, unknown>)['startAt']).localeCompare(
+          String((b as Record<string, unknown>)['startAt']),
+        ),
+      ),
+      overdueCheckIns: overdue,
+      pendingRequests,
+      attention: [...overdue, ...lateClass, ...paymentAttention],
+    };
   }
 }
 
 const eachDate = (from: string, to: string) => {
-  const dates: string[] = [], current = new Date(`${from}T12:00:00Z`), end = new Date(`${to}T12:00:00Z`);
-  while (current <= end) { dates.push(current.toISOString().slice(0, 10)); current.setUTCDate(current.getUTCDate() + 1); }
+  const dates: string[] = [],
+    current = new Date(`${from}T12:00:00Z`),
+    end = new Date(`${to}T12:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
   return dates;
 };
 export class ReportService {
   constructor(private readonly repo: Repository) {}
   async operations(ctx: AuthContext, filters: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const organization = await this.repo.get<RecordItem>(key('organization', ctx.organizationId)), timezone = String(organization?.timezone ?? 'UTC');
-    const from = String(filters.from ?? dayKeyInTimezone(new Date().toISOString(), timezone).slice(0, 8) + '01'), to = String(filters.to ?? dayKeyInTimezone(new Date().toISOString(), timezone));
-    const dates = eachDate(from, to), courts = (await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, { beginsWith: 'COURT#' })).filter((x) => x.active === true || x.courtId === filters.courtId);
-    const reservations = withOrg(ctx, 'reservation', await this.repo.scan()).filter((x) => { const day = dayKeyInTimezone(String(x.startAt), timezone); return day >= from && day <= to && (!filters.courtId || x.courtId === filters.courtId); });
-    const sessions = withOrg(ctx, 'classSession', await this.repo.scan()).filter((x) => { const day = dayKeyInTimezone(String(x.startAt), timezone); return day >= from && day <= to && (!filters.courtId || x.courtId === filters.courtId); });
-    const blocks = withOrg(ctx, 'block', await this.repo.scan()).filter((x) => { const day = dayKeyInTimezone(String(x.startAt), timezone); return x.active === true && day >= from && day <= to; });
-    const opening = (court: RecordItem, date: string) => { const weekday = weekdayNameForDate(date); const hours = (court.openingHours ?? {}) as Record<string, { open: string; close: string } | null>; const value = hours[weekday]; return value ? Number((minutes(String(value.close)) - minutes(String(value.open)))) : 0; };
-    const overlapMinutes = (aStart: string, aEnd: string, bStart: string, bEnd: string) => Math.max(0, Math.min(Date.parse(aEnd), Date.parse(bEnd)) - Math.max(Date.parse(aStart), Date.parse(bStart))) / 60000;
-    const utilization = courts.map((court) => { const openingMinutes = dates.reduce((n, date) => n + opening(court, date), 0), blockedMinutes = blocks.filter((x) => x.courtId === court.courtId).reduce((n, x) => n + overlapMinutes(String(x.startAt), String(x.endAt), `${from}T00:00:00Z`, `${to}T23:59:59Z`), 0), scheduled = [...reservations.filter((x) => x.courtId === court.courtId && x.status !== 'CANCELLED'), ...sessions.filter((x) => x.courtId === court.courtId && x.status !== 'CANCELLED')], scheduledMinutes = scheduled.reduce((n, x) => n + (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) / 60000, 0), actualMinutes = reservations.filter((x) => x.courtId === court.courtId && ['CHECKED_IN', 'COMPLETED'].includes(String(x.status))).reduce((n, x) => n + (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) / 60000, 0) + sessions.filter((x) => x.courtId === court.courtId && x.status === 'COMPLETED').reduce((n, x) => n + (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) / 60000, 0), sellableMinutes = Math.max(0, openingMinutes - blockedMinutes); return { courtId: court.courtId, courtName: court.name, openingMinutes, blockedMinutes, sellableMinutes, scheduledMinutes, actualMinutes, scheduledUtilizationPercent: sellableMinutes ? scheduledMinutes / sellableMinutes * 100 : 0, actualUtilizationPercent: sellableMinutes ? actualMinutes / sellableMinutes * 100 : 0 }; });
-    const charges = withOrg(ctx, 'charge', await this.repo.scan()).filter((x) => x.status === 'ACTIVE' && String(x.serviceAt).slice(0, 10) >= from && String(x.serviceAt).slice(0, 10) <= to), payments = withOrg(ctx, 'payment', await this.repo.scan()).filter((x) => String(x.paidAt).slice(0, 10) >= from && String(x.paidAt).slice(0, 10) <= to), expenses = withOrg(ctx, 'expense', await this.repo.scan()).filter((x) => String(x.date) >= from && String(x.date) <= to);
-    return { from, to, utilization, totalReservations: reservations.length, completed: reservations.filter((x) => x.status === 'COMPLETED').length, cancelled: reservations.filter((x) => x.status === 'CANCELLED').length, noShow: reservations.filter((x) => x.status === 'NO_SHOW').length, reservationsByCourt: Object.fromEntries(courts.map((c) => [c.name, reservations.filter((r) => r.courtId === c.courtId).length])), reservationsBySource: Object.fromEntries(['STAFF', 'WHATSAPP', 'PHONE', 'WALK_IN', 'PUBLIC_REQUEST', 'OTHER'].map((source) => [source, reservations.filter((r) => r.source === source).length])), expectedRevenue: charges.reduce((n, x) => n + Number(x.amount), 0), recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0), outstanding: charges.reduce((n, charge) => n + Math.max(0, Number(charge.amount) - payments.filter((p) => p.chargeId === charge.chargeId || (!p.chargeId && ((charge.reservationId && p.reservationId === charge.reservationId) || (charge.classId && p.classId === charge.classId)))).reduce((sum, p) => sum + Number(p.amount), 0)), 0), expenses: expenses.reduce((n, x) => n + Number(x.amount), 0) };
+    const organization = await this.repo.get<RecordItem>(
+        key('organization', ctx.organizationId),
+      ),
+      timezone = String(organization?.timezone ?? 'UTC');
+    const from = String(
+        filters.from ??
+          dayKeyInTimezone(new Date().toISOString(), timezone).slice(0, 8) +
+            '01',
+      ),
+      to = String(
+        filters.to ?? dayKeyInTimezone(new Date().toISOString(), timezone),
+      );
+    const dates = eachDate(from, to),
+      courts = (
+        await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+          beginsWith: 'COURT#',
+        })
+      ).filter((x) => x.active === true || x.courtId === filters.courtId);
+    const reservations = withOrg(
+      ctx,
+      'reservation',
+      await this.repo.scan(),
+    ).filter((x) => {
+      const day = dayKeyInTimezone(String(x.startAt), timezone);
+      return (
+        day >= from &&
+        day <= to &&
+        (!filters.courtId || x.courtId === filters.courtId)
+      );
+    });
+    const sessions = withOrg(
+      ctx,
+      'classSession',
+      await this.repo.scan(),
+    ).filter((x) => {
+      const day = dayKeyInTimezone(String(x.startAt), timezone);
+      return (
+        day >= from &&
+        day <= to &&
+        (!filters.courtId || x.courtId === filters.courtId)
+      );
+    });
+    const blocks = withOrg(ctx, 'block', await this.repo.scan()).filter((x) => {
+      const day = dayKeyInTimezone(String(x.startAt), timezone);
+      return x.active === true && day >= from && day <= to;
+    });
+    const opening = (court: RecordItem, date: string) => {
+      const weekday = weekdayNameForDate(date);
+      const hours = (court.openingHours ?? {}) as Record<
+        string,
+        { open: string; close: string } | null
+      >;
+      const value = hours[weekday];
+      return value
+        ? Number(minutes(String(value.close)) - minutes(String(value.open)))
+        : 0;
+    };
+    const overlapMinutes = (
+      aStart: string,
+      aEnd: string,
+      bStart: string,
+      bEnd: string,
+    ) =>
+      Math.max(
+        0,
+        Math.min(Date.parse(aEnd), Date.parse(bEnd)) -
+          Math.max(Date.parse(aStart), Date.parse(bStart)),
+      ) / 60000;
+    const utilization = courts.map((court) => {
+      const openingMinutes = dates.reduce(
+          (n, date) => n + opening(court, date),
+          0,
+        ),
+        blockedMinutes = blocks
+          .filter((x) => x.courtId === court.courtId)
+          .reduce(
+            (n, x) =>
+              n +
+              overlapMinutes(
+                String(x.startAt),
+                String(x.endAt),
+                `${from}T00:00:00Z`,
+                `${to}T23:59:59Z`,
+              ),
+            0,
+          ),
+        scheduled = [
+          ...reservations.filter(
+            (x) => x.courtId === court.courtId && x.status !== 'CANCELLED',
+          ),
+          ...sessions.filter(
+            (x) => x.courtId === court.courtId && x.status !== 'CANCELLED',
+          ),
+        ],
+        scheduledMinutes = scheduled.reduce(
+          (n, x) =>
+            n +
+            (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) /
+              60000,
+          0,
+        ),
+        actualMinutes =
+          reservations
+            .filter(
+              (x) =>
+                x.courtId === court.courtId &&
+                ['CHECKED_IN', 'COMPLETED'].includes(String(x.status)),
+            )
+            .reduce(
+              (n, x) =>
+                n +
+                (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) /
+                  60000,
+              0,
+            ) +
+          sessions
+            .filter(
+              (x) => x.courtId === court.courtId && x.status === 'COMPLETED',
+            )
+            .reduce(
+              (n, x) =>
+                n +
+                (Date.parse(String(x.endAt)) - Date.parse(String(x.startAt))) /
+                  60000,
+              0,
+            ),
+        sellableMinutes = Math.max(0, openingMinutes - blockedMinutes);
+      return {
+        courtId: court.courtId,
+        courtName: court.name,
+        openingMinutes,
+        blockedMinutes,
+        sellableMinutes,
+        scheduledMinutes,
+        actualMinutes,
+        scheduledUtilizationPercent: sellableMinutes
+          ? (scheduledMinutes / sellableMinutes) * 100
+          : 0,
+        actualUtilizationPercent: sellableMinutes
+          ? (actualMinutes / sellableMinutes) * 100
+          : 0,
+      };
+    });
+    const charges = withOrg(ctx, 'charge', await this.repo.scan()).filter(
+        (x) =>
+          x.status === 'ACTIVE' &&
+          String(x.serviceAt).slice(0, 10) >= from &&
+          String(x.serviceAt).slice(0, 10) <= to,
+      ),
+      payments = withOrg(ctx, 'payment', await this.repo.scan()).filter(
+        (x) =>
+          String(x.paidAt).slice(0, 10) >= from &&
+          String(x.paidAt).slice(0, 10) <= to,
+      ),
+      expenses = withOrg(ctx, 'expense', await this.repo.scan()).filter(
+        (x) => String(x.date) >= from && String(x.date) <= to,
+      );
+    return {
+      from,
+      to,
+      utilization,
+      totalReservations: reservations.length,
+      completed: reservations.filter((x) => x.status === 'COMPLETED').length,
+      cancelled: reservations.filter((x) => x.status === 'CANCELLED').length,
+      noShow: reservations.filter((x) => x.status === 'NO_SHOW').length,
+      reservationsByCourt: Object.fromEntries(
+        courts.map((c) => [
+          c.name,
+          reservations.filter((r) => r.courtId === c.courtId).length,
+        ]),
+      ),
+      reservationsBySource: Object.fromEntries(
+        [
+          'STAFF',
+          'WHATSAPP',
+          'PHONE',
+          'WALK_IN',
+          'PUBLIC_REQUEST',
+          'OTHER',
+        ].map((source) => [
+          source,
+          reservations.filter((r) => r.source === source).length,
+        ]),
+      ),
+      expectedRevenue: charges.reduce((n, x) => n + Number(x.amount), 0),
+      recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0),
+      outstanding: charges.reduce(
+        (n, charge) =>
+          n +
+          Math.max(
+            0,
+            Number(charge.amount) -
+              payments
+                .filter(
+                  (p) =>
+                    p.chargeId === charge.chargeId ||
+                    (!p.chargeId &&
+                      ((charge.reservationId &&
+                        p.reservationId === charge.reservationId) ||
+                        (charge.classId && p.classId === charge.classId))),
+                )
+                .reduce((sum, p) => sum + Number(p.amount), 0),
+          ),
+        0,
+      ),
+      expenses: expenses.reduce((n, x) => n + Number(x.amount), 0),
+    };
   }
 }
 
@@ -1951,11 +3039,54 @@ export class CustomerProfileService {
   constructor(private readonly repo: Repository) {}
   async get(ctx: AuthContext, customerId: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const customer = await this.repo.get<RecordItem>(orgKey(ctx.organizationId, 'CUSTOMER', customerId));
+    const customer = await this.repo.get<RecordItem>(
+      orgKey(ctx.organizationId, 'CUSTOMER', customerId),
+    );
     if (!customer) throw new AppError('NOT_FOUND', 'Customer was not found.');
-    const reservations = withOrg(ctx, 'reservation', await this.repo.scan()).filter((x) => x.customerId === customerId), enrollments = withOrg(ctx, 'enrollment', await this.repo.scan()).filter((x) => x.customerId === customerId), attendance = withOrg(ctx, 'attendance', await this.repo.scan()).filter((x) => x.customerId === customerId), payments = withOrg(ctx, 'payment', await this.repo.scan()).filter((x) => x.customerId === customerId), charges = withOrg(ctx, 'charge', await this.repo.scan()).filter((x) => x.customerId === customerId), activeCharges = charges.filter((x) => x.status === 'ACTIVE');
-    const paid = payments.reduce((n, x) => n + Number(x.amount), 0), totalCharges = activeCharges.reduce((n, x) => n + Number(x.amount), 0);
-    return { customer: as(customer), summary: { reservationCount: reservations.length, completedReservations: reservations.filter((x) => x.status === 'COMPLETED').length, classAttendances: attendance.filter((x) => ['CHECKED_IN', 'COMPLETED', 'PRESENT'].includes(String(x.status))).length, cancellations: reservations.filter((x) => x.status === 'CANCELLED').length, noShows: reservations.filter((x) => ['NO_SHOW', 'ABSENT'].includes(String(x.status))).length, totalCharges, recordedPayments: paid, outstanding: Math.max(0, totalCharges - paid) }, reservations: reservations.map(as), classActivity: [...enrollments.map(as), ...attendance.map(as)], payments: payments.map(as), charges: charges.map(as) };
+    const reservations = withOrg(
+        ctx,
+        'reservation',
+        await this.repo.scan(),
+      ).filter((x) => x.customerId === customerId),
+      enrollments = withOrg(ctx, 'enrollment', await this.repo.scan()).filter(
+        (x) => x.customerId === customerId,
+      ),
+      attendance = withOrg(ctx, 'attendance', await this.repo.scan()).filter(
+        (x) => x.customerId === customerId,
+      ),
+      payments = withOrg(ctx, 'payment', await this.repo.scan()).filter(
+        (x) => x.customerId === customerId,
+      ),
+      charges = withOrg(ctx, 'charge', await this.repo.scan()).filter(
+        (x) => x.customerId === customerId,
+      ),
+      activeCharges = charges.filter((x) => x.status === 'ACTIVE');
+    const paid = payments.reduce((n, x) => n + Number(x.amount), 0),
+      totalCharges = activeCharges.reduce((n, x) => n + Number(x.amount), 0);
+    return {
+      customer: as(customer),
+      summary: {
+        reservationCount: reservations.length,
+        completedReservations: reservations.filter(
+          (x) => x.status === 'COMPLETED',
+        ).length,
+        classAttendances: attendance.filter((x) =>
+          ['CHECKED_IN', 'COMPLETED', 'PRESENT'].includes(String(x.status)),
+        ).length,
+        cancellations: reservations.filter((x) => x.status === 'CANCELLED')
+          .length,
+        noShows: reservations.filter((x) =>
+          ['NO_SHOW', 'ABSENT'].includes(String(x.status)),
+        ).length,
+        totalCharges,
+        recordedPayments: paid,
+        outstanding: Math.max(0, totalCharges - paid),
+      },
+      reservations: reservations.map(as),
+      classActivity: [...enrollments.map(as), ...attendance.map(as)],
+      payments: payments.map(as),
+      charges: charges.map(as),
+    };
   }
 }
 

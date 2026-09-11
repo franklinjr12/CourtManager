@@ -2,7 +2,63 @@ import { timeValue } from '../core/presentation.js';
 import { t } from '../i18n.js';
 import { shell } from '../ui/shell.js';
 import { app, escapeText, renderRoute, request } from './runtime.js';
-type Participant = { customerId: string; name?: string; status: string }; type Roster = { session: { classId: string; startAt: string; endAt: string; status: string }; participants: Participant[] };
-export async function classDetail(id: string) { await shell(async () => { const data = await request<{ name: string; sport: string; capacity: number; sessions: Array<{ sessionId: string; startAt: string; status: string }>; enrollments: Array<{ status: string }> }>(`/classes/${id}`); return `<div class="toolbar"><h2>${escapeText(data.name)}</h2><a class="button" href="/classes">${t('common.close')}</a></div><article class="card"><p>${escapeText(data.sport)} · ${data.enrollments.filter((x) => x.status === 'ACTIVE').length}/${data.capacity}</p></article><article class="card"><h3>${t('classSession.roster')}</h3><ul>${data.sessions.map((session) => `<li><a href="/class-sessions/${escapeText(session.sessionId)}">${escapeText(session.startAt)} — ${escapeText(session.status)}</a></li>`).join('')}</ul></article>`; }); }
-export async function classSession(id: string) { await shell(async () => { const data = await request<Roster>(`/class-sessions/${id}/roster`); setTimeout(() => wireRoster(id), 0); return `<div class="toolbar"><h2>${t('classSession.roster')}</h2><span>${escapeText(timeValue(data.session.startAt))}–${escapeText(timeValue(data.session.endAt))}</span></div><article class="card table-wrap"><table><thead><tr><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.participants.map((item) => `<tr><td>${escapeText(item.name ?? item.customerId)}</td><td>${escapeText(item.status)}</td><td>${item.status === 'BOOKED' ? `<button class="button small" data-attendance="${escapeText(item.customerId)}">${t('classSession.checkIn')}</button><button class="button small" data-no-show="${escapeText(item.customerId)}">${t('classSession.noShow')}</button>` : item.status === 'CHECKED_IN' ? `<button class="button small" data-complete="${escapeText(item.customerId)}">${t('classSession.complete')}</button>` : ''}</td></tr>`).join('')}</tbody></table></article><div class="row-actions"><button class="button primary" id="complete-session">${t('classSession.completeClass')}</button><button class="button danger" id="cancel-session">${t('classSession.cancel')}</button></div>`; }); }
-function wireRoster(id: string) { const action = (customerId: string, verb: string) => void request(`/class-sessions/${id}/participants/${customerId}/${verb}`, { method: 'POST' }).then(() => renderRoute()); app.querySelectorAll<HTMLElement>('[data-attendance]').forEach((x) => x.addEventListener('click', () => action(String(x.dataset.attendance), 'check-in'))); app.querySelectorAll<HTMLElement>('[data-no-show]').forEach((x) => x.addEventListener('click', () => action(String(x.dataset.noShow), 'no-show'))); app.querySelectorAll<HTMLElement>('[data-complete]').forEach((x) => x.addEventListener('click', () => action(String(x.dataset.complete), 'complete'))); app.querySelector('#complete-session')?.addEventListener('click', () => void request(`/class-sessions/${id}/complete`, { method: 'POST' }).then(() => renderRoute())); }
+type Participant = { customerId: string; name?: string; status: string };
+type Roster = {
+  session: { classId: string; startAt: string; endAt: string; status: string };
+  participants: Participant[];
+};
+export async function classDetail(id: string) {
+  await shell(async () => {
+    const data = await request<{
+      name: string;
+      sport: string;
+      capacity: number;
+      sessions: Array<{ sessionId: string; startAt: string; status: string }>;
+      enrollments: Array<{ status: string }>;
+    }>(`/classes/${id}`);
+    return `<div class="toolbar"><h2>${escapeText(data.name)}</h2><a class="button" href="/classes">${t('common.close')}</a></div><article class="card"><p>${escapeText(data.sport)} · ${data.enrollments.filter((x) => x.status === 'ACTIVE').length}/${data.capacity}</p></article><article class="card"><h3>${t('classSession.roster')}</h3><ul>${data.sessions.map((session) => `<li><a href="/class-sessions/${escapeText(session.sessionId)}">${escapeText(session.startAt)} — ${escapeText(session.status)}</a></li>`).join('')}</ul></article>`;
+  });
+}
+export async function classSession(id: string) {
+  await shell(async () => {
+    const data = await request<Roster>(`/class-sessions/${id}/roster`);
+    setTimeout(() => wireRoster(id), 0);
+    return `<div class="toolbar"><h2>${t('classSession.roster')}</h2><span>${escapeText(timeValue(data.session.startAt))}–${escapeText(timeValue(data.session.endAt))}</span></div><article class="card table-wrap"><table><thead><tr><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.participants.map((item) => `<tr><td>${escapeText(item.name ?? item.customerId)}</td><td>${escapeText(item.status)}</td><td>${item.status === 'BOOKED' ? `<button class="button small" data-attendance="${escapeText(item.customerId)}">${t('classSession.checkIn')}</button><button class="button small" data-no-show="${escapeText(item.customerId)}">${t('classSession.noShow')}</button>` : item.status === 'CHECKED_IN' ? `<button class="button small" data-complete="${escapeText(item.customerId)}">${t('classSession.complete')}</button>` : ''}</td></tr>`).join('')}</tbody></table></article><div class="row-actions"><button class="button primary" id="complete-session">${t('classSession.completeClass')}</button><button class="button danger" id="cancel-session">${t('classSession.cancel')}</button></div>`;
+  });
+}
+function wireRoster(id: string) {
+  const action = (customerId: string, verb: string) =>
+    void request(`/class-sessions/${id}/participants/${customerId}/${verb}`, {
+      method: 'POST',
+    }).then(() => renderRoute());
+  app
+    .querySelectorAll<HTMLElement>('[data-attendance]')
+    .forEach((x) =>
+      x.addEventListener('click', () =>
+        action(String(x.dataset.attendance), 'check-in'),
+      ),
+    );
+  app
+    .querySelectorAll<HTMLElement>('[data-no-show]')
+    .forEach((x) =>
+      x.addEventListener('click', () =>
+        action(String(x.dataset.noShow), 'no-show'),
+      ),
+    );
+  app
+    .querySelectorAll<HTMLElement>('[data-complete]')
+    .forEach((x) =>
+      x.addEventListener('click', () =>
+        action(String(x.dataset.complete), 'complete'),
+      ),
+    );
+  app
+    .querySelector('#complete-session')
+    ?.addEventListener(
+      'click',
+      () =>
+        void request(`/class-sessions/${id}/complete`, { method: 'POST' }).then(
+          () => renderRoute(),
+        ),
+    );
+}

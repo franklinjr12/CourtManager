@@ -17,11 +17,19 @@ export const localizeEnumOptions = (container: ParentNode) => {
     select.querySelectorAll<HTMLOptionElement>('option').forEach((option) => {
       const value = option.value || option.textContent?.trim() || '';
       if (!option.hasAttribute('value')) option.value = value;
-      if (select.name === 'status' && ['PRESENT', 'ABSENT', 'EXCUSED'].includes(value)) option.textContent = attendanceStatusLabel(value);
-      else if (select.name === 'method') option.textContent = paymentMethodLabel(value);
-      else if (select.name === 'source') option.textContent = reservationSourceLabel(value);
-      else if (select.name === 'reason') option.textContent = blockReasonLabel(value);
-      else if (select.name === 'weekday' && /^\d$/.test(value)) option.textContent = weekdayLabel(Number(value));
+      if (
+        select.name === 'status' &&
+        ['PRESENT', 'ABSENT', 'EXCUSED'].includes(value)
+      )
+        option.textContent = attendanceStatusLabel(value);
+      else if (select.name === 'method')
+        option.textContent = paymentMethodLabel(value);
+      else if (select.name === 'source')
+        option.textContent = reservationSourceLabel(value);
+      else if (select.name === 'reason')
+        option.textContent = blockReasonLabel(value);
+      else if (select.name === 'weekday' && /^\d$/.test(value))
+        option.textContent = weekdayLabel(Number(value));
     });
   });
 };
@@ -55,7 +63,9 @@ export const openModal = (
   backdrop?.addEventListener('click', (event) => {
     if (event.target === backdrop) closeModal();
   });
-  backdrop?.querySelector<HTMLElement>('[data-close]')?.addEventListener('click', closeModal);
+  backdrop
+    ?.querySelector<HTMLElement>('[data-close]')
+    ?.addEventListener('click', closeModal);
   modalKeyHandler = (event) => {
     if (event.key === 'Escape') closeModal();
   };

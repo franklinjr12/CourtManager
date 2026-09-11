@@ -260,12 +260,18 @@ export const createApp = (repo: Repository) => {
   app.get('/sports', async (c) =>
     c.json(
       collection(
-        await services.sports.list(ctx(c), c.req.query('includeInactive') === 'true'),
+        await services.sports.list(
+          ctx(c),
+          c.req.query('includeInactive') === 'true',
+        ),
       ),
     ),
   );
   app.post('/sports', async (c) =>
-    c.json(ok(await services.sports.create(ctx(c), await body(c, SportInputSchema))), 201),
+    c.json(
+      ok(await services.sports.create(ctx(c), await body(c, SportInputSchema))),
+      201,
+    ),
   );
   app.get('/sports/:id', async (c) =>
     c.json(ok(await services.sports.get(ctx(c), c.req.param('id')))),
@@ -387,7 +393,15 @@ export const createApp = (repo: Repository) => {
     ),
   );
   app.post('/reservations/:id/check-in', async (c) =>
-    c.json(ok(await services.reservations.transition(ctx(c), c.req.param('id'), 'CHECKED_IN'))),
+    c.json(
+      ok(
+        await services.reservations.transition(
+          ctx(c),
+          c.req.param('id'),
+          'CHECKED_IN',
+        ),
+      ),
+    ),
   );
   app.post('/reservations/:id/cancel', async (c) =>
     c.json(
@@ -427,9 +441,10 @@ export const createApp = (repo: Repository) => {
       q.date ??
       q.from ??
       dayKeyInTimezone(new Date().toISOString(), String(organization.timezone));
-    const reservations = ctx(c).role === 'COACH'
-      ? []
-      : await services.reservations.list(ctx(c), { date });
+    const reservations =
+      ctx(c).role === 'COACH'
+        ? []
+        : await services.reservations.list(ctx(c), { date });
     const scheduledReservations = reservations.filter(
       (reservation) => reservation.status !== 'CANCELLED',
     );
@@ -558,29 +573,78 @@ export const createApp = (repo: Repository) => {
     await services.expenses.remove(ctx(c), c.req.param('id'));
     return c.json(ok({ deleted: true }));
   });
-  app.get('/staff', async (c) => c.json(collection(await services.staff.list(ctx(c)))));
-  app.get('/coaches', async (c) => c.json(collection(await services.staff.coaches(ctx(c)))));
-  app.post('/staff', async (c) => c.json(ok(await services.staff.create(ctx(c), await body(c, StaffCreateInputSchema))), 201));
-  app.patch('/staff/:id', async (c) => c.json(ok(await services.staff.update(ctx(c), c.req.param('id'), await body(c, StaffUpdateInputSchema)))));
-  app.post('/staff/:id/reset-password', async (c) => c.json(ok(await services.staff.resetPassword(ctx(c), c.req.param('id'), (await body(c, StaffPasswordResetInputSchema)).password))));
+  app.get('/staff', async (c) =>
+    c.json(collection(await services.staff.list(ctx(c)))),
+  );
+  app.get('/coaches', async (c) =>
+    c.json(collection(await services.staff.coaches(ctx(c)))),
+  );
+  app.post('/staff', async (c) =>
+    c.json(
+      ok(
+        await services.staff.create(
+          ctx(c),
+          await body(c, StaffCreateInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.patch('/staff/:id', async (c) =>
+    c.json(
+      ok(
+        await services.staff.update(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, StaffUpdateInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/staff/:id/reset-password', async (c) =>
+    c.json(
+      ok(
+        await services.staff.resetPassword(
+          ctx(c),
+          c.req.param('id'),
+          (await body(c, StaffPasswordResetInputSchema)).password,
+        ),
+      ),
+    ),
+  );
   app.get('/classes', async (c) =>
     c.json(collection(await services.classes.list(ctx(c)))),
   );
   app.post('/classes', async (c) =>
     c.json(
       ok(
-        await services.classes.create(
-          ctx(c),
-          await body(c, ClassInputSchema),
-        ),
+        await services.classes.create(ctx(c), await body(c, ClassInputSchema)),
       ),
       201,
     ),
   );
-  app.get('/classes/:id', async (c) => c.json(ok(await services.classes.getDetail(ctx(c), c.req.param('id')))));
-  app.get('/classes/:id/enrollments', async (c) => c.json(collection(await services.classes.enrollments(ctx(c), c.req.param('id')))));
-  app.post('/classes/:id/deactivate', async (c) => c.json(ok(await services.classes.deactivate(ctx(c), c.req.param('id')))));
-  app.post('/classes/:id/enrollments/:enrollmentId/cancel', async (c) => c.json(ok(await services.classes.cancelEnrollment(ctx(c), c.req.param('id'), c.req.param('enrollmentId')))));
+  app.get('/classes/:id', async (c) =>
+    c.json(ok(await services.classes.getDetail(ctx(c), c.req.param('id')))),
+  );
+  app.get('/classes/:id/enrollments', async (c) =>
+    c.json(
+      collection(await services.classes.enrollments(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.post('/classes/:id/deactivate', async (c) =>
+    c.json(ok(await services.classes.deactivate(ctx(c), c.req.param('id')))),
+  );
+  app.post('/classes/:id/enrollments/:enrollmentId/cancel', async (c) =>
+    c.json(
+      ok(
+        await services.classes.cancelEnrollment(
+          ctx(c),
+          c.req.param('id'),
+          c.req.param('enrollmentId'),
+        ),
+      ),
+    ),
+  );
   app.post('/classes/:id/enroll', async (c) => {
     const input = await body(c, z.object({ customerId: z.string() }));
     return c.json(
@@ -605,13 +669,77 @@ export const createApp = (repo: Repository) => {
       201,
     ),
   );
-  app.get('/class-sessions/:id/roster', async (c) => c.json(ok(await services.classes.roster(ctx(c), c.req.param('id')))));
-  app.post('/class-sessions/:sessionId/participants/:customerId/check-in', async (c) => c.json(ok(await services.classes.participantTransition(ctx(c), c.req.param('sessionId'), c.req.param('customerId'), 'CHECKED_IN'))));
-  app.post('/class-sessions/:sessionId/participants/:customerId/complete', async (c) => c.json(ok(await services.classes.participantTransition(ctx(c), c.req.param('sessionId'), c.req.param('customerId'), 'COMPLETED'))));
-  app.post('/class-sessions/:sessionId/participants/:customerId/no-show', async (c) => c.json(ok(await services.classes.participantTransition(ctx(c), c.req.param('sessionId'), c.req.param('customerId'), 'NO_SHOW'))));
-  app.post('/class-sessions/:id/complete', async (c) => c.json(ok(await services.classes.completeSession(ctx(c), c.req.param('id')))));
-  app.post('/class-sessions/:id/cancel', async (c) => c.json(ok(await services.classes.cancelSession(ctx(c), c.req.param('id'), (await body(c, z.object({ reason: z.string().optional() }))).reason))));
-  app.get('/today', async (c) => c.json(ok(await services.today.get(ctx(c), c.req.query('at') ? new Date(c.req.query('at')!) : new Date()))));
+  app.get('/class-sessions/:id/roster', async (c) =>
+    c.json(ok(await services.classes.roster(ctx(c), c.req.param('id')))),
+  );
+  app.post(
+    '/class-sessions/:sessionId/participants/:customerId/check-in',
+    async (c) =>
+      c.json(
+        ok(
+          await services.classes.participantTransition(
+            ctx(c),
+            c.req.param('sessionId'),
+            c.req.param('customerId'),
+            'CHECKED_IN',
+          ),
+        ),
+      ),
+  );
+  app.post(
+    '/class-sessions/:sessionId/participants/:customerId/complete',
+    async (c) =>
+      c.json(
+        ok(
+          await services.classes.participantTransition(
+            ctx(c),
+            c.req.param('sessionId'),
+            c.req.param('customerId'),
+            'COMPLETED',
+          ),
+        ),
+      ),
+  );
+  app.post(
+    '/class-sessions/:sessionId/participants/:customerId/no-show',
+    async (c) =>
+      c.json(
+        ok(
+          await services.classes.participantTransition(
+            ctx(c),
+            c.req.param('sessionId'),
+            c.req.param('customerId'),
+            'NO_SHOW',
+          ),
+        ),
+      ),
+  );
+  app.post('/class-sessions/:id/complete', async (c) =>
+    c.json(
+      ok(await services.classes.completeSession(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.post('/class-sessions/:id/cancel', async (c) =>
+    c.json(
+      ok(
+        await services.classes.cancelSession(
+          ctx(c),
+          c.req.param('id'),
+          (await body(c, z.object({ reason: z.string().optional() }))).reason,
+        ),
+      ),
+    ),
+  );
+  app.get('/today', async (c) =>
+    c.json(
+      ok(
+        await services.today.get(
+          ctx(c),
+          c.req.query('at') ? new Date(c.req.query('at')!) : new Date(),
+        ),
+      ),
+    ),
+  );
   app.get('/dashboard', async (c) => {
     const q = c.req.query(),
       organization = await services.organizations.get(ctx(c)),
@@ -673,7 +801,9 @@ export const createApp = (repo: Repository) => {
       }),
     );
   });
-  app.get('/reports/operations', async (c) => c.json(ok(await services.reports.operations(ctx(c), c.req.query()))));
+  app.get('/reports/operations', async (c) =>
+    c.json(ok(await services.reports.operations(ctx(c), c.req.query()))),
+  );
   for (const entity of [
     'customers',
     'reservations',

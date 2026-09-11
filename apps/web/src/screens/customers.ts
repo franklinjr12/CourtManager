@@ -1,7 +1,12 @@
 import { dateValue, timeValue, errorMessage } from '../core/presentation.js';
 import type { Customer, Reservation } from '../core/types.js';
 import { button } from '../dom.js';
-import { formatMoney, paymentStatusLabel, reservationStatusLabel, t } from '../i18n.js';
+import {
+  formatMoney,
+  paymentStatusLabel,
+  reservationStatusLabel,
+  t,
+} from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
@@ -142,4 +147,3 @@ async function openCustomerHistory(customerId: string) {
     `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.payment')}</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${reservationStatusLabel(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="empty">${t('customers.noHistory')}</p>`}`,
   );
 }
-

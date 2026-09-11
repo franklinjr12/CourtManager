@@ -10,7 +10,9 @@ export const today = (timezone: () => string) => {
     month: '2-digit',
     day: '2-digit',
   }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day}`;
 };
 
@@ -44,7 +46,8 @@ export const isoFromInputs = (date: string, time: string, zone = 'UTC') => {
       Number(parts.minute),
     );
     const candidate = new Date(wall - (localAsUtc - instant.getTime()));
-    if (candidate.getTime() === instant.getTime()) return candidate.toISOString();
+    if (candidate.getTime() === instant.getTime())
+      return candidate.toISOString();
     instant = candidate;
   }
   return instant.toISOString();

@@ -37,7 +37,8 @@ export const createAppContext = (app: HTMLDivElement): AppContext => {
     app,
     api,
     router,
-    request: <T>(path: string, init: RequestInit = {}) => api.request<T>(path, init),
+    request: <T>(path: string, init: RequestInit = {}) =>
+      api.request<T>(path, init),
     getSession,
     setSession,
     clearSession,

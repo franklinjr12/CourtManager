@@ -17,5 +17,3 @@ export async function dashboard() {
     return `<div class="toolbar"><div><h2>${t('dashboard.today')}</h2><p class="muted">${t('dashboard.overview')}</p></div><a class="button primary" href="/schedule">${t('dashboard.openSchedule')}</a></div><div class="metrics"><article class="metric card"><span>${t('dashboard.reservations')}</span><strong>${data.reservationsToday}</strong></article><article class="metric card"><span>${t('dashboard.pendingRequests')}</span><strong>${data.pendingRequests}</strong></article><article class="metric card"><span>${t('dashboard.expectedRevenue')}</span><strong>${formatMoney(data.expectedRevenue)}</strong></article><article class="metric card"><span>${t('dashboard.outstanding')}</span><strong>${formatMoney(data.outstanding)}</strong></article></div><article class="card"><h3>${t('dashboard.upcoming')}</h3>${data.upcoming.length ? `<ul>${data.upcoming.map((item) => `<li>${escapeText(timeValue(item.startAt))} Ã¢â‚¬â€ ${formatMoney(item.expectedAmount)}</li>`).join('')}</ul>` : `<p class="empty">${t('dashboard.noReservations')}</p>`}</article>`;
   });
 }
-
-

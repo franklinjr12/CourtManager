@@ -1,7 +1,10 @@
 import type { Session } from '../core/types.js';
 import { t } from '../i18n.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
-import { languageSelector, wireLanguageSelector } from '../ui/language-selector.js';
+import {
+  languageSelector,
+  wireLanguageSelector,
+} from '../ui/language-selector.js';
 import { app, navigate, request, setSession } from './runtime.js';
 
 export function login() {
@@ -26,4 +29,3 @@ export function login() {
       }
     });
 }
-

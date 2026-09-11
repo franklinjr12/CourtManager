@@ -223,10 +223,22 @@ a {
   font-weight: 700;
   background: #edf1f7;
 }
-.status-RESERVATION { background: #e4efff; color: #174ea6; }
-.status-CLASS { background: #e8f7ee; color: #087443; }
-.status-BLOCKED { background: #fff0ee; color: #b42318; }
-.status-CHECKED_IN { background: #e8f7ee; color: #087443; }
+.status-RESERVATION {
+  background: #e4efff;
+  color: #174ea6;
+}
+.status-CLASS {
+  background: #e8f7ee;
+  color: #087443;
+}
+.status-BLOCKED {
+  background: #fff0ee;
+  color: #b42318;
+}
+.status-CHECKED_IN {
+  background: #e8f7ee;
+  color: #087443;
+}
 .table-wrap {
   overflow: auto;
 }

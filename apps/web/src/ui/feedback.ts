@@ -18,7 +18,13 @@ export const toast = (
   message: string,
   kind: 'success' | 'error' = 'success',
 ) => {
-  sessionStorage.setItem('court-manager-toast', JSON.stringify({ message, kind }));
+  sessionStorage.setItem(
+    'court-manager-toast',
+    JSON.stringify({ message, kind }),
+  );
   renderToast(message, kind);
-  window.setTimeout(() => sessionStorage.removeItem('court-manager-toast'), 5000);
+  window.setTimeout(
+    () => sessionStorage.removeItem('court-manager-toast'),
+    5000,
+  );
 };

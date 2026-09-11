@@ -1,5 +1,10 @@
 import { errorMessage } from '../core/presentation.js';
-import type { OpeningHours, Organization, Court, Sport } from '../core/types.js';
+import type {
+  OpeningHours,
+  Organization,
+  Court,
+  Sport,
+} from '../core/types.js';
 import { formatMoney, t, weekdayLabel } from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
@@ -37,7 +42,6 @@ const courtForm = (court?: Court) => {
 const organizationForm = (org: Organization) =>
   `<form id="organization-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="160" value="${escapeText(org.name)}"></label><label>${t('settings.publicSlug')}<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="${escapeText(org.slug)}"></label><label>${t('settings.timezone')}<input name="timezone" required value="${escapeText(org.timezone)}"></label><label>${t('settings.currency')}<input name="currency" required maxlength="3" value="${escapeText(org.currency)}"></label><label>${t('common.phone')}<input name="phone" value="${escapeText(org.phone)}"></label><label>${t('common.email')}<input name="email" type="email" value="${escapeText(org.email)}"></label><label class="check full"><input name="classes" type="checkbox" ${org.features.classes ? 'checked' : ''}> ${t('settings.enableClasses')}</label><p class="form-error" role="alert"></p><div class="form-actions full"><button class="button primary">${t('settings.saveOrganization')}</button></div></form>`;
 
-
 function openingHoursFrom(form: HTMLFormElement) {
   return Object.fromEntries(
     days.map((day) => [
@@ -58,7 +62,10 @@ function openingHoursFrom(form: HTMLFormElement) {
   );
 }
 async function openCourtModal(court?: Court) {
-  openModal(court ? t('settings.editCourt') : t('settings.addCourt'), courtForm(court));
+  openModal(
+    court ? t('settings.editCourt') : t('settings.addCourt'),
+    courtForm(court),
+  );
   const form = app.querySelector<HTMLFormElement>('#court-form');
   if (!form) return;
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -147,7 +154,9 @@ function wireSettings() {
     ?.addEventListener('click', () => void openSportModal());
   app.querySelectorAll<HTMLElement>('[data-edit-sport]').forEach((element) =>
     element.addEventListener('click', async () => {
-      const sport = await request<Sport>(`/sports/${element.dataset.editSport}`);
+      const sport = await request<Sport>(
+        `/sports/${element.dataset.editSport}`,
+      );
       await openSportModal(sport);
     }),
   );
@@ -178,8 +187,7 @@ function wireSettings() {
   );
   app.querySelectorAll<HTMLElement>('[data-archive-court]').forEach((element) =>
     element.addEventListener('click', async () => {
-      if (!window.confirm(t('settings.archiveCourtConfirmation')))
-        return;
+      if (!window.confirm(t('settings.archiveCourtConfirmation'))) return;
       try {
         await request(`/courts/${element.dataset.archiveCourt}/archive`, {
           method: 'POST',
@@ -233,5 +241,3 @@ function wireSettings() {
       }
     });
 }
-
-

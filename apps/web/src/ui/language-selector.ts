@@ -6,10 +6,12 @@ export const languageSelector = () =>
 
 export const wireLanguageSelector = () => {
   const { app, renderRoute } = getAppContext();
-  app.querySelector<HTMLSelectElement>('[data-language-selector]')?.addEventListener('change', (event) => {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    if (!['pt-BR', 'en-US'].includes(value)) return;
-    setLocale(value as Locale);
-    void renderRoute();
-  });
+  app
+    .querySelector<HTMLSelectElement>('[data-language-selector]')
+    ?.addEventListener('change', (event) => {
+      const value = (event.currentTarget as HTMLSelectElement).value;
+      if (!['pt-BR', 'en-US'].includes(value)) return;
+      setLocale(value as Locale);
+      void renderRoute();
+    });
 };

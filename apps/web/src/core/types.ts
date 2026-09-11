@@ -8,7 +8,10 @@ export type Session = {
   };
 };
 
-export type OpeningHours = Record<string, { open: string; close: string } | null>;
+export type OpeningHours = Record<
+  string,
+  { open: string; close: string } | null
+>;
 
 export type Organization = {
   organizationId: string;

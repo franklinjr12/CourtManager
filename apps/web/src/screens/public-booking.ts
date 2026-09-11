@@ -1,7 +1,14 @@
-import { endIsoFromInputs, isoFromInputs, errorMessage } from '../core/presentation.js';
+import {
+  endIsoFromInputs,
+  isoFromInputs,
+  errorMessage,
+} from '../core/presentation.js';
 import { t } from '../i18n.js';
 import { formData } from '../ui/forms.js';
-import { languageSelector, wireLanguageSelector } from '../ui/language-selector.js';
+import {
+  languageSelector,
+  wireLanguageSelector,
+} from '../ui/language-selector.js';
 import { localizeEnumOptions } from '../ui/modal.js';
 import { app, escapeText, request } from './runtime.js';
 export async function publicBooking(slug: string) {
@@ -16,9 +23,9 @@ export async function publicBooking(slug: string) {
         slotMinutes: number;
       }[];
     }>(`/public/venues/${encodeURIComponent(slug)}`);
-      app.innerHTML = `<main class="login"><section class="card public-booking"><div class="public-head"><h1>${escapeText(venue.name)}</h1>${languageSelector()}</div><p class="muted">${t('public.title')}</p><form id="public-form"><label>${t('common.court')}<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} â€” ${escapeText(court.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input type="date" name="date" required></label><label>${t('common.startTime')}<input type="time" name="time" required></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.hours', { count: 2 })}</option></select></label><label>${t('common.name')}<input name="customerName" required></label><label>${t('common.phone')}<input name="phone" required></label><label>${t('common.email')} (${t('common.optional')})<input name="email" type="email"></label><label>${t('common.notes')} (${t('common.optional')})<textarea name="notes"></textarea></label><p class="notice">${t('public.disclaimer')}</p><button class="button primary">${t('public.sendRequest')}</button><p id="public-result" role="status"></p></form></section></main>`;
-      wireLanguageSelector();
-      localizeEnumOptions(app);
+    app.innerHTML = `<main class="login"><section class="card public-booking"><div class="public-head"><h1>${escapeText(venue.name)}</h1>${languageSelector()}</div><p class="muted">${t('public.title')}</p><form id="public-form"><label>${t('common.court')}<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} â€” ${escapeText(court.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input type="date" name="date" required></label><label>${t('common.startTime')}<input type="time" name="time" required></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.hours', { count: 2 })}</option></select></label><label>${t('common.name')}<input name="customerName" required></label><label>${t('common.phone')}<input name="phone" required></label><label>${t('common.email')} (${t('common.optional')})<input name="email" type="email"></label><label>${t('common.notes')} (${t('common.optional')})<textarea name="notes"></textarea></label><p class="notice">${t('public.disclaimer')}</p><button class="button primary">${t('public.sendRequest')}</button><p id="public-result" role="status"></p></form></section></main>`;
+    wireLanguageSelector();
+    localizeEnumOptions(app);
     const publicForm = app.querySelector<HTMLFormElement>('#public-form');
     const publicTime = publicForm?.elements.namedItem(
       'time',
@@ -112,5 +119,3 @@ export async function publicBooking(slug: string) {
     wireLanguageSelector();
   }
 }
-
-

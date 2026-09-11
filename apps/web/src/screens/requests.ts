@@ -14,9 +14,12 @@ export async function requests() {
     request<RequestItem[]>('/requests'),
     request<Customer[]>('/customers?limit=100'),
   ]);
-  await shell(async () => {
-    return `<div class="toolbar"><div><h2>${t('requests.title')}</h2><p class="muted">${t('requests.pending', { count: data.filter((item) => item.status === 'REQUESTED').length })}</p></div></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.customer')}</th><th>${t('requests.requestedTime')}</th><th>${t('common.court')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((item) => `<tr><td>${escapeText(item.customerName)}<small>${escapeText(item.phone)}</small></td><td>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}Ã¢â‚¬â€œ${escapeText(timeValue(item.requestedEndAt))}</td><td>${escapeText(item.courtId)}</td><td>${requestStatusLabel(item.status)}</td><td>${item.status === 'REQUESTED' ? `${button(t('requests.review'), `data-review-request="${escapeText(item.requestId)}"`)}${button(t('requests.confirm'), `data-confirm-request="${escapeText(item.requestId)}"`)}${button(t('requests.reject'), `data-reject-request="${escapeText(item.requestId)}"`)}` : 'Ã¢â‚¬â€'}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('requests.noRequests')}</p>`}</article>`;
-  }, () => wireRequests(data, customers));
+  await shell(
+    async () => {
+      return `<div class="toolbar"><div><h2>${t('requests.title')}</h2><p class="muted">${t('requests.pending', { count: data.filter((item) => item.status === 'REQUESTED').length })}</p></div></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.customer')}</th><th>${t('requests.requestedTime')}</th><th>${t('common.court')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((item) => `<tr><td>${escapeText(item.customerName)}<small>${escapeText(item.phone)}</small></td><td>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}Ã¢â‚¬â€œ${escapeText(timeValue(item.requestedEndAt))}</td><td>${escapeText(item.courtId)}</td><td>${requestStatusLabel(item.status)}</td><td>${item.status === 'REQUESTED' ? `${button(t('requests.review'), `data-review-request="${escapeText(item.requestId)}"`)}${button(t('requests.confirm'), `data-confirm-request="${escapeText(item.requestId)}"`)}${button(t('requests.reject'), `data-reject-request="${escapeText(item.requestId)}"`)}` : 'Ã¢â‚¬â€'}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('requests.noRequests')}</p>`}</article>`;
+    },
+    () => wireRequests(data, customers),
+  );
 }
 function wireRequests(data: RequestItem[], customers: Customer[]) {
   app
@@ -105,4 +108,3 @@ async function rejectRequest(id: string) {
     }
   });
 }
-

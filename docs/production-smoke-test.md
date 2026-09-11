@@ -16,6 +16,7 @@
 - [ ] Payment recording works
 - [ ] Dashboard totals reasonable
 - [ ] Mobile layout usable
+
 ## Phase 1 checks
 
 Verify booked reservation check-in/completion, no-show court release, owner staff/coach creation, class roster attendance, and the `/today`, `/finance/balances`, and `/reports/operations` endpoints. Verify coaches see assigned classes only and cannot access staff, customer directory, or finance workflows.

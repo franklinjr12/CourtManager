@@ -23,7 +23,9 @@ test('public request flows through confirmation, payment, completion, and histor
   await page.locator('input[name="customerName"]').fill(unique);
   await page.locator('input[name="phone"]').fill('41999997777');
   await page.getByRole('button', { name: 'Enviar solicitação' }).click();
-  await expect(page.locator('#public-result')).toHaveText(/Solicitação enviada/);
+  await expect(page.locator('#public-result')).toHaveText(
+    /Solicitação enviada/,
+  );
 
   await page.goto('/requests');
   const requestRow = page.locator('tr').filter({ hasText: unique });

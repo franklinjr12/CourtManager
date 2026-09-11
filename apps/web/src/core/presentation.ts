@@ -9,8 +9,11 @@ import {
 } from './dates.js';
 
 export const today = () => currentDay(getAppContext().timezone);
-export const isoFromInputs = (date: string, time: string, zone = getAppContext().timezone()) =>
-  iso(date, time, zone);
+export const isoFromInputs = (
+  date: string,
+  time: string,
+  zone = getAppContext().timezone(),
+) => iso(date, time, zone);
 export const endIsoFromInputs = (
   date: string,
   time: string,

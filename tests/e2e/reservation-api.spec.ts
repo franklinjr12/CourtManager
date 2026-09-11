@@ -16,8 +16,9 @@ test('browser API workflow covers conflicts, recurring reservations, and court b
     new Date(new Date(`${date}T00:00:00Z`).getTime() + offset * 86400000)
       .toISOString()
       .slice(0, 10);
-  const recurringOffsets = Array.from({ length: 8 }, (_, index) =>
-    (index + 2) * 7,
+  const recurringOffsets = Array.from(
+    { length: 8 },
+    (_, index) => (index + 2) * 7,
   );
   let base = '';
   for (let offset = 0; offset < 180 && !base; offset += 1) {

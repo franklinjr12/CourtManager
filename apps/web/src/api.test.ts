@@ -3,13 +3,17 @@ import { ApiClient, ApiError } from './api.js';
 
 describe('ApiClient', () => {
   it('serializes JSON requests and applies the session token', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }),
+      );
     vi.stubGlobal('fetch', fetchMock);
     const api = new ApiClient('https://api.example', () => 'token');
 
-    await expect(api.post('/example', { value: 1 })).resolves.toEqual({ ok: true });
+    await expect(api.post('/example', { value: 1 })).resolves.toEqual({
+      ok: true,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.example/example',
       expect.objectContaining({
@@ -28,12 +32,19 @@ describe('ApiClient', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: { code: 'EXPIRED', message: 'Expired' } }), {
-          status: 401,
-        }),
+        new Response(
+          JSON.stringify({ error: { code: 'EXPIRED', message: 'Expired' } }),
+          {
+            status: 401,
+          },
+        ),
       ),
     );
-    const api = new ApiClient('https://api.example', () => undefined, onUnauthorized);
+    const api = new ApiClient(
+      'https://api.example',
+      () => undefined,
+      onUnauthorized,
+    );
 
     await expect(api.get('/private')).rejects.toMatchObject({
       code: 'EXPIRED',

@@ -95,7 +95,9 @@ export class MemoryRepository implements Repository {
           (!opts?.beginsWith || i.SK.startsWith(opts.beginsWith)),
       )
       .sort((a, b) => a.SK.localeCompare(b.SK));
-    return (opts?.limit === undefined ? result : result.slice(0, opts.limit)) as T[];
+    return (
+      opts?.limit === undefined ? result : result.slice(0, opts.limit)
+    ) as T[];
   }
   async scan<T extends RecordItem>(filter?: (item: T) => boolean) {
     const items = [...this.items.values()] as T[];
@@ -218,23 +220,30 @@ export class DynamoRepository implements Repository {
           ExpressionAttributeValues: opts?.beginsWith
             ? { ':pk': pk, ':sk': opts.beginsWith }
             : { ':pk': pk },
-          ...(opts?.limit ? { Limit: Math.max(1, opts.limit - items.length) } : {}),
+          ...(opts?.limit
+            ? { Limit: Math.max(1, opts.limit - items.length) }
+            : {}),
           ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
         }),
       );
       items.push(...((result.Items ?? []) as T[]));
       ExclusiveStartKey = result.LastEvaluatedKey as Key | undefined;
-    } while (ExclusiveStartKey && (opts?.limit === undefined || items.length < opts.limit));
+    } while (
+      ExclusiveStartKey &&
+      (opts?.limit === undefined || items.length < opts.limit)
+    );
     return opts?.limit === undefined ? items : items.slice(0, opts.limit);
   }
   async scan<T extends RecordItem>(filter?: (item: T) => boolean) {
     const items: T[] = [];
     let ExclusiveStartKey: Key | undefined;
     do {
-      const result = await this.client.send(new ScanCommand({
-        TableName: this.table,
-        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-      }));
+      const result = await this.client.send(
+        new ScanCommand({
+          TableName: this.table,
+          ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+        }),
+      );
       items.push(...((result.Items ?? []) as T[]));
       ExclusiveStartKey = result.LastEvaluatedKey as Key | undefined;
     } while (ExclusiveStartKey);

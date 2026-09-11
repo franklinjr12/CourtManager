@@ -1,7 +1,20 @@
-import { endIsoFromInputs, isoFromInputs, localDateKey, dateValue, timeValue, today, errorMessage } from '../core/presentation.js';
+import {
+  endIsoFromInputs,
+  isoFromInputs,
+  localDateKey,
+  dateValue,
+  timeValue,
+  today,
+  errorMessage,
+} from '../core/presentation.js';
 import type { Court, Customer, Reservation } from '../core/types.js';
 import { button } from '../dom.js';
-import { formatMoney, paymentStatusLabel, reservationStatusLabel, t } from '../i18n.js';
+import {
+  formatMoney,
+  paymentStatusLabel,
+  reservationStatusLabel,
+  t,
+} from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
@@ -196,10 +209,12 @@ export async function openReservationDetail(id: string) {
     `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}â€“${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${reservation.status === 'CONFIRMED' ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
   );
   if (reservation.status === 'BOOKED')
-    app.querySelector<HTMLElement>('.modal .detail-actions')?.insertAdjacentHTML(
-      'afterbegin',
-      button(t('classSession.checkIn'), 'data-transition="CHECKED_IN"'),
-    );
+    app
+      .querySelector<HTMLElement>('.modal .detail-actions')
+      ?.insertAdjacentHTML(
+        'afterbegin',
+        button(t('classSession.checkIn'), 'data-transition="CHECKED_IN"'),
+      );
   const detailGrid = app.querySelector<HTMLElement>('.modal .detail-grid');
   detailGrid?.insertAdjacentHTML(
     'beforeend',
@@ -244,7 +259,11 @@ export async function openReservationDetail(id: string) {
       const status = String(element.dataset.transition);
       if (
         !window.confirm(
-          status === 'CANCELLED' ? t('reservations.cancelConfirmation') : status === 'NO_SHOW' ? t('reservations.noShowConfirmation') : t('reservations.completeConfirmation'),
+          status === 'CANCELLED'
+            ? t('reservations.cancelConfirmation')
+            : status === 'NO_SHOW'
+              ? t('reservations.noShowConfirmation')
+              : t('reservations.completeConfirmation'),
         )
       )
         return;
@@ -311,9 +330,11 @@ async function openRecurringReservationModal() {
 }
 export async function reservations() {
   const data = await request<Reservation[]>('/reservations');
-  await shell(async () => {
-    return `<div class="toolbar"><div><h2>${t('reservations.title')}</h2><p class="muted">${t('reservations.description')}</p></div><button class="button primary" id="add-reservation">${t('reservations.new')}</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.court')}</th><th>${t('common.customer')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}â€“${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${reservationStatusLabel(r.status)} Â· ${paymentStatusLabel(r.paymentStatus ?? 'UNPAID')}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button(t('common.open' as never), `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('reservations.noReservations')}</p>`}</article>`;
-  }, () => {
+  await shell(
+    async () => {
+      return `<div class="toolbar"><div><h2>${t('reservations.title')}</h2><p class="muted">${t('reservations.description')}</p></div><button class="button primary" id="add-reservation">${t('reservations.new')}</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.court')}</th><th>${t('common.customer')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}â€“${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${reservationStatusLabel(r.status)} Â· ${paymentStatusLabel(r.paymentStatus ?? 'UNPAID')}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button(t('common.open' as never), `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('reservations.noReservations')}</p>`}</article>`;
+    },
+    () => {
       screen()
         ?.querySelector('#add-reservation')
         ?.addEventListener('click', () => void openReservationModal());
@@ -339,7 +360,8 @@ export async function reservations() {
               void openReservationDetail(String(element.dataset.reservation)),
           ),
         );
-  });
+    },
+  );
   const rows = screen()?.querySelectorAll<HTMLTableRowElement>('tbody tr');
   rows?.forEach((row, index) => {
     const reservation = data[index];
