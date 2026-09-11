@@ -149,6 +149,16 @@ export async function settings() {
   }, wireSettings);
 }
 function wireSettings() {
+  const addCourt = app.querySelector<HTMLButtonElement>('#add-court');
+  const courtsSection = Array.from(
+    app.querySelectorAll<HTMLElement>('article.section-card'),
+  ).find(
+    (section) =>
+      section.querySelector('h3')?.textContent === t('settings.courts'),
+  );
+  const courtsHeader =
+    courtsSection?.querySelector<HTMLElement>('.section-head');
+  if (addCourt && courtsHeader) courtsHeader.append(addCourt);
   app
     .querySelector('#add-sport')
     ?.addEventListener('click', () => void openSportModal());
@@ -174,9 +184,7 @@ function wireSettings() {
       }
     }),
   );
-  app
-    .querySelector<HTMLButtonElement>('#add-court')
-    ?.addEventListener('click', () => void openCourtModal(undefined));
+  addCourt?.addEventListener('click', () => void openCourtModal(undefined));
   app.querySelectorAll<HTMLElement>('[data-edit-court]').forEach((element) =>
     element.addEventListener('click', async () => {
       const court = await request<Court>(
