@@ -12,8 +12,8 @@ import { toast } from '../ui/feedback.js';
 import { shell } from '../ui/shell.js';
 import {
   openBlockModal,
-  openReservationDetail,
   openReservationModal,
+  wireReservationDetailButtons,
 } from './reservations.js';
 import {
   escapeText,
@@ -86,14 +86,8 @@ export async function schedule() {
   screen()
     ?.querySelector('#block-court')
     ?.addEventListener('click', () => void openBlockModal(date));
-  screen()
-    ?.querySelectorAll<HTMLElement>('[data-reservation]')
-    .forEach((element) =>
-      element.addEventListener(
-        'click',
-        () => void openReservationDetail(String(element.dataset.reservation)),
-      ),
-    );
+  const scheduleScreen = screen();
+  if (scheduleScreen) wireReservationDetailButtons(scheduleScreen);
   screen()
     ?.querySelectorAll<HTMLElement>('[data-block]')
     .forEach((element) =>

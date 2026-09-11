@@ -149,6 +149,8 @@ const enUS = {
   'reservations.details': 'Reservation details',
   'reservations.recordPayment': 'Record payment',
   'reservations.saveTime': 'Save time',
+  'reservations.paidTimeChangeConfirmation':
+    'This reservation has payment recorded. Change its date or time?',
   'reservations.complete': 'Complete',
   'reservations.noShow': 'No-show',
   'reservations.cancel': 'Cancel reservation',
@@ -466,6 +468,8 @@ const ptBR: Record<keyof typeof enUS, string> = {
   'reservations.details': 'Detalhes da reserva',
   'reservations.recordPayment': 'Registrar pagamento',
   'reservations.saveTime': 'Salvar horário',
+  'reservations.paidTimeChangeConfirmation':
+    'Esta reserva já tem pagamento registrado. Alterar data ou horário?',
   'reservations.complete': 'Concluir',
   'reservations.noShow': 'Não compareceu',
   'reservations.cancel': 'Cancelar reserva',

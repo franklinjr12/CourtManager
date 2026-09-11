@@ -23,6 +23,29 @@ import { customerOptions } from './customers.js';
 import { openPaymentModal } from './finance.js';
 import { app, escapeText, renderRoute, request, screen } from './runtime.js';
 
+export function reservationIsEditable(status: string) {
+  return status === 'BOOKED' || status === 'CONFIRMED';
+}
+
+export function reservationTimeChanged(
+  reservation: Reservation,
+  startAt: string,
+  endAt: string,
+) {
+  return reservation.startAt !== startAt || reservation.endAt !== endAt;
+}
+
+export function wireReservationDetailButtons(root: ParentNode = document) {
+  root
+    .querySelectorAll<HTMLElement>('[data-reservation]')
+    .forEach((element) =>
+      element.addEventListener(
+        'click',
+        () => void openReservationDetail(String(element.dataset.reservation)),
+      ),
+    );
+}
+
 async function loadAvailability(form: HTMLFormElement) {
   const court = String(
       (form.elements.namedItem('courtId') as HTMLSelectElement)?.value ?? '',
@@ -204,9 +227,10 @@ export async function openBlockModal(date = today(), courtId?: string) {
 }
 export async function openReservationDetail(id: string) {
   const reservation = await request<Reservation>(`/reservations/${id}`);
+  const editable = reservationIsEditable(reservation.status);
   openModal(
     t('reservations.details'),
-    `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${reservation.status === 'CONFIRMED' ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
+    `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${editable ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${editable ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
   );
   if (reservation.status === 'BOOKED')
     app
@@ -239,11 +263,21 @@ export async function openReservationDetail(id: string) {
     setBusy(form, true);
     try {
       const values = formData(form);
+      const startAt = isoFromInputs(String(values.date), String(values.start));
+      const endAt = isoFromInputs(String(values.date), String(values.end));
+      if (
+        (reservation.paidAmount ?? 0) > 0 &&
+        reservationTimeChanged(reservation, startAt, endAt) &&
+        !window.confirm(t('reservations.paidTimeChangeConfirmation'))
+      ) {
+        setBusy(form, false);
+        return;
+      }
       await request(`/reservations/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          startAt: isoFromInputs(String(values.date), String(values.start)),
-          endAt: isoFromInputs(String(values.date), String(values.end)),
+          startAt,
+          endAt,
         }),
       });
       closeModal();
@@ -351,15 +385,8 @@ export async function reservations() {
             () => void openRecurringReservationModal(),
           );
       }
-      screen()
-        ?.querySelectorAll<HTMLElement>('[data-reservation]')
-        .forEach((element) =>
-          element.addEventListener(
-            'click',
-            () =>
-              void openReservationDetail(String(element.dataset.reservation)),
-          ),
-        );
+      const reservationScreen = screen();
+      if (reservationScreen) wireReservationDetailButtons(reservationScreen);
     },
   );
   const rows = screen()?.querySelectorAll<HTMLTableRowElement>('tbody tr');
