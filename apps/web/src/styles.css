@@ -395,6 +395,37 @@ textarea:focus {
 .schedule-item.blocked {
   background: #fff8f5;
 }
+.schedule-timeline {
+  align-items: start;
+}
+.schedule-timeline .court {
+  padding-bottom: 18px;
+}
+.schedule-timeline .schedule-column {
+  display: grid;
+  grid-template-rows: repeat(var(--schedule-slots), 22px);
+  gap: 0;
+  min-height: calc(var(--schedule-slots) * 22px);
+  margin-top: 16px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(4 * 22px - 1px),
+    var(--border) calc(4 * 22px - 1px),
+    var(--border) calc(4 * 22px)
+  );
+}
+.schedule-timeline .schedule-item {
+  align-self: stretch;
+  min-height: 0;
+  margin: 0 0 4px;
+  padding: 8px;
+  overflow: hidden;
+  z-index: 1;
+}
+.schedule-timeline .schedule-item span {
+  font-size: 12px;
+}
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
