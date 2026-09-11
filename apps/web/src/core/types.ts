@@ -18,6 +18,7 @@ export type Organization = {
   currency: string;
   phone?: string;
   email?: string;
+  preferredSportId?: string;
   active: boolean;
   features: { classes: boolean; finance: boolean };
 };
@@ -61,6 +62,7 @@ export type Reservation = {
   paidAmount?: number;
   remainingAmount?: number;
   paymentStatus?: string;
+  chargeId?: string;
   customerName?: string;
   courtName?: string;
 };
@@ -97,6 +99,9 @@ export type SportClass = {
   courtId: string;
   capacity: number;
   price: number;
+  pricePerParticipant?: number;
+  type?: 'GROUP' | 'PRIVATE';
+  scheduleType?: 'SINGLE' | 'WEEKLY';
   weekday: number;
   startTime: string;
   durationMinutes: number;
@@ -104,6 +109,17 @@ export type SportClass = {
   endDate?: string;
   active: boolean;
   notes?: string;
+};
+
+export type ClassSession = {
+  sessionId: string;
+  classId: string;
+  courtId: string;
+  coachId: string;
+  startAt: string;
+  endAt: string;
+  status: string;
+  capacity: number;
 };
 
 export type ScheduleItem = Reservation & {

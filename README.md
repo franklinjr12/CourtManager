@@ -30,6 +30,8 @@ The dev command starts DynamoDB Local on port 8120, waits for it, starts the API
 
 `corepack pnpm bootstrap:owner` creates an organization and owner idempotently. Set `OWNER_EMAIL`, `OWNER_PASSWORD`, and `ORGANIZATION_NAME` for production; local defaults are safe test values. `corepack pnpm seed:dev` creates representative local organization, owner, courts, and customers and refuses production. The seed login is `owner@arena.test` / `dev-password`.
 
+Court Manager now includes a timezone-aware Today front desk, staff and coach workflows, materialized class sessions with attendance, operational charges and customer balances. Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent.
+
 ## Quality gates
 
 ```bash

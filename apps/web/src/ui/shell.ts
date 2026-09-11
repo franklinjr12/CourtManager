@@ -13,7 +13,20 @@ export async function shell(
     navigate('/login');
     return;
   }
-  app.innerHTML = `<div class="shell"><aside><h1>Court Manager</h1><nav><a href="/dashboard">${t('nav.dashboard')}</a><a href="/schedule">${t('nav.schedule')}</a><a href="/requests">${t('nav.requests')}</a><a href="/reservations">${t('nav.reservations')}</a><a href="/customers">${t('nav.customers')}</a><a href="/finance">${t('nav.finance')}</a><a href="/classes">${t('nav.classes')}</a><a href="/reports">${t('nav.reports')}</a><a href="/settings">${t('nav.settings')}</a></nav><button id="logout" class="link-button">${t('nav.logOut')}</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? t('nav.sportsCenter'))}</span><span>${languageSelector()} ${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">${t('common.loading')}</div></section></main></div>`;
+  const role = current.user.role;
+  const navigation = [
+    ['/today', t('nav.today'), ['OWNER', 'STAFF', 'COACH']],
+    ['/schedule', t('nav.schedule'), ['OWNER', 'STAFF', 'COACH']],
+    ['/requests', t('nav.requests'), ['OWNER', 'STAFF']],
+    ['/reservations', t('nav.reservations'), ['OWNER', 'STAFF']],
+    ['/customers', t('nav.customers'), ['OWNER', 'STAFF']],
+    ['/finance', t('nav.finance'), ['OWNER', 'STAFF']],
+    ['/classes', t('nav.classes'), ['OWNER', 'STAFF', 'COACH']],
+    ['/reports', t('nav.reports'), ['OWNER', 'STAFF']],
+    ['/staff', t('nav.staff'), ['OWNER']],
+    ['/settings', t('nav.settings'), ['OWNER']],
+  ] as const;
+  app.innerHTML = `<div class="shell"><aside><h1>Court Manager</h1><nav>${navigation.filter((item) => item[2].includes(role as never)).map((item) => `<a href="${item[0]}">${item[1]}</a>`).join('')}</nav><button id="logout" class="link-button">${t('nav.logOut')}</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? t('nav.sportsCenter'))}</span><span>${languageSelector()} ${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">${t('common.loading')}</div></section></main></div>`;
   wireLanguageSelector();
   const queuedToast = sessionStorage.getItem('court-manager-toast');
   if (queuedToast) {
@@ -39,4 +52,3 @@ export async function shell(
     onMount?.();
   }
 }
-

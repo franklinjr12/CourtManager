@@ -19,12 +19,11 @@ export function login() {
           body: JSON.stringify(formData(form)),
         });
         setSession(data);
-        navigate('/dashboard');
+        navigate('/today');
       } catch (error) {
         showFormError(form, error);
         setBusy(form, false);
       }
     });
 }
-
 

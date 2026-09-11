@@ -1,2 +1,2 @@
 export type ReservationStatus =
-  'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+  'BOOKED' | 'CHECKED_IN' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';

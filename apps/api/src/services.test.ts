@@ -7,8 +7,8 @@ import { buildServices } from './services/index.js';
 
 const context: AuthContext = {
   organizationId: 'org-1',
-  userId: 'staff-1',
-  role: 'STAFF',
+  userId: 'owner-1',
+  role: 'OWNER',
 };
 const hours = {
   MONDAY: { open: '07:00', close: '23:00' },
@@ -32,6 +32,20 @@ async function setup(timezone = 'UTC') {
     currency: 'BRL',
     active: true,
     features: { classes: false, finance: true },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  await repo.put({
+    PK: 'ORG#org-1',
+    SK: 'USER#coach-1',
+    entity: 'user',
+    userId: 'coach-1',
+    organizationId: 'org-1',
+    name: 'Coach',
+    email: 'coach@arena.test',
+    role: 'COACH',
+    passwordHash: 'test',
+    active: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -74,7 +88,7 @@ describe('reservation workflows', () => {
       'CANCELLED',
     );
     const second = await services.reservations.create(context, input);
-    expect(second.status).toBe('CONFIRMED');
+    expect(second.status).toBe('BOOKED');
   });
   it('serializes concurrent writes with one winner', async () => {
     const { services, court, customer } = await setup();
@@ -120,7 +134,7 @@ describe('reservation workflows', () => {
       context,
       String(request.requestId),
     );
-    expect(reservation.status).toBe('CONFIRMED');
+    expect(reservation.status).toBe('BOOKED');
   });
   it('derives payment summary and preserves historical price', async () => {
     const { services, court, customer } = await setup();
@@ -248,7 +262,7 @@ describe('court archive listing', () => {
         '2027-01-05',
       ),
     ).toHaveLength(4);
-    expect(reservation.status).toBe('CONFIRMED');
+    expect(reservation.status).toBe('BOOKED');
     expect(
       await services.schedule.availability(
         context,

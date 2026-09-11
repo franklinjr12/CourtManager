@@ -3,7 +3,9 @@ import type { ReservationStatus } from './types.js';
 export const allowedTransition = (
   from: ReservationStatus,
   to: ReservationStatus,
-) => from === 'CONFIRMED' && ['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(to);
+) =>
+  (from === 'BOOKED' && ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'].includes(to)) ||
+  (from === 'CHECKED_IN' && to === 'COMPLETED');
 export const assertTransition = (
   from: ReservationStatus,
   to: ReservationStatus,

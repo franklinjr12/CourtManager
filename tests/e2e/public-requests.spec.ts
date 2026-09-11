@@ -71,6 +71,15 @@ test('public request flows through confirmation, payment, completion, and histor
     (
       await api(
         page,
+        `/reservations/${confirmed.linkedReservationId}/check-in`,
+        { method: 'POST' },
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await api(
+        page,
         `/reservations/${confirmed.linkedReservationId}/complete`,
         {
           method: 'POST',

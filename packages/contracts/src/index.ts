@@ -14,7 +14,8 @@ export const PaginationSchema = z.object({
 });
 export const RoleSchema = z.enum(['OWNER', 'STAFF', 'COACH']);
 export const ReservationStatusSchema = z.enum([
-  'CONFIRMED',
+  'BOOKED',
+  'CHECKED_IN',
   'COMPLETED',
   'CANCELLED',
   'NO_SHOW',
@@ -107,6 +108,7 @@ export const CustomerSchema = z.object({
   phone: z.string().optional(),
   normalizedEmail: z.string(),
   email: z.string().email().optional(),
+  preferredSportId: IdentifierSchema.optional(),
   tags: z.array(z.string()).default([]),
   notes: z.string().max(4000).optional(),
   archived: z.boolean(),
@@ -129,6 +131,14 @@ export const ReservationSchema = z.object({
   createdAt: z.string(),
   updatedBy: IdentifierSchema,
   updatedAt: z.string(),
+  checkedInAt: z.string().optional(),
+  checkedInBy: IdentifierSchema.optional(),
+  completedAt: z.string().optional(),
+  completedBy: IdentifierSchema.optional(),
+  cancelledAt: z.string().optional(),
+  cancelledBy: IdentifierSchema.optional(),
+  noShowAt: z.string().optional(),
+  noShowBy: IdentifierSchema.optional(),
 });
 export const RequestSchema = z.object({
   requestId: IdentifierSchema,
@@ -161,6 +171,7 @@ export const PaymentSchema = z.object({
   organizationId: IdentifierSchema,
   reservationId: IdentifierSchema.optional(),
   classId: IdentifierSchema.optional(),
+  chargeId: IdentifierSchema.optional(),
   customerId: IdentifierSchema,
   amount: MoneySchema,
   method: PaymentMethodSchema,
@@ -194,11 +205,16 @@ export const ClassSchema = z.object({
   organizationId: IdentifierSchema,
   name: z.string().min(1),
   sport: z.string().min(1),
+  sportId: IdentifierSchema.optional(),
+  type: z.enum(['GROUP', 'PRIVATE']).default('GROUP'),
   coachId: IdentifierSchema,
   courtId: IdentifierSchema,
   capacity: z.number().int().positive().max(500),
-  price: MoneySchema,
-  weekday: z.number().int().min(0).max(6),
+  price: MoneySchema.optional(),
+  pricePerParticipant: MoneySchema.default(0),
+  scheduleType: z.enum(['SINGLE', 'WEEKLY']).default('WEEKLY'),
+  weekday: z.number().int().min(0).max(6).optional(),
+  intervalWeeks: z.number().int().min(1).max(52).default(1),
   startTime: LocalTimeSchema,
   durationMinutes: z.number().int().positive().max(1440),
   startDate: DateSchema,
@@ -213,7 +229,7 @@ export const EnrollmentSchema = z.object({
   organizationId: IdentifierSchema,
   classId: IdentifierSchema,
   customerId: IdentifierSchema,
-  status: z.enum(['ACTIVE', 'INACTIVE']),
+  status: z.enum(['ACTIVE', 'CANCELLED', 'INACTIVE']),
   joinedAt: z.string(),
   leftAt: z.string().optional(),
 });
@@ -221,11 +237,60 @@ export const AttendanceSchema = z.object({
   attendanceId: IdentifierSchema,
   organizationId: IdentifierSchema,
   classId: IdentifierSchema,
+  sessionId: IdentifierSchema.optional(),
   customerId: IdentifierSchema,
   date: DateSchema,
   status: z.enum(['PRESENT', 'ABSENT', 'EXCUSED']),
   recordedBy: IdentifierSchema,
   createdAt: z.string(),
+});
+export const ClassSessionStatusSchema = z.enum([
+  'SCHEDULED',
+  'COMPLETED',
+  'CANCELLED',
+]);
+export const ParticipantAttendanceStatusSchema = z.enum([
+  'BOOKED',
+  'CHECKED_IN',
+  'COMPLETED',
+  'NO_SHOW',
+]);
+export const ClassSessionSchema = z.object({
+  sessionId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  classId: IdentifierSchema,
+  courtId: IdentifierSchema,
+  coachId: IdentifierSchema,
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+  status: ClassSessionStatusSchema,
+  capacity: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  cancelledAt: z.string().optional(),
+  cancelledBy: IdentifierSchema.optional(),
+  cancellationReason: z.string().optional(),
+  completedAt: z.string().optional(),
+  completedBy: IdentifierSchema.optional(),
+});
+export const ChargeSchema = z.object({
+  chargeId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  sourceType: z.enum(['RESERVATION', 'CLASS']),
+  sourceId: IdentifierSchema,
+  reservationId: IdentifierSchema.optional(),
+  classId: IdentifierSchema.optional(),
+  classSessionId: IdentifierSchema.optional(),
+  description: z.string().min(1),
+  amount: MoneySchema,
+  serviceAt: z.string().datetime({ offset: true }),
+  status: z.enum(['ACTIVE', 'VOID']),
+  createdBy: IdentifierSchema,
+  createdAt: z.string(),
+  voidedAt: z.string().optional(),
+  voidedBy: IdentifierSchema.optional(),
+  voidReason: z.string().optional(),
 });
 export const BlockSchema = z.object({
   blockId: IdentifierSchema,
@@ -310,6 +375,7 @@ export const RequestInputSchema = z.object({
 });
 export const PaymentInputSchema = z
   .object({
+    chargeId: IdentifierSchema.optional(),
     reservationId: IdentifierSchema.optional(),
     classId: IdentifierSchema.optional(),
     customerId: IdentifierSchema,
@@ -319,8 +385,8 @@ export const PaymentInputSchema = z
     notes: z.string().max(2000).optional(),
   })
   .refine(
-    (v) => Boolean(v.reservationId) !== Boolean(v.classId),
-    'Exactly one reservation or class is required',
+    (v) => [v.chargeId, v.reservationId, v.classId].filter(Boolean).length === 1,
+    'Exactly one charge, reservation or class is required',
   );
 export const BlockInputSchema = z.object({
   courtId: IdentifierSchema,
@@ -343,6 +409,42 @@ export const ExpenseInputSchema = ExpenseSchema.omit({
   createdBy: true,
   createdAt: true,
 });
+export const StaffCreateInputSchema = z.object({
+  name: z.string().min(1).max(160),
+  email: z.string().email(),
+  role: RoleSchema,
+  password: z.string().min(1).max(200),
+});
+export const StaffUpdateInputSchema = StaffCreateInputSchema.partial()
+  .omit({ password: true })
+  .extend({ active: z.boolean().optional() });
+export const StaffPasswordResetInputSchema = z.object({
+  password: z.string().min(1).max(200),
+});
+export const ClassInputSchema = z.object({
+  name: z.string().min(1).max(160),
+  sport: z.string().min(1).max(80),
+  sportId: IdentifierSchema.optional(),
+  type: z.enum(['GROUP', 'PRIVATE']).default('GROUP'),
+  coachId: IdentifierSchema,
+  courtId: IdentifierSchema,
+  capacity: z.number().int().positive().max(500),
+  pricePerParticipant: MoneySchema.optional(),
+  price: MoneySchema.optional(),
+  scheduleType: z.enum(['SINGLE', 'WEEKLY']).default('WEEKLY'),
+  weekday: z.number().int().min(0).max(6).optional(),
+  intervalWeeks: z.number().int().min(1).max(52).default(1),
+  startTime: LocalTimeSchema,
+  durationMinutes: z.number().int().positive().max(1440),
+  startDate: DateSchema,
+  endDate: DateSchema.optional(),
+  notes: z.string().max(2000).optional(),
+}).superRefine((value, ctx) => {
+  if (value.type === 'PRIVATE' && value.capacity !== 1)
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capacity'], message: 'Private lessons have capacity 1.' });
+  if (value.scheduleType === 'WEEKLY' && (value.weekday === undefined || !value.endDate))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endDate'], message: 'Weekly classes require weekday and end date.' });
+});
 
 export type Organization = z.infer<typeof OrganizationSchema>;
 export type User = z.infer<typeof UserSchema>;
@@ -357,6 +459,8 @@ export type SportClass = z.infer<typeof ClassSchema>;
 export type Enrollment = z.infer<typeof EnrollmentSchema>;
 export type Attendance = z.infer<typeof AttendanceSchema>;
 export type Block = z.infer<typeof BlockSchema>;
+export type ClassSession = z.infer<typeof ClassSessionSchema>;
+export type Charge = z.infer<typeof ChargeSchema>;
 export type AuthContext = {
   organizationId: string;
   userId: string;
@@ -375,6 +479,8 @@ export type EntityType =
   | 'class'
   | 'enrollment'
   | 'attendance'
+  | 'classSession'
+  | 'charge'
   | 'block';
 export const ok = <T>(data: T) => ({ data });
 export const collection = <T>(data: T[], nextCursor: string | null = null) => ({

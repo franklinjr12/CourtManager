@@ -195,6 +195,11 @@ export async function openReservationDetail(id: string) {
     t('reservations.details'),
     `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}â€“${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${reservation.status === 'CONFIRMED' ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${reservation.status === 'CONFIRMED' ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
   );
+  if (reservation.status === 'BOOKED')
+    app.querySelector<HTMLElement>('.modal .detail-actions')?.insertAdjacentHTML(
+      'afterbegin',
+      button(t('classSession.checkIn'), 'data-transition="CHECKED_IN"'),
+    );
   const detailGrid = app.querySelector<HTMLElement>('.modal .detail-grid');
   detailGrid?.insertAdjacentHTML(
     'beforeend',
@@ -245,7 +250,7 @@ export async function openReservationDetail(id: string) {
         return;
       try {
         await request(
-          `/reservations/${id}/${status === 'CANCELLED' ? 'cancel' : status === 'NO_SHOW' ? 'no-show' : 'complete'}`,
+          `/reservations/${id}/${status === 'CANCELLED' ? 'cancel' : status === 'NO_SHOW' ? 'no-show' : status === 'CHECKED_IN' ? 'check-in' : 'complete'}`,
           { method: 'POST' },
         );
         closeModal();
@@ -350,5 +355,3 @@ export async function reservations() {
     }
   });
 }
-
-

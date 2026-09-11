@@ -64,6 +64,12 @@ export async function customers() {
   });
 }
 function wireCustomerList() {
+  app.querySelectorAll<HTMLTableRowElement>('tbody tr').forEach((row) => {
+    const edit = row.querySelector<HTMLElement>('[data-edit-customer]');
+    const name = row.querySelector('td');
+    if (edit && name && !name.querySelector('a'))
+      name.innerHTML = `<a href="/customers/${encodeURIComponent(String(edit.dataset.editCustomer))}">${escapeText(name.textContent ?? '')}</a>`;
+  });
   app
     .querySelector<HTMLButtonElement>('#add-customer')
     ?.addEventListener('click', () => void openCustomerModal());
@@ -136,5 +142,4 @@ async function openCustomerHistory(customerId: string) {
     `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.payment')}</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${reservationStatusLabel(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="empty">${t('customers.noHistory')}</p>`}`,
   );
 }
-
 

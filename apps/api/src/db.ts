@@ -88,13 +88,14 @@ export class MemoryRepository implements Repository {
     pk: string,
     opts?: { beginsWith?: string; limit?: number },
   ) {
-    return [...this.items.values()]
+    const result = [...this.items.values()]
       .filter(
         (i) =>
           i.PK === pk &&
           (!opts?.beginsWith || i.SK.startsWith(opts.beginsWith)),
       )
-      .slice(0, opts?.limit ?? 100) as T[];
+      .sort((a, b) => a.SK.localeCompare(b.SK));
+    return (opts?.limit === undefined ? result : result.slice(0, opts.limit)) as T[];
   }
   async scan<T extends RecordItem>(filter?: (item: T) => boolean) {
     const items = [...this.items.values()] as T[];
@@ -205,25 +206,38 @@ export class DynamoRepository implements Repository {
     pk: string,
     opts?: { beginsWith?: string; limit?: number },
   ) {
-    const result = await this.client.send(
-      new QueryCommand({
-        TableName: this.table,
-        KeyConditionExpression: opts?.beginsWith
-          ? 'PK = :pk AND begins_with(SK, :sk)'
-          : 'PK = :pk',
-        ExpressionAttributeValues: opts?.beginsWith
-          ? { ':pk': pk, ':sk': opts.beginsWith }
-          : { ':pk': pk },
-        Limit: opts?.limit ?? 100,
-      }),
-    );
-    return (result.Items ?? []) as T[];
+    const items: T[] = [];
+    let ExclusiveStartKey: Key | undefined;
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          TableName: this.table,
+          KeyConditionExpression: opts?.beginsWith
+            ? 'PK = :pk AND begins_with(SK, :sk)'
+            : 'PK = :pk',
+          ExpressionAttributeValues: opts?.beginsWith
+            ? { ':pk': pk, ':sk': opts.beginsWith }
+            : { ':pk': pk },
+          ...(opts?.limit ? { Limit: Math.max(1, opts.limit - items.length) } : {}),
+          ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+        }),
+      );
+      items.push(...((result.Items ?? []) as T[]));
+      ExclusiveStartKey = result.LastEvaluatedKey as Key | undefined;
+    } while (ExclusiveStartKey && (opts?.limit === undefined || items.length < opts.limit));
+    return opts?.limit === undefined ? items : items.slice(0, opts.limit);
   }
   async scan<T extends RecordItem>(filter?: (item: T) => boolean) {
-    const result = await this.client.send(
-      new ScanCommand({ TableName: this.table }),
-    );
-    const items = (result.Items ?? []) as T[];
+    const items: T[] = [];
+    let ExclusiveStartKey: Key | undefined;
+    do {
+      const result = await this.client.send(new ScanCommand({
+        TableName: this.table,
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }));
+      items.push(...((result.Items ?? []) as T[]));
+      ExclusiveStartKey = result.LastEvaluatedKey as Key | undefined;
+    } while (ExclusiveStartKey);
     return filter ? items.filter(filter) : items;
   }
   async transactWrite(writes: Write[]) {

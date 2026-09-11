@@ -28,5 +28,5 @@ test('owner operational screens expose workflows instead of placeholders', async
     page.getByRole('button', { name: 'Registrar pagamento' }),
   ).toBeVisible();
   await page.goto('/classes');
-  await expect(page.getByText(/Aulas desabilitadas|Nenhuma aula cadastrada/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aulas' })).toBeVisible();
 });

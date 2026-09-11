@@ -14,6 +14,7 @@
     "build": "corepack pnpm --filter @court-manager/api build && corepack pnpm --filter @court-manager/web build",
     "bootstrap:owner": "corepack pnpm --filter @court-manager/api bootstrap:owner",
     "seed:dev": "corepack pnpm --filter @court-manager/api seed:dev",
+    "migrate:phase1": "corepack pnpm --filter @court-manager/api migrate:phase1",
     "reset:dev": "node scripts/reset-dev.mjs"
   },
   "devDependencies": {

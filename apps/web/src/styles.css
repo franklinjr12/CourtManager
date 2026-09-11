@@ -214,6 +214,19 @@ a {
   opacity: 0.55;
   cursor: wait;
 }
+.status-badge {
+  display: inline-block;
+  margin: 10px 0 0 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #edf1f7;
+}
+.status-RESERVATION { background: #e4efff; color: #174ea6; }
+.status-CLASS { background: #e8f7ee; color: #087443; }
+.status-BLOCKED { background: #fff0ee; color: #b42318; }
+.status-CHECKED_IN { background: #e8f7ee; color: #087443; }
 .table-wrap {
   overflow: auto;
 }
