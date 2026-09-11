@@ -23,6 +23,28 @@ import { customerOptions } from './customers.js';
 import { openPaymentModal } from './finance.js';
 import { app, escapeText, renderRoute, request, screen } from './runtime.js';
 
+const staffDurationField = () => {
+  const options = Array.from({ length: 8 }, (_, index) => (index + 1) * 30)
+    .map(
+      (minutes) =>
+        `<option value="${minutes}">${t('common.minutes', { count: minutes })}</option>`,
+    )
+    .join('');
+  return `<label>${t('common.duration')}<select name="durationMinutes" required>${options}<option value="custom">${t('reservations.customDuration')}</option></select></label><label id="custom-duration-field" hidden>${t('reservations.customDurationMinutes')}<input name="customDurationMinutes" type="number" min="1" max="240" step="1"></label>`;
+};
+
+const durationValue = (form: HTMLFormElement) => {
+  const value = String(
+    (form.elements.namedItem('durationMinutes') as HTMLSelectElement).value,
+  );
+  return value === 'custom'
+    ? String(
+        (form.elements.namedItem('customDurationMinutes') as HTMLInputElement)
+          .value,
+      )
+    : value;
+};
+
 export function reservationIsEditable(status: string) {
   return status === 'BOOKED' || status === 'CONFIRMED';
 }
@@ -53,12 +75,10 @@ async function loadAvailability(form: HTMLFormElement) {
     date = String(
       (form.elements.namedItem('date') as HTMLInputElement)?.value ?? '',
     ),
-    duration = String(
-      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)
-        ?.value ?? '30',
-    ),
+    duration = durationValue(form),
     start = form.elements.namedItem('startTime') as HTMLSelectElement;
-  if (!court || !date) return;
+  if (!court || !date || !duration) return;
+  const selectedStart = start.value;
   start.innerHTML = `<option>${t('common.loading')}</option>`;
   try {
     const data = await request<{ available: string[] }>(
@@ -72,6 +92,7 @@ async function loadAvailability(form: HTMLFormElement) {
           )
           .join('')
       : `<option value="">${t('common.noAvailableTimes')}</option>`;
+    if (data.available.includes(selectedStart)) start.value = selectedStart;
   } catch (error) {
     start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
   }
@@ -87,7 +108,13 @@ export async function openReservationModal(
   ]);
   const startDate = prefill?.startAt ? new Date(prefill.startAt) : new Date();
   const body = `<form id="reservation-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" data-price="${c.defaultHourlyPrice}" ${c.courtId === prefill?.courtId ? 'selected' : ''}>${escapeText(c.name)} — ${escapeText(c.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input name="date" type="date" required value="${escapeText(prefill?.startAt ? startDate.toISOString().slice(0, 10) : date)}"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option></select></label><label>${t('common.startTime')}<select name="startTime" required><option>${t('common.loading')}</option></select></label><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select><button type="button" class="button small" id="quick-customer">${t('reservations.quickNewCustomer')}</button></label><div id="quick-customer-fields" class="inline-panel full" hidden><label>${t('common.name')}<input name="quickName" maxlength="160"></label><label>${t('common.phone')}<input name="quickPhone" maxlength="40"></label><button type="button" class="button small" id="create-quick-customer">${t('customers.create')}</button><p class="form-error" id="quick-customer-error" role="alert"></p></div><label>${t('common.expectedAmount')}<input name="expectedAmount" type="number" min="0" step="0.01" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="4000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.save')}</button></div></form>`;
-  openModal(t('reservations.new'), body);
+  openModal(
+    t('reservations.new'),
+    body.replace(
+      /<label>[^<]*<select name="durationMinutes">.*?<\/select><\/label>/,
+      staffDurationField(),
+    ),
+  );
   const form = app.querySelector<HTMLFormElement>('#reservation-form');
   if (!form) return;
   form.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -95,10 +122,7 @@ export async function openReservationModal(
     const selected =
       form.querySelector<HTMLSelectElement>('[name="courtId"]')
         ?.selectedOptions[0];
-    const duration = Number(
-      (form.elements.namedItem('durationMinutes') as HTMLSelectElement)
-        ?.value ?? 30,
-    );
+    const duration = Number(durationValue(form) || 0);
     const price = form.elements.namedItem('expectedAmount') as HTMLInputElement;
     if (selected)
       price.value = (
@@ -116,7 +140,29 @@ export async function openReservationModal(
   form.querySelector('[name="date"]')?.addEventListener('input', refresh);
   form
     .querySelector('[name="durationMinutes"]')
-    ?.addEventListener('change', refresh);
+    ?.addEventListener('change', () => {
+      const custom = form.querySelector<HTMLElement>('#custom-duration-field');
+      const isCustom = durationValue(form) === '';
+      if (custom) custom.hidden = !isCustom;
+      if (isCustom) {
+        (
+          form.elements.namedItem('customDurationMinutes') as HTMLInputElement
+        ).focus();
+        return;
+      }
+      refresh();
+    });
+  form
+    .querySelector('[name="customDurationMinutes"]')
+    ?.addEventListener('input', () => {
+      const customDuration = Number(durationValue(form));
+      if (
+        Number.isInteger(customDuration) &&
+        customDuration >= 1 &&
+        customDuration <= 240
+      )
+        refresh();
+    });
   form.querySelector('#quick-customer')?.addEventListener('click', () => {
     const fields = form.querySelector<HTMLElement>('#quick-customer-fields');
     if (fields) fields.hidden = !fields.hidden;
@@ -170,7 +216,7 @@ export async function openReservationModal(
       const end = endIsoFromInputs(
         String(values.date),
         String(values.startTime),
-        Number(values.durationMinutes),
+        Number(durationValue(form)),
       );
       await request('/reservations', {
         method: 'POST',
@@ -327,6 +373,20 @@ async function openRecurringReservationModal() {
     t('reservations.recurring'),
     `<form id="recurring-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><label>${t('reservations.firstDate')}<input name="date" type="date" required value="${escapeText(today())}"></label><label>${t('reservations.untilDate')}<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>${t('common.startTime')}<input name="time" type="time" required value="18:00"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.minutes', { count: 120 })}</option></select></label><label>${t('reservations.everyWeeks')}<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.createRecurring')}</button></div></form>`,
   );
+  const recurringDuration = app.querySelector<HTMLSelectElement>(
+    '#recurring-form [name="durationMinutes"]',
+  );
+  if (recurringDuration) {
+    const input = document.createElement('input');
+    input.name = 'durationMinutes';
+    input.type = 'number';
+    input.min = '1';
+    input.max = '240';
+    input.step = '1';
+    input.required = true;
+    input.value = '60';
+    recurringDuration.replaceWith(input);
+  }
   const form = app.querySelector<HTMLFormElement>('#recurring-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {

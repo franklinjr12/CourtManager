@@ -66,6 +66,38 @@ async function setup(timezone = 'UTC') {
   return { repo, services, court, customer };
 }
 describe('reservation workflows', () => {
+  it('allows staff to create a custom duration up to four hours', async () => {
+    const { services, court, customer } = await setup();
+    const reservation = await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: customer.customerId,
+      startAt: '2027-01-04T18:00:00Z',
+      endAt: '2027-01-04T18:45:00Z',
+      source: 'STAFF',
+    });
+    expect(reservation.endAt).toBe('2027-01-04T18:45:00Z');
+    expect(
+      await services.schedule.locks(
+        context,
+        String(court.courtId),
+        '2027-01-04',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('rejects public durations that are not 30-minute increments', async () => {
+    const { services, court } = await setup();
+    await expect(
+      services.requests.createPublic('arena', {
+        courtId: court.courtId,
+        requestedStartAt: '2027-01-04T18:00:00Z',
+        requestedEndAt: '2027-01-04T18:45:00Z',
+        customerName: 'Public player',
+        phone: '41999990000',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
   it('prevents overlap and releases a cancelled slot', async () => {
     const { services, court, customer } = await setup();
     const input = {

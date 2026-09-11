@@ -363,16 +363,34 @@ export const RecurringReservationInputSchema = z.object({
   skipConflicts: z.boolean().default(false),
   notes: z.string().max(4000).optional(),
 });
-export const RequestInputSchema = z.object({
-  courtId: IdentifierSchema,
-  requestedStartAt: z.string().datetime({ offset: true }),
-  requestedEndAt: z.string().datetime({ offset: true }),
-  customerName: z.string().min(1).max(160),
-  phone: z.string().min(5).max(40),
-  email: z.string().email().optional(),
-  notes: z.string().max(2000).optional(),
-  honeypot: z.string().max(0).optional(),
-});
+export const RequestInputSchema = z
+  .object({
+    courtId: IdentifierSchema,
+    requestedStartAt: z.string().datetime({ offset: true }),
+    requestedEndAt: z.string().datetime({ offset: true }),
+    customerName: z.string().min(1).max(160),
+    phone: z.string().min(5).max(40),
+    email: z.string().email().optional(),
+    notes: z.string().max(2000).optional(),
+    honeypot: z.string().max(0).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const duration =
+      (Date.parse(value.requestedEndAt) - Date.parse(value.requestedStartAt)) /
+      60000;
+    if (
+      !Number.isInteger(duration) ||
+      duration <= 0 ||
+      duration > 240 ||
+      duration % 30 !== 0
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requestedEndAt'],
+        message:
+          'Public requests must use 30-minute duration increments up to four hours.',
+      });
+  });
 export const PaymentInputSchema = z
   .object({
     chargeId: IdentifierSchema.optional(),

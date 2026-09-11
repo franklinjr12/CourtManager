@@ -53,6 +53,24 @@ export const calculateDuration = (start: Date, end: Date) => {
     );
   return value;
 };
+export const validateMatchDuration = (
+  durationMinutes: number,
+  publicBooking = false,
+) => {
+  if (
+    !Number.isInteger(durationMinutes) ||
+    durationMinutes <= 0 ||
+    durationMinutes > 240 ||
+    (publicBooking && durationMinutes % 30 !== 0)
+  )
+    throw new AppError(
+      'VALIDATION_ERROR',
+      publicBooking
+        ? 'Public requests must use 30-minute duration increments.'
+        : 'Match duration must be between 1 and 240 minutes.',
+    );
+  return durationMinutes;
+};
 export const calculatePrice = (hourlyPrice: number, durationMinutes: number) =>
   Math.round(((hourlyPrice * durationMinutes) / 60) * 100) / 100;
 const weekdays = [
@@ -218,6 +236,7 @@ export const isWithinOpeningHours = (
   openingHours: Record<string, { open: string; close: string } | null>,
   slotMinutes: number,
   timeZone = 'UTC',
+  allowPartialEnd = false,
 ) => {
   const startLocal = zonedParts(start, timeZone);
   const endLocal = zonedParts(end, timeZone);
@@ -232,7 +251,7 @@ export const isWithinOpeningHours = (
     startMinutes >= minutes(day.open) &&
     endMinutes <= minutes(day.close) &&
     startMinutes % slotMinutes === 0 &&
-    endMinutes % slotMinutes === 0
+    (allowPartialEnd || endMinutes % slotMinutes === 0)
   );
 };
 export const recurrenceDates = (

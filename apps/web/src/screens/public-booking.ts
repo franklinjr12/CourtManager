@@ -27,6 +27,19 @@ export async function publicBooking(slug: string) {
     wireLanguageSelector();
     localizeEnumOptions(app);
     const publicForm = app.querySelector<HTMLFormElement>('#public-form');
+    const duration = publicForm?.elements.namedItem(
+      'durationMinutes',
+    ) as HTMLSelectElement | null;
+    if (duration)
+      duration.innerHTML = Array.from(
+        { length: 8 },
+        (_, index) => (index + 1) * 30,
+      )
+        .map(
+          (minutes) =>
+            `<option value="${minutes}">${t('common.minutes', { count: minutes })}</option>`,
+        )
+        .join('');
     const publicTime = publicForm?.elements.namedItem(
       'time',
     ) as HTMLInputElement | null;
@@ -50,6 +63,7 @@ export async function publicBooking(slug: string) {
           .value,
       );
       const start = publicForm.elements.namedItem('time') as HTMLSelectElement;
+      const selectedStart = start.value;
       start.innerHTML = `<option>${t('common.loading')}</option>`;
       try {
         const data = await request<{ available: string[] }>(
@@ -63,6 +77,7 @@ export async function publicBooking(slug: string) {
               )
               .join('')
           : `<option value="">${t('common.noAvailableTimes')}</option>`;
+        if (data.available.includes(selectedStart)) start.value = selectedStart;
       } catch (error) {
         start.innerHTML = `<option value="">${escapeText(errorMessage(error))}</option>`;
       }

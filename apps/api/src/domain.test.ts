@@ -10,6 +10,7 @@ import {
   recurrenceDates,
   dayKeyInTimezone,
   zonedDateTimeToIso,
+  validateMatchDuration,
 } from './domain.js';
 
 describe('schedule domain', () => {
@@ -26,6 +27,12 @@ describe('schedule domain', () => {
         new Date('2026-01-01T19:30:00Z'),
       ),
     ).toBe(90);
+  });
+  it('allows custom staff match durations but restricts public durations', () => {
+    expect(validateMatchDuration(45)).toBe(45);
+    expect(validateMatchDuration(240, true)).toBe(240);
+    expect(() => validateMatchDuration(241)).toThrow();
+    expect(() => validateMatchDuration(45, true)).toThrow();
   });
   it('validates opening hours and boundaries', () => {
     const hours = { FRIDAY: { open: '07:00', close: '23:00' } };

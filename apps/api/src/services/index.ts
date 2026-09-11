@@ -22,6 +22,7 @@ import {
   normalizeEmail,
   normalizePhone,
   paymentStatus,
+  validateMatchDuration,
   recurrenceDates,
 } from '../domain.js';
 import { AppError } from '../errors.js';
@@ -603,6 +604,7 @@ export class ScheduleService {
           court.openingHours,
           court.slotMinutes,
           timezone,
+          occupancy.occupancyType === 'RESERVATION',
         )
       )
         throw new AppError(
@@ -670,13 +672,15 @@ export class ScheduleService {
     occupancyType: 'RESERVATION' | 'CLASS' | 'BLOCK',
     occupancyId: string,
     additionalWrites: import('../db.js').Write[] = [],
+    allowPartialEnd = false,
   ) {
     const timezone = await organizationTimezone(this.repo, ctx.organizationId),
       oldStart = new Date(oldStartAt),
       oldEnd = new Date(oldEndAt),
       newStart = new Date(newStartAt),
       newEnd = new Date(newEndAt);
-    calculateDuration(newStart, newEnd);
+    const duration = calculateDuration(newStart, newEnd);
+    if (occupancyType === 'RESERVATION') validateMatchDuration(duration);
     if (
       !isWithinOpeningHours(
         newStart,
@@ -684,6 +688,7 @@ export class ScheduleService {
         court.openingHours,
         court.slotMinutes,
         timezone,
+        allowPartialEnd,
       )
     )
       throw new AppError(
@@ -797,8 +802,7 @@ export class ScheduleService {
     if (
       !Number.isInteger(durationMinutes) ||
       durationMinutes <= 0 ||
-      durationMinutes > 24 * 60 ||
-      durationMinutes % court.slotMinutes !== 0
+      durationMinutes > 240
     )
       throw new AppError('VALIDATION_ERROR', 'Invalid duration.');
     const timezone = await organizationTimezone(this.repo, ctx.organizationId);
@@ -813,10 +817,11 @@ export class ScheduleService {
       ),
     );
     const starts = expandSlots(opening.open, opening.close, court.slotMinutes);
-    const count = durationMinutes / court.slotMinutes;
+    const count = Math.ceil(durationMinutes / court.slotMinutes);
     return starts.filter(
       (start, i) =>
         (date !== today || start >= localTime(new Date(), timezone)) &&
+        minutes(start) + durationMinutes <= minutes(opening.close) &&
         i + count <= starts.length &&
         starts.slice(i, i + count).every((slot) => !occupied.has(slot)),
     );
@@ -936,6 +941,7 @@ export class ReservationService {
     const start = new Date(String(input.startAt)),
       end = new Date(String(input.endAt));
     const duration = calculateDuration(start, end);
+    validateMatchDuration(duration);
     const amount =
       typeof input.expectedAmount === 'number'
         ? input.expectedAmount
@@ -1028,6 +1034,7 @@ export class ReservationService {
         'RESERVATION',
         reservationId,
         [{ type: 'put', item: value }],
+        true,
       );
       if (input.expectedAmount !== undefined) {
         const charge = await this.repo.get<RecordItem>(
@@ -1183,6 +1190,7 @@ export class ReservationService {
       Number(input.intervalWeeks ?? 1),
     );
     const duration = calculateDuration(start, new Date(String(input.endAt)));
+    validateMatchDuration(duration);
     const time = (value: Date) => localTime(value, timezone);
     const conflicts: string[] = [];
     for (const date of dates) {
@@ -1371,11 +1379,7 @@ export class RequestService {
     if (start.getTime() < Date.now())
       throw new AppError('VALIDATION_ERROR', 'Past dates cannot be requested.');
     const duration = calculateDuration(start, end);
-    if (duration > 240)
-      throw new AppError(
-        'VALIDATION_ERROR',
-        'Requests may be at most four hours.',
-      );
+    validateMatchDuration(duration, true);
     const timezone = String(venue.timezone ?? 'UTC');
     if (
       !isWithinOpeningHours(
@@ -1384,6 +1388,7 @@ export class RequestService {
         court.openingHours,
         court.slotMinutes,
         timezone,
+        true,
       )
     )
       throw new AppError(
