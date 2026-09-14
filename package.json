@@ -15,7 +15,9 @@
     "bootstrap:owner": "corepack pnpm --filter @court-manager/api bootstrap:owner",
     "seed:dev": "corepack pnpm --filter @court-manager/api seed:dev",
     "migrate:phase1": "corepack pnpm --filter @court-manager/api migrate:phase1",
-    "reset:dev": "node scripts/reset-dev.mjs"
+    "migrate:phase2": "corepack pnpm --filter @court-manager/api migrate:phase2",
+    "reset:dev": "node scripts/reset-dev.mjs",
+    "migrate:class-discovery": "corepack pnpm --filter @court-manager/api migrate:class-discovery"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

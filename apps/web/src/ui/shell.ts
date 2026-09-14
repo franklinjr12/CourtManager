@@ -25,6 +25,7 @@ export async function shell(
     ['/today', t('nav.today'), ['OWNER', 'STAFF', 'COACH']],
     ['/schedule', t('nav.schedule'), ['OWNER', 'STAFF', 'COACH']],
     ['/requests', t('nav.requests'), ['OWNER', 'STAFF']],
+    ['/waitlists', t('nav.waitlists'), ['OWNER', 'STAFF']],
     ['/reservations', t('nav.reservations'), ['OWNER', 'STAFF']],
     ['/customers', t('nav.customers'), ['OWNER', 'STAFF']],
     ['/finance', t('nav.finance'), ['OWNER', 'STAFF']],

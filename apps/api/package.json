@@ -7,7 +7,9 @@
     "build": "esbuild src/lambda.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/lambda.mjs",
     "bootstrap:owner": "tsx src/scripts/bootstrap-owner.ts",
     "seed:dev": "tsx src/scripts/seed-dev.ts",
-    "migrate:phase1": "tsx src/scripts/migrate-phase1.ts"
+    "migrate:phase1": "tsx src/scripts/migrate-phase1.ts",
+    "migrate:phase2": "tsx src/scripts/migrate-phase2.ts",
+    "migrate:class-discovery": "tsx src/scripts/migrate-class-discovery.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.700.0",

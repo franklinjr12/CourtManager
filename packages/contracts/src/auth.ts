@@ -1,1 +1,20 @@
-export { LoginInputSchema, RoleSchema, UserSchema } from './index.js';
+export {
+  BookingPolicyInputSchema,
+  BookingPolicySchema,
+  CustomerAccountCreateInputSchema,
+  CustomerAuthLoginInputSchema,
+  CustomerAuthPasswordInputSchema,
+  CustomerAuthRegistrationInputSchema,
+  CustomerPortalPasswordInputSchema,
+  CustomerPortalRegistrationInputSchema,
+  CustomerAccountResponseSchema,
+  CustomerAccountSchema,
+  CustomerAccountStatusSchema,
+  CustomerSessionResponseSchema,
+  CustomerSessionSchema,
+  LoginInputSchema,
+  PublicBookingPolicySchema,
+  ReservationModeSchema,
+  RoleSchema,
+  UserSchema,
+} from './index.js';

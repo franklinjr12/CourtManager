@@ -1,9 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import type {
-  AuthContext,
-  Court,
-  Reservation,
-  User,
+import {
+  BookingPolicySchema,
+  DEFAULT_BOOKING_POLICY,
+  type AuthContext,
+  type BookingPolicy,
+  type Court,
+  type CustomerAuthContext,
+  type CustomerReservationInput,
+  type Organization,
+  type Reservation,
+  type User,
 } from '@court-manager/contracts';
 import type { Key, RecordItem, Repository, Write } from '../db.js';
 import {
@@ -26,12 +32,29 @@ import {
   recurrenceDates,
 } from '../domain.js';
 import { AppError } from '../errors.js';
+import { classCatalogKey } from '../persistence/class-keys.js';
+import { phase2Keys } from '../persistence/phase2-keys.js';
 import {
   createToken,
   hashPassword,
   hashToken,
   verifyPassword,
 } from '../security.js';
+import { reservationActivity } from './customer-activities.js';
+import {
+  CustomerAccountService,
+  CustomerAuthService,
+  CustomerSelfProfileService,
+} from './customer-auth/index.js';
+import {
+  BookingPolicyService,
+  ClassEnrollmentService,
+  CustomerActivityService,
+  CustomerBookingService,
+  CustomerReservationService,
+  ReservationParticipantService,
+  WaitlistService,
+} from './customer-portal/index.js';
 
 type Input = Record<string, unknown>;
 const now = () => new Date().toISOString();
@@ -57,6 +80,63 @@ const stored = (
   entity?: RecordItem['entity'],
 ): RecordItem =>
   ({ ...value, PK, SK, ...(entity ? { entity } : {}) }) as RecordItem;
+const customerReservationIndex = (reservation: RecordItem) => {
+  const index = phase2Keys.customerReservation(
+    String(reservation.organizationId),
+    String(reservation.customerId),
+    String(reservation.startAt),
+    String(reservation.reservationId),
+  );
+  return stored(
+    as(reservation),
+    index.PK,
+    index.SK,
+    'customerReservationIndex',
+  );
+};
+const customerReservationHistoryIndex = (reservation: RecordItem) => {
+  const index = phase2Keys.customerReservationHistory(
+    String(reservation.organizationId),
+    String(reservation.customerId),
+    String(reservation.updatedAt),
+    String(reservation.reservationId),
+  );
+  return stored(
+    as(reservation),
+    index.PK,
+    index.SK,
+    'customerReservationHistoryIndex',
+  );
+};
+const customerReservationRequestIndex = (request: RecordItem) => {
+  const index = phase2Keys.customerReservationRequest(
+    String(request.organizationId),
+    String(request.linkedCustomerId),
+    String(request.createdAt),
+    String(request.requestId),
+  );
+  return stored(
+    as(request),
+    index.PK,
+    index.SK,
+    'customerReservationRequestIndex',
+  );
+};
+const customerReservationPaymentIndex = (payment: RecordItem) => {
+  const index = phase2Keys.customerReservationPayment(
+    String(payment.organizationId),
+    String(payment.customerId),
+    String(payment.reservationId),
+    String(payment.paidAt),
+    String(payment.paymentId),
+  );
+  return stored(
+    as(payment),
+    index.PK,
+    index.SK,
+    'customerReservationPaymentIndex',
+  );
+};
 const withOrg = (ctx: AuthContext, entity: string, items: RecordItem[]) =>
   items.filter(
     (item) =>
@@ -113,7 +193,14 @@ export class AuthService {
     return {
       token,
       user: as(record) as User,
-      organization: organization ? as(organization) : undefined,
+      organization: organization
+        ? {
+            ...as<Record<string, unknown>>(organization),
+            bookingPolicy: organization.bookingPolicy ?? {
+              ...DEFAULT_BOOKING_POLICY,
+            },
+          }
+        : undefined,
     };
   }
   async authenticate(token: string) {
@@ -147,7 +234,13 @@ export class OrganizationService {
       SK: 'META',
     });
     if (!value) throw new AppError('NOT_FOUND', 'Organization was not found.');
-    return as(value);
+    return {
+      ...as<Organization>(value),
+      bookingPolicy: (value.bookingPolicy as
+        Organization['bookingPolicy'] | undefined) ?? {
+        ...DEFAULT_BOOKING_POLICY,
+      },
+    };
   }
   async update(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER']);
@@ -158,9 +251,14 @@ export class OrganizationService {
     });
     if (!current)
       throw new AppError('NOT_FOUND', 'Organization was not found.');
+    const bookingPolicy =
+      input.bookingPolicy === undefined
+        ? (current.bookingPolicy ?? { ...DEFAULT_BOOKING_POLICY })
+        : BookingPolicySchema.parse(input.bookingPolicy);
     const value = stored(
       {
         ...as(current),
+        bookingPolicy,
         ...input,
         organizationId: ctx.organizationId,
         updatedAt: now(),
@@ -950,6 +1048,7 @@ export class ReservationService {
     const record = stored(
       {
         ...input,
+        sport: court.sport,
         reservationId,
         organizationId: ctx.organizationId,
         status: 'BOOKED',
@@ -992,7 +1091,12 @@ export class ReservationService {
       reservationId,
       [
         { type: 'put', item: record },
+        { type: 'put', item: customerReservationIndex(record) },
         { type: 'put', item: charge },
+        {
+          type: 'put',
+          item: reservationActivity(as<Reservation>(record), court),
+        },
         ...additionalWrites,
       ],
     );
@@ -1033,7 +1137,15 @@ export class ReservationService {
         String(input.endAt ?? current.endAt),
         'RESERVATION',
         reservationId,
-        [{ type: 'put', item: value }],
+        [
+          { type: 'put', item: value },
+          { type: 'put', item: customerReservationIndex(value) },
+          { type: 'delete', key: customerReservationIndex(current) },
+          {
+            type: 'put',
+            item: reservationActivity(as<Reservation>(value), court),
+          },
+        ],
         true,
       );
       if (input.expectedAmount !== undefined) {
@@ -1053,6 +1165,7 @@ export class ReservationService {
       return as(value);
     }
     await this.repo.put(value);
+    await this.repo.put(customerReservationIndex(value));
     if (input.expectedAmount !== undefined) {
       const charge = await this.repo.get<RecordItem>(
         key('charge', `reservation-${reservationId}`),
@@ -1119,6 +1232,12 @@ export class ReservationService {
         reservationId,
         [
           { type: 'put', item: value },
+          { type: 'put', item: customerReservationIndex(value) },
+          { type: 'put', item: customerReservationHistoryIndex(value) },
+          {
+            type: 'put',
+            item: reservationActivity(as<Reservation>(value), court),
+          },
           ...(status === 'CANCELLED'
             ? [
                 {
@@ -1145,6 +1264,104 @@ export class ReservationService {
       return as(value);
     }
     await this.repo.put(value);
+    await this.repo.put(customerReservationIndex(value));
+    if (status === 'COMPLETED')
+      await this.repo.put(customerReservationHistoryIndex(value));
+    const court = await this.courts.get(ctx, String(current.courtId));
+    await this.repo.put(
+      reservationActivity(as<Reservation>(value), court as Court),
+    );
+    return as(value);
+  }
+  async cancelForCustomer(
+    customer: CustomerAuthContext,
+    reservationId: string,
+    policy: BookingPolicy,
+    at = new Date(),
+  ) {
+    const current = await this.repo.get<RecordItem>(
+      key('reservation', reservationId),
+    );
+    if (
+      !current ||
+      current.organizationId !== customer.organizationId ||
+      current.customerId !== customer.customerId
+    )
+      throw new AppError('NOT_FOUND', 'Reservation was not found.');
+    const eligibility = new BookingPolicyService(
+      this.repo,
+    ).customerCancellationEligibility(as<Reservation>(current), policy, at);
+    if (!eligibility.eligible)
+      throw new AppError(
+        'INVALID_STATE',
+        eligibility.reason ?? 'Reservation cannot be cancelled.',
+      );
+    const court = await this.repo.get<RecordItem>(
+      orgKey(customer.organizationId, 'COURT', String(current.courtId)),
+    );
+    if (!court) throw new AppError('NOT_FOUND', 'Court was not found.');
+    const timestamp = at.toISOString();
+    const value = stored(
+      {
+        ...as(current),
+        status: 'CANCELLED',
+        updatedBy: customer.customerAccountId,
+        updatedAt: timestamp,
+        cancelledAt: timestamp,
+        cancellationActor: 'CUSTOMER',
+        cancelledByCustomerAccountId: customer.customerAccountId,
+      },
+      current.PK,
+      current.SK,
+      'reservation',
+    );
+    const charge = await this.repo.get<RecordItem>(
+      key('charge', `reservation-${reservationId}`),
+    );
+    await this.schedule.release(
+      {
+        organizationId: customer.organizationId,
+        userId: customer.customerAccountId,
+        role: 'STAFF',
+      },
+      String(current.courtId),
+      String(current.startAt),
+      String(current.endAt),
+      Number(court.slotMinutes),
+      'RESERVATION',
+      reservationId,
+      [
+        { type: 'put', item: value },
+        { type: 'put', item: customerReservationIndex(value) },
+        { type: 'put', item: customerReservationHistoryIndex(value) },
+        {
+          type: 'put',
+          item: reservationActivity(
+            as<Reservation>(value),
+            court as unknown as Court,
+          ),
+        },
+        ...(charge && charge.status === 'ACTIVE'
+          ? [
+              {
+                type: 'put' as const,
+                item: stored(
+                  {
+                    ...as(charge),
+                    status: 'VOID',
+                    voidedAt: timestamp,
+                    voidedBy: customer.customerAccountId,
+                    voidReason: 'Reservation cancelled by customer',
+                  },
+                  charge.PK,
+                  charge.SK,
+                  'charge',
+                ),
+              },
+            ]
+          : []),
+      ],
+    );
     return as(value);
   }
   async detail(ctx: AuthContext, reservationId: string) {
@@ -1309,6 +1526,7 @@ export class RequestService {
     private readonly schedule: ScheduleService,
     private readonly reservations: ReservationService,
     private readonly customers: CustomerService,
+    private readonly bookingPolicy: BookingPolicyService,
   ) {}
   async publicVenue(slug: string) {
     const orgs = await this.repo.scan<RecordItem>(
@@ -1333,6 +1551,9 @@ export class RequestService {
       currency: org.currency,
       phone: org.phone,
       email: org.email,
+      bookingPolicy: (org.bookingPolicy as BookingPolicy | undefined) ?? {
+        ...DEFAULT_BOOKING_POLICY,
+      },
       courts: courts.map((x) => ({
         courtId: x.courtId,
         name: x.name,
@@ -1357,8 +1578,14 @@ export class RequestService {
     if (!publicCourt)
       throw new AppError('NOT_FOUND', 'Court is not publicly available.');
     const court = (await this.courts.get(ctx, courtId)) as Court;
+    const policy = await this.bookingPolicy.policy(
+      String(venue.organizationId),
+    );
+    if (policy.reservationMode === 'STAFF_ONLY')
+      return { available: [], onlineBookingAvailable: false };
     return {
       available: await this.schedule.availability(ctx, court, date, duration),
+      onlineBookingAvailable: true,
     };
   }
   async createPublic(slug: string, input: Input) {
@@ -1369,6 +1596,16 @@ export class RequestService {
       role: 'STAFF',
     };
     const court = (await this.courts.get(ctx, String(input.courtId))) as Court;
+    const policy = await this.bookingPolicy.policy(
+      String(venue.organizationId),
+    );
+    if (policy.reservationMode !== 'REQUEST_APPROVAL')
+      throw new AppError(
+        'FORBIDDEN',
+        policy.reservationMode === 'AUTO_CONFIRM'
+          ? 'Sign in to reserve this court.'
+          : 'Online booking is disabled for this venue.',
+      );
     if (!court.active || !court.publiclyRequestable)
       throw new AppError(
         'VALIDATION_ERROR',
@@ -1409,6 +1646,81 @@ export class RequestService {
       'request',
     );
     await this.repo.put(value);
+    await this.repo.put(customerReservationRequestIndex(value));
+    return as(value);
+  }
+  async createForCustomer(
+    customer: CustomerAuthContext,
+    input: CustomerReservationInput,
+  ) {
+    const ctx: AuthContext = {
+      organizationId: customer.organizationId,
+      userId: `customer:${customer.customerAccountId}`,
+      role: 'STAFF',
+    };
+    const court = (await this.courts.get(ctx, input.courtId)) as Court;
+    if (!court.active || !court.publiclyRequestable)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Court is not publicly available.',
+      );
+    const timezone = await this.bookingPolicy.organizationTimezone(
+      customer.organizationId,
+    );
+    const policy = await this.bookingPolicy.policy(customer.organizationId);
+    this.bookingPolicy.assertCustomerCanBook(
+      policy,
+      timezone,
+      court,
+      input.startAt,
+      input.endAt,
+    );
+    await this.bookingPolicy.assertCustomerCanCreateBooking(
+      customer.organizationId,
+      customer.customerId,
+      policy,
+    );
+    const start = new Date(input.startAt);
+    const end = new Date(input.endAt);
+    if (
+      !isWithinOpeningHours(
+        start,
+        end,
+        court.openingHours,
+        court.slotMinutes,
+        timezone,
+      )
+    )
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Time is outside court opening hours or slot boundaries.',
+      );
+    const customerRecord = await this.repo.get<RecordItem>(
+      orgKey(customer.organizationId, 'CUSTOMER', customer.customerId),
+    );
+    if (!customerRecord || customerRecord.archived)
+      throw new AppError('NOT_FOUND', 'Customer was not found.');
+    const requestId = id();
+    const value = stored(
+      {
+        requestId,
+        organizationId: customer.organizationId,
+        courtId: court.courtId,
+        requestedStartAt: input.startAt,
+        requestedEndAt: input.endAt,
+        customerName: customerRecord.name,
+        linkedCustomerId: customer.customerId,
+        status: 'REQUESTED',
+        ...(input.notes ? { notes: input.notes } : {}),
+        createdAt: now(),
+      },
+      `REQUEST#${requestId}`,
+      'META',
+      'request',
+    );
+    await this.repo.put(value);
+    if (value.linkedCustomerId)
+      await this.repo.put(customerReservationRequestIndex(value));
     return as(value);
   }
   async list(ctx: AuthContext) {
@@ -1490,6 +1802,14 @@ export class RequestService {
       [
         ...(customerId ? [] : [{ type: 'put' as const, item: customerRecord }]),
         { type: 'put', item: value },
+        ...(request.linkedCustomerId
+          ? [
+              {
+                type: 'put' as const,
+                item: customerReservationRequestIndex(value),
+              },
+            ]
+          : []),
       ],
     );
     return reservation;
@@ -1863,6 +2183,8 @@ export class PaymentService {
         'payment',
       );
     await this.repo.put(value);
+    if (reservationId)
+      await this.repo.put(customerReservationPaymentIndex(value));
     return as(value);
   }
   async remove(ctx: AuthContext, paymentId: string) {
@@ -1871,6 +2193,8 @@ export class PaymentService {
     if (!p || p.organizationId !== ctx.organizationId)
       throw new AppError('NOT_FOUND', 'Payment was not found.');
     await this.repo.delete(key('payment', paymentId));
+    if (p.reservationId)
+      await this.repo.delete(customerReservationPaymentIndex(p));
   }
   async list(ctx: AuthContext) {
     return withOrg(ctx, 'payment', await this.repo.scan()).map(as);
@@ -2087,6 +2411,7 @@ export class ClassService {
         organizationId: ctx.organizationId,
         type,
         capacity,
+        enrolledCount: 0,
         scheduleType,
         weekday,
         intervalWeeks: Number(input.intervalWeeks ?? 1),
@@ -2151,9 +2476,16 @@ export class ClassService {
         occupancyId: sessionId,
       });
     }
+    value.sessionIds = sessionWrites.flatMap((write) =>
+      write.type === 'put' ? [write.item.sessionId] : [],
+    );
     try {
       await this.schedule.occupyMany(ctx, court, occupancies, [
         { type: 'put', item: value },
+        {
+          type: 'put',
+          item: { ...classCatalogKey(ctx.organizationId, classId), classId },
+        },
         ...sessionWrites,
       ]);
     } catch (error) {
@@ -2175,6 +2507,7 @@ export class ClassService {
           await this.repo.delete(session.item);
         }
       await this.repo.delete(value);
+      await this.repo.delete(classCatalogKey(ctx.organizationId, classId));
       throw error;
     }
     return as(value);
@@ -2207,81 +2540,26 @@ export class ClassService {
   }
   async enroll(ctx: AuthContext, classId: string, customerId: string) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const cls = await this.getClass(ctx, classId);
-    if (cls.active !== true)
-      throw new AppError('INVALID_STATE', 'Class is inactive.');
-    const customer = await this.repo.get<RecordItem>(
-      orgKey(ctx.organizationId, 'CUSTOMER', customerId),
-    );
-    if (!customer || customer.archived)
-      throw new AppError('NOT_FOUND', 'Customer was not found.');
-    const existing = withOrg(
+    return new ClassEnrollmentService(this.repo).enroll(
       ctx,
-      'enrollment',
-      (await this.repo.scan()).filter((x) => x.classId === classId),
+      classId,
+      customerId,
+      ctx.userId,
     );
-    if (
-      existing.some((x) => x.customerId === customerId && x.status === 'ACTIVE')
-    )
-      throw new AppError(
-        'CONFLICT',
-        'Customer is already enrolled in this class.',
-      );
-    if (
-      existing.filter((x) => x.status === 'ACTIVE').length >=
-      Number(cls.capacity)
-    )
-      throw new AppError('CONFLICT', 'Class capacity has been reached.');
-    const enrollmentId = id();
-    const value = stored(
-      {
-        enrollmentId,
-        organizationId: ctx.organizationId,
-        classId,
-        customerId,
-        status: 'ACTIVE',
-        joinedAt: now(),
-      },
-      `ENROLLMENT#${enrollmentId}`,
-      'META',
-      'enrollment',
+  }
+  async enrollSelf(ctx: CustomerAuthContext, classId: string) {
+    return new ClassEnrollmentService(this.repo).enroll(
+      ctx,
+      classId,
+      ctx.customerId,
+      ctx.customerAccountId,
     );
-    await this.repo.put(value);
-    const price = Number(cls.pricePerParticipant ?? cls.price ?? 0);
-    if (price > 0)
-      for (const session of await this.sessions(ctx, classId))
-        if (Date.parse(String(session.startAt)) >= Date.now()) {
-          const chargeId = `class-${session.sessionId}-${customerId}`;
-          await this.repo
-            .put(
-              stored(
-                {
-                  chargeId,
-                  organizationId: ctx.organizationId,
-                  customerId,
-                  sourceType: 'CLASS',
-                  sourceId: String(session.sessionId),
-                  classId,
-                  classSessionId: session.sessionId,
-                  description: String(cls.name),
-                  amount: price,
-                  serviceAt: session.startAt,
-                  status: 'ACTIVE',
-                  createdBy: ctx.userId,
-                  createdAt: now(),
-                },
-                `CHARGE#${chargeId}`,
-                'META',
-                'charge',
-              ),
-              'attribute_not_exists(PK)',
-            )
-            .catch((error) => {
-              if (!(error instanceof AppError) || error.code !== 'CONFLICT')
-                throw error;
-            });
-        }
-    return as(value);
+  }
+  async leaveSelf(ctx: CustomerAuthContext, classId: string) {
+    return new ClassEnrollmentService(this.repo).leaveSelf(ctx, classId);
+  }
+  async customerClasses(ctx: CustomerAuthContext, cursor?: string) {
+    return new ClassEnrollmentService(this.repo).discover(ctx, cursor);
   }
   async cancelEnrollment(
     ctx: AuthContext,
@@ -2289,52 +2567,12 @@ export class ClassService {
     enrollmentId: string,
   ) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    const cls = await this.getClass(ctx, classId);
-    const enrollment = await this.repo.get<RecordItem>(
-      key('enrollment', enrollmentId),
+    return new ClassEnrollmentService(this.repo).cancel(
+      ctx,
+      classId,
+      enrollmentId,
+      ctx.userId,
     );
-    if (
-      !enrollment ||
-      enrollment.organizationId !== ctx.organizationId ||
-      enrollment.classId !== classId
-    )
-      throw new AppError('NOT_FOUND', 'Enrollment was not found.');
-    const timestamp = now();
-    const value = stored(
-      {
-        ...as(enrollment),
-        status: 'CANCELLED',
-        leftAt: timestamp,
-        cancelledAt: timestamp,
-      },
-      enrollment.PK,
-      enrollment.SK,
-      'enrollment',
-    );
-    await this.repo.put(value);
-    for (const charge of withOrg(ctx, 'charge', await this.repo.scan()).filter(
-      (x) =>
-        x.classId === classId &&
-        x.customerId === enrollment.customerId &&
-        x.status === 'ACTIVE' &&
-        Date.parse(String(x.serviceAt)) >= Date.now(),
-    ))
-      await this.repo.put(
-        stored(
-          {
-            ...as(charge),
-            status: 'VOID',
-            voidedAt: timestamp,
-            voidedBy: ctx.userId,
-            voidReason: 'Enrollment cancelled',
-          },
-          charge.PK,
-          charge.SK,
-          'charge',
-        ),
-      );
-    void cls;
-    return as(value);
   }
   private async getSession(ctx: AuthContext, sessionId: string) {
     const session = await this.repo.get<RecordItem>({
@@ -2558,7 +2796,13 @@ export class ClassService {
       cls.SK,
       'class',
     );
-    await this.repo.put(value);
+    await this.repo.transactWrite([
+      {
+        type: 'put',
+        item: value,
+        expected: { enrolledCount: cls.enrolledCount, active: cls.active },
+      },
+    ]);
     const today = Date.now();
     for (const session of (await this.sessions(ctx, classId)).filter(
       (x) => x.status === 'SCHEDULED' && Date.parse(String(x.startAt)) >= today,
@@ -3099,23 +3343,57 @@ export const buildServices = (repo: Repository) => {
   const sports = new SportService(repo),
     courts = new CourtService(repo, sports),
     schedule = new ScheduleService(repo),
+    bookingPolicy = new BookingPolicyService(repo),
     reservations = new ReservationService(repo, schedule, courts),
     customers = new CustomerService(repo);
+  const waitlists = new WaitlistService(
+    repo,
+    courts,
+    schedule,
+    bookingPolicy,
+    reservations,
+  );
+  const requests = new RequestService(
+    repo,
+    courts,
+    schedule,
+    reservations,
+    customers,
+    bookingPolicy,
+  );
+  const customerBookings = new CustomerBookingService(
+    bookingPolicy,
+    courts,
+    schedule,
+    reservations,
+    requests,
+  );
+  const reservationParticipants = new ReservationParticipantService(repo);
+  const customerReservations = new CustomerReservationService(
+    repo,
+    bookingPolicy,
+    reservations,
+    customerBookings,
+    reservationParticipants,
+  );
   return {
     auth: new AuthService(repo),
+    customerAuth: new CustomerAuthService(repo),
     organizations: new OrganizationService(repo),
+    bookingPolicy,
     sports,
     courts,
     customers,
+    customerAccounts: new CustomerAccountService(repo),
+    customerSelfProfile: new CustomerSelfProfileService(repo),
     schedule,
     reservations,
-    requests: new RequestService(
-      repo,
-      courts,
-      schedule,
-      reservations,
-      customers,
-    ),
+    requests,
+    customerBookings,
+    customerActivities: new CustomerActivityService(repo),
+    customerReservations,
+    reservationParticipants,
+    waitlists,
     payments: new PaymentService(repo),
     staff: new StaffService(repo),
     charges: new ChargeService(repo),
@@ -3129,3 +3407,5 @@ export const buildServices = (repo: Repository) => {
     repo,
   };
 };
+
+export type Services = ReturnType<typeof buildServices>;

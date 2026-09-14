@@ -22,11 +22,36 @@ export async function publicBooking(slug: string) {
         sport: string;
         slotMinutes: number;
       }[];
+      bookingPolicy: {
+        reservationMode: 'STAFF_ONLY' | 'REQUEST_APPROVAL' | 'AUTO_CONFIRM';
+      };
     }>(`/public/venues/${encodeURIComponent(slug)}`);
     app.innerHTML = `<main class="login"><section class="card public-booking"><div class="public-head"><h1>${escapeText(venue.name)}</h1>${languageSelector()}</div><p class="muted">${t('public.title')}</p><form id="public-form"><label>${t('common.court')}<select name="courtId" required>${venue.courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)} — ${escapeText(court.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input type="date" name="date" required></label><label>${t('common.startTime')}<input type="time" name="time" required></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.hours', { count: 2 })}</option></select></label><label>${t('common.name')}<input name="customerName" required></label><label>${t('common.phone')}<input name="phone" required></label><label>${t('common.email')} (${t('common.optional')})<input name="email" type="email"></label><label>${t('common.notes')} (${t('common.optional')})<textarea name="notes"></textarea></label><p class="notice">${t('public.disclaimer')}</p><button class="button primary">${t('public.sendRequest')}</button><p id="public-result" role="status"></p></form></section></main>`;
     wireLanguageSelector();
     localizeEnumOptions(app);
     const publicForm = app.querySelector<HTMLFormElement>('#public-form');
+    const mode = venue.bookingPolicy.reservationMode;
+    if (mode !== 'REQUEST_APPROVAL' && publicForm) {
+      publicForm
+        .querySelectorAll<HTMLElement>(
+          'label:has([name="customerName"]), label:has([name="phone"]), label:has([name="email"]), label:has([name="notes"]), .notice, button[type="submit"], button:not([type])',
+        )
+        .forEach((element) => element.remove());
+      const message = document.createElement('p');
+      message.className = 'notice';
+      message.textContent =
+        mode === 'STAFF_ONLY'
+          ? 'Online booking is unavailable. Please contact venue staff.'
+          : 'Sign in or register to reserve an available court instantly.';
+      publicForm.append(message);
+      if (mode === 'AUTO_CONFIRM') {
+        const signIn = document.createElement('a');
+        signIn.className = 'button primary';
+        signIn.href = `/portal/${encodeURIComponent(slug)}/login`;
+        signIn.textContent = 'Sign in to book';
+        publicForm.append(signIn);
+      }
+    }
     const duration = publicForm?.elements.namedItem(
       'durationMinutes',
     ) as HTMLSelectElement | null;
@@ -92,6 +117,7 @@ export async function publicBooking(slug: string) {
       ?.querySelector('[name="durationMinutes"]')
       ?.addEventListener('change', () => void loadPublicAvailability());
     void loadPublicAvailability();
+    if (mode !== 'REQUEST_APPROVAL') return;
     app
       .querySelector<HTMLFormElement>('#public-form')
       ?.addEventListener('submit', async (event) => {

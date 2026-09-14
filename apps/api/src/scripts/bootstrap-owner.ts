@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_BOOKING_POLICY } from '@court-manager/contracts';
 import { ensureTable, dynamo } from '../db.js';
 import { hashPassword } from '../security.js';
 
@@ -44,6 +45,7 @@ await repo.put({
   email: process.env.ORGANIZATION_EMAIL,
   active: true,
   features: { classes: false, finance: true },
+  bookingPolicy: { ...DEFAULT_BOOKING_POLICY },
   createdAt: timestamp,
   updatedAt: timestamp,
 });

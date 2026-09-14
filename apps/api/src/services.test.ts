@@ -66,6 +66,65 @@ async function setup(timezone = 'UTC') {
   return { repo, services, court, customer };
 }
 describe('reservation workflows', () => {
+  it('builds bounded customer activities from reservations and active class sessions', async () => {
+    const { services, court, customer } = await setup();
+    const other = await services.customers.create(context, {
+      name: 'Other',
+      phone: '41999990001',
+    });
+    await services.reservations.create(context, {
+      courtId: String(court.courtId),
+      customerId: customer.customerId,
+      startAt: '2027-01-04T18:00:00Z',
+      endAt: '2027-01-04T19:00:00Z',
+      source: 'STAFF',
+    });
+    await services.reservations.create(context, {
+      courtId: court.courtId,
+      customerId: other.customerId,
+      startAt: '2027-01-04T20:00:00Z',
+      endAt: '2027-01-04T21:00:00Z',
+      source: 'STAFF',
+    });
+    const cls = await services.classes.create(context, {
+      name: 'Morning tennis',
+      sport: 'Tennis',
+      coachId: 'coach-1',
+      courtId: court.courtId,
+      capacity: 8,
+      startTime: '09:00',
+      durationMinutes: 60,
+      startDate: '2027-01-05',
+      scheduleType: 'SINGLE',
+    });
+    await services.classes.enroll(
+      context,
+      String(cls.classId),
+      String(customer.customerId),
+    );
+    const activities = await services.customerActivities.list(
+      {
+        organizationId: 'org-1',
+        customerId: String(customer.customerId),
+        customerAccountId: 'account-1',
+        actorType: 'CUSTOMER',
+      },
+      {
+        from: '2027-01-01T00:00:00Z',
+        to: '2027-02-01T00:00:00Z',
+        limit: 10,
+      },
+    );
+    expect(activities.data).toHaveLength(2);
+    expect(activities.data.map((activity) => activity.activityType)).toEqual([
+      'RESERVATION',
+      'CLASS',
+    ]);
+    expect(activities.data[0]).toMatchObject({
+      court: { name: 'Court 1' },
+      actions: ['VIEW', 'CANCEL', 'BOOK_AGAIN'],
+    });
+  });
   it('allows staff to create a custom duration up to four hours', async () => {
     const { services, court, customer } = await setup();
     const reservation = await services.reservations.create(context, {

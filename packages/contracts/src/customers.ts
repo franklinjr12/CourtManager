@@ -1,1 +1,15 @@
-export { CustomerInputSchema, CustomerSchema } from './index.js';
+export {
+  CustomerActivityItemSchema,
+  CustomerAccountCreateInputSchema,
+  CustomerAccountResponseSchema,
+  CustomerAccountSchema,
+  CustomerInputSchema,
+  CustomerProfileUpdateSchema,
+  CustomerSelfProfileSchema,
+  CustomerPortalPasswordInputSchema,
+  CustomerPortalRegistrationInputSchema,
+  CustomerSchema,
+  CustomerSportPreferencesInputSchema,
+  CustomerSportPreferencesSchema,
+  WaitlistSchema,
+} from './index.js';

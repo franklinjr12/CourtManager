@@ -5,6 +5,8 @@ import {
   DescribeTableCommand,
 } from '@aws-sdk/client-dynamodb';
 import {
+  BatchGetCommand,
+  type BatchGetCommandInput,
   DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
@@ -25,7 +27,13 @@ export type RecordItem = Record<string, unknown> & {
 };
 export type Key = { PK: string; SK: string };
 export type Write =
-  | { type: 'put'; item: RecordItem; condition?: string }
+  | {
+      type: 'put';
+      item: RecordItem;
+      condition?: string;
+      expected?: Record<string, unknown>;
+    }
+  | { type: 'check'; key: Key; expected: Record<string, unknown> }
   | { type: 'delete'; key: Key; condition?: string };
 export interface Repository {
   get<T extends RecordItem = RecordItem>(key: Key): Promise<T | undefined>;
@@ -40,7 +48,7 @@ export interface Repository {
   delete(key: Key, condition?: string): Promise<void>;
   query<T extends RecordItem = RecordItem>(
     pk: string,
-    opts?: { beginsWith?: string; limit?: number },
+    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
   ): Promise<T[]>;
   scan<T extends RecordItem = RecordItem>(
     filter?: (item: T) => boolean,
@@ -82,17 +90,21 @@ export class MemoryRepository implements Repository {
     this.items.set(this.key(key), item);
   }
   async delete(key: Key, _condition?: string) {
+    if (_condition === 'attribute_exists(PK)' && !this.items.has(this.key(key)))
+      throw new AppError('CONFLICT', 'Conditional write failed.');
     this.items.delete(this.key(key));
   }
   async query<T extends RecordItem>(
     pk: string,
-    opts?: { beginsWith?: string; limit?: number },
+    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
   ) {
     const result = [...this.items.values()]
       .filter(
         (i) =>
           i.PK === pk &&
-          (!opts?.beginsWith || i.SK.startsWith(opts.beginsWith)),
+          (!opts?.beginsWith || i.SK.startsWith(opts.beginsWith)) &&
+          (!opts?.between ||
+            (i.SK >= opts.between[0] && i.SK <= opts.between[1])),
       )
       .sort((a, b) => a.SK.localeCompare(b.SK));
     return (
@@ -117,6 +129,18 @@ export class MemoryRepository implements Repository {
     await previous;
     try {
       for (const write of writes) {
+        if (write.type !== 'delete' && write.expected) {
+          const current = this.items.get(
+            this.key(write.type === 'put' ? write.item : write.key),
+          );
+          if (
+            !current ||
+            Object.entries(write.expected).some(
+              ([name, value]) => current[name] !== value,
+            )
+          )
+            throw new AppError('CONFLICT', 'Record changed. Please reload.');
+        }
         if (
           write.type === 'put' &&
           write.condition === 'attribute_not_exists(PK)' &&
@@ -126,11 +150,18 @@ export class MemoryRepository implements Repository {
             'SCHEDULE_CONFLICT',
             'Court is no longer available.',
           );
+        if (
+          write.type === 'delete' &&
+          write.condition === 'attribute_exists(PK)' &&
+          !this.items.has(this.key(write.key))
+        )
+          throw new AppError('CONFLICT', 'Conditional write failed.');
       }
       for (const write of writes) {
         if (write.type === 'put')
           this.items.set(this.key(write.item), structuredClone(write.item));
-        else this.items.delete(this.key(write.key));
+        else if (write.type === 'delete')
+          this.items.delete(this.key(write.key));
       }
     } finally {
       release();
@@ -147,9 +178,23 @@ export class MemoryRepository implements Repository {
   async batchWrite(writes: Write[]) {
     for (const w of writes) {
       if (w.type === 'put') await this.put(w.item, w.condition);
-      else await this.delete(w.key, w.condition);
+      else if (w.type === 'delete') await this.delete(w.key, w.condition);
+      else await this.transactWrite([w]);
     }
   }
+}
+
+function expectedCondition(expected: Record<string, unknown>) {
+  const entries = Object.entries(expected);
+  return {
+    ConditionExpression: entries.map((_, i) => `#e${i} = :e${i}`).join(' AND '),
+    ExpressionAttributeNames: Object.fromEntries(
+      entries.map(([name], i) => [`#e${i}`, name]),
+    ),
+    ExpressionAttributeValues: Object.fromEntries(
+      entries.map(([, value], i) => [`:e${i}`, value]),
+    ),
+  };
 }
 
 export class DynamoRepository implements Repository {
@@ -206,7 +251,7 @@ export class DynamoRepository implements Repository {
   }
   async query<T extends RecordItem>(
     pk: string,
-    opts?: { beginsWith?: string; limit?: number },
+    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
   ) {
     const items: T[] = [];
     let ExclusiveStartKey: Key | undefined;
@@ -214,12 +259,16 @@ export class DynamoRepository implements Repository {
       const result = await this.client.send(
         new QueryCommand({
           TableName: this.table,
-          KeyConditionExpression: opts?.beginsWith
-            ? 'PK = :pk AND begins_with(SK, :sk)'
-            : 'PK = :pk',
-          ExpressionAttributeValues: opts?.beginsWith
-            ? { ':pk': pk, ':sk': opts.beginsWith }
-            : { ':pk': pk },
+          KeyConditionExpression: opts?.between
+            ? 'PK = :pk AND SK BETWEEN :from AND :to'
+            : opts?.beginsWith
+              ? 'PK = :pk AND begins_with(SK, :sk)'
+              : 'PK = :pk',
+          ExpressionAttributeValues: opts?.between
+            ? { ':pk': pk, ':from': opts.between[0], ':to': opts.between[1] }
+            : opts?.beginsWith
+              ? { ':pk': pk, ':sk': opts.beginsWith }
+              : { ':pk': pk },
           ...(opts?.limit
             ? { Limit: Math.max(1, opts.limit - items.length) }
             : {}),
@@ -254,25 +303,34 @@ export class DynamoRepository implements Repository {
       await this.client.send(
         new TransactWriteCommand({
           TransactItems: writes.map((w) =>
-            w.type === 'put'
+            w.type === 'check'
               ? {
-                  Put: {
-                    TableName: this.table,
-                    Item: w.item,
-                    ...(w.condition
-                      ? { ConditionExpression: w.condition }
-                      : {}),
-                  },
-                }
-              : {
-                  Delete: {
+                  ConditionCheck: {
                     TableName: this.table,
                     Key: w.key,
-                    ...(w.condition
-                      ? { ConditionExpression: w.condition }
-                      : {}),
+                    ...expectedCondition(w.expected),
                   },
-                },
+                }
+              : w.type === 'put'
+                ? {
+                    Put: {
+                      TableName: this.table,
+                      Item: w.item,
+                      ...(w.expected ? expectedCondition(w.expected) : {}),
+                      ...(w.condition
+                        ? { ConditionExpression: w.condition }
+                        : {}),
+                    },
+                  }
+                : {
+                    Delete: {
+                      TableName: this.table,
+                      Key: w.key,
+                      ...(w.condition
+                        ? { ConditionExpression: w.condition }
+                        : {}),
+                    },
+                  },
           ),
         }),
       );
@@ -283,6 +341,17 @@ export class DynamoRepository implements Repository {
           'VALIDATION_ERROR',
           'A DynamoDB transaction cannot contain more than 100 actions.',
         );
+      if (
+        writes.some(
+          (w) => w.type === 'check' || (w.type === 'put' && w.expected),
+        )
+      )
+        throw new AppError(
+          'CONFLICT',
+          'Record changed. Please reload.',
+          {},
+          409,
+        );
       throw new AppError(
         'SCHEDULE_CONFLICT',
         'Court is no longer available.',
@@ -292,13 +361,30 @@ export class DynamoRepository implements Repository {
     }
   }
   async batchGet<T extends RecordItem>(keys: Key[]) {
-    const result = await this.client.send(
-      new ScanCommand({ TableName: this.table }),
-    );
-    const wanted = new Set(keys.map((k) => `${k.PK}|${k.SK}`));
-    return ((result.Items ?? []) as T[]).filter((x) =>
-      wanted.has(`${x.PK}|${x.SK}`),
-    );
+    if (!keys.length) return [];
+    if (keys.length > 100)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'A DynamoDB batch get cannot contain more than 100 keys.',
+      );
+    let pending: NonNullable<BatchGetCommandInput['RequestItems']> = {
+      [this.table]: { Keys: keys },
+    };
+    const items: T[] = [];
+    for (
+      let attempt = 0;
+      Object.keys(pending).length && attempt < 3;
+      attempt++
+    ) {
+      const result = await this.client.send(
+        new BatchGetCommand({ RequestItems: pending }),
+      );
+      items.push(...((result.Responses?.[this.table] ?? []) as T[]));
+      pending = result.UnprocessedKeys ?? {};
+    }
+    if (Object.keys(pending).length)
+      throw new AppError('CONFLICT', 'Unable to read all requested records.');
+    return items;
   }
   async batchWrite(writes: Write[]) {
     await this.transactWrite(writes);

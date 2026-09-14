@@ -1,6 +1,6 @@
 # Court Manager
 
-Court Manager is a focused digital front desk for sports centers: courts, availability, staff bookings, public reservation requests, customers, external payment records, expenses, and lightweight reporting. Classes are supported as a secondary feature and are disabled by default for a new organization.
+Court Manager is a sports-center operating platform for courts, availability, staff bookings, customer accounts, customer self-service, public reservation requests, classes, external payment records, expenses, and lightweight reporting. Classes are supported as a secondary feature and are disabled by default for a new organization.
 
 ## Architecture
 
@@ -28,9 +28,19 @@ The dev command starts DynamoDB Local on port 8120, waits for it, starts the API
 
 ## Bootstrap and seed
 
-`corepack pnpm bootstrap:owner` creates an organization and owner idempotently. Set `OWNER_EMAIL`, `OWNER_PASSWORD`, and `ORGANIZATION_NAME` for production; local defaults are safe test values. `corepack pnpm seed:dev` creates representative local organization, owner, courts, and customers and refuses production. The seed login is `owner@arena.test` / `dev-password`.
+`corepack pnpm bootstrap:owner` creates an organization and owner idempotently. Set `OWNER_EMAIL`, `OWNER_PASSWORD`, and `ORGANIZATION_NAME` for production; local defaults are safe test values. `corepack pnpm seed:dev` creates representative non-production Phase 2 data (customer account, reservation history/upcoming booking, class enrollment/waitlist, court waitlist, and pending request) and refuses production. Staff login: `owner@arena.test` / `dev-password`. Customer login: `customer1@arena.test` / `dev-password` at `/portal/arena-central/login`.
 
-Court Manager now includes a timezone-aware Today front desk, staff and coach workflows, materialized class sessions with attendance, operational charges and customer balances. Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent.
+Seed defaults to `REQUEST_APPROVAL`. Select primary venue mode before reset/seed:
+
+```powershell
+$env:DEV_BOOKING_MODE = 'AUTO_CONFIRM' # or REQUEST_APPROVAL / STAFF_ONLY
+corepack pnpm reset:dev
+corepack pnpm seed:dev
+```
+
+`reset:dev` only accepts localhost/127.0.0.1 DynamoDB endpoints, recreates local DynamoDB data, and removes all development seed records. Keep `NODE_ENV` non-production.
+
+Court Manager now includes a timezone-aware Today front desk, staff and coach workflows, customer portal authentication, policy-aware customer booking, materialized class sessions with attendance, operational charges and customer balances. Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent. For Phase 2 production upgrades, run `corepack pnpm migrate:phase2` after deployment. Existing class data may also require the write-paused `corepack pnpm migrate:class-discovery` backfill.
 
 ## Quality gates
 
@@ -51,4 +61,4 @@ The API is bundled with esbuild and deployed manually through AWS SAM. The web a
 
 ## Known limitations
 
-Payments are records of external transactions; there is no gateway, PIX integration, card storage, or automatic charging. Search and low-volume reports use scoped scans. Classes are intentionally lightweight. No messaging integration, background job system, automated deployment, or multi-branch model is included.
+Payments are records of external transactions; there is no payment gateway, PIX integration, card storage, or automatic charging. There is no automated email, WhatsApp integration, push notification, or automatic waitlist notification/fulfillment; staff manually deliver activation/reset links and fulfill waitlists. Packages and credit ledgers are not implemented. Memberships and renewals are not implemented. Events, open games, rankings, referrals, loyalty, lifecycle scoring, and other community features are not implemented. Search and low-volume reports use scoped scans. Classes remain intentionally lightweight. No background job system, automated deployment, or multi-branch model is included.

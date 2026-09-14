@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@court-manager/contracts": "workspace:*"
+  },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^1.1.0",
     "vite": "^6.0.5",

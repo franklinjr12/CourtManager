@@ -41,3 +41,6 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+
+# AI temp files
+.codex-epic

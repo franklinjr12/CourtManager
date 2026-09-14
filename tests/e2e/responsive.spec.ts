@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { dynamo } from '../../apps/api/src/db.js';
+import { classFixture } from '../../apps/api/src/testing/class-fixture.js';
 import { login } from './support/auth.js';
 
 test('mobile schedule keeps actions usable and modal closes with Escape', async ({
@@ -15,4 +17,31 @@ test('mobile schedule keeps actions usable and modal closes with Escape', async 
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('mobile customer portal keeps navigation and booking form usable', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { slug } = await classFixture(dynamo());
+  await page.goto('/login');
+  await page.evaluate(() =>
+    localStorage.setItem('court-manager-locale', 'en-US'),
+  );
+  await page.goto(`/portal/${slug}/login`);
+  await page.getByLabel('Email').fill('ana@example.test');
+  await page.getByLabel('Password').fill('class-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(
+    page.getByRole('navigation', { name: 'Customer navigation' }),
+  ).toBeVisible();
+  const fitsViewport = await page.evaluate(
+    () => document.documentElement.scrollWidth <= window.innerWidth,
+  );
+  expect(fitsViewport).toBe(true);
+  await page.getByRole('link', { name: 'Book', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Book a court' }),
+  ).toBeVisible();
+  await expect(page.locator('#portal-booking-form')).toBeVisible();
 });

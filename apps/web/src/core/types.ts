@@ -24,6 +24,14 @@ export type Organization = {
   preferredSportId?: string;
   active: boolean;
   features: { classes: boolean; finance: boolean };
+  bookingPolicy: {
+    reservationMode: 'STAFF_ONLY' | 'REQUEST_APPROVAL' | 'AUTO_CONFIRM';
+    bookAheadDays: number;
+    cancellationCutoffHours: number;
+    minimumReservationMinutes: number;
+    maximumReservationMinutes: number;
+    maximumActiveBookings: number;
+  };
 };
 
 export type Court = {
@@ -81,6 +89,33 @@ export type RequestItem = {
   notes?: string;
   status: string;
   linkedCustomerId?: string;
+};
+
+export type StaffWaitlist = {
+  waitlistId: string;
+  customerId: string;
+  customerName: string;
+  type: 'COURT_SLOT' | 'CLASS' | 'COURT';
+  courtId?: string;
+  courtName?: string;
+  classId?: string;
+  className?: string;
+  requestedDate?: string;
+  desiredStartTime?: string;
+  durationMinutes?: number;
+  requestedActivity: string;
+  joinedAt: string;
+  status: 'ACTIVE' | 'FULFILLED' | 'CANCELLED' | 'EXPIRED';
+  fulfilledAt?: string;
+  fulfilledBy?: string;
+  linkedReservationId?: string;
+  linkedEnrollmentId?: string;
+  actionable: boolean;
+  currentAvailability: {
+    available?: boolean;
+    enrolledCount?: number;
+    capacity?: number;
+  };
 };
 
 export type Payment = {

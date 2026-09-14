@@ -1,4 +1,10 @@
 export {
+  CustomerReservationInputSchema,
+  CustomerAvailabilitySchema,
+  CustomerRebookingDraftSchema,
+  ReservationCancellationEligibilitySchema,
+  ReservationParticipantInputSchema,
+  ReservationParticipantSchema,
   ReservationInputSchema,
   RecurringReservationInputSchema,
   ReservationSchema,

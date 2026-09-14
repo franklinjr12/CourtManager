@@ -40,7 +40,7 @@ const courtForm = (court?: Court) => {
 };
 
 const organizationForm = (org: Organization) =>
-  `<form id="organization-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="160" value="${escapeText(org.name)}"></label><label>${t('settings.publicSlug')}<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="${escapeText(org.slug)}"></label><label>${t('settings.timezone')}<input name="timezone" required value="${escapeText(org.timezone)}"></label><label>${t('settings.currency')}<input name="currency" required maxlength="3" value="${escapeText(org.currency)}"></label><label>${t('common.phone')}<input name="phone" value="${escapeText(org.phone)}"></label><label>${t('common.email')}<input name="email" type="email" value="${escapeText(org.email)}"></label><label class="check full"><input name="classes" type="checkbox" ${org.features.classes ? 'checked' : ''}> ${t('settings.enableClasses')}</label><p class="form-error" role="alert"></p><div class="form-actions full"><button class="button primary">${t('settings.saveOrganization')}</button></div></form>`;
+  `<form id="organization-form" class="form-grid"><label>${t('common.name')}<input name="name" required maxlength="160" value="${escapeText(org.name)}"></label><label>${t('settings.publicSlug')}<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="${escapeText(org.slug)}"></label><label>${t('settings.timezone')}<input name="timezone" required value="${escapeText(org.timezone)}"></label><label>${t('settings.currency')}<input name="currency" required maxlength="3" value="${escapeText(org.currency)}"></label><label>${t('common.phone')}<input name="phone" value="${escapeText(org.phone)}"></label><label>${t('common.email')}<input name="email" type="email" value="${escapeText(org.email)}"></label><fieldset class="full"><legend>${t('settings.bookingPolicy')}</legend><label>${t('settings.reservationMode')}<select name="reservationMode"><option value="STAFF_ONLY" ${org.bookingPolicy.reservationMode === 'STAFF_ONLY' ? 'selected' : ''}>${t('settings.staffOnly')}</option><option value="REQUEST_APPROVAL" ${org.bookingPolicy.reservationMode === 'REQUEST_APPROVAL' ? 'selected' : ''}>${t('settings.requestApproval')}</option><option value="AUTO_CONFIRM" ${org.bookingPolicy.reservationMode === 'AUTO_CONFIRM' ? 'selected' : ''}>${t('settings.autoConfirm')}</option></select></label><label>${t('settings.bookAheadDays')}<input name="bookAheadDays" type="number" min="1" max="365" required value="${org.bookingPolicy.bookAheadDays}"></label><label>${t('settings.cancellationCutoffHours')}<input name="cancellationCutoffHours" type="number" min="0" max="168" required value="${org.bookingPolicy.cancellationCutoffHours}"></label><label>${t('settings.minimumReservationMinutes')}<input name="minimumReservationMinutes" type="number" min="1" max="240" required value="${org.bookingPolicy.minimumReservationMinutes}"></label><label>${t('settings.maximumReservationMinutes')}<input name="maximumReservationMinutes" type="number" min="1" max="240" required value="${org.bookingPolicy.maximumReservationMinutes}"></label><label>${t('settings.maximumActiveBookings')}<input name="maximumActiveBookings" type="number" min="1" max="100" required value="${org.bookingPolicy.maximumActiveBookings}"></label></fieldset><label class="check full"><input name="classes" type="checkbox" ${org.features.classes ? 'checked' : ''}> ${t('settings.enableClasses')}</label><p class="form-error" role="alert"></p><div class="form-actions full"><button class="button primary">${t('settings.saveOrganization')}</button></div></form>`;
 
 function openingHoursFrom(form: HTMLFormElement) {
   return Object.fromEntries(
@@ -239,6 +239,18 @@ function wireSettings() {
             phone: values.phone || undefined,
             email: values.email || undefined,
             features: { ...current.features, classes: values.classes === 'on' },
+            bookingPolicy: {
+              reservationMode: values.reservationMode,
+              bookAheadDays: Number(values.bookAheadDays),
+              cancellationCutoffHours: Number(values.cancellationCutoffHours),
+              minimumReservationMinutes: Number(
+                values.minimumReservationMinutes,
+              ),
+              maximumReservationMinutes: Number(
+                values.maximumReservationMinutes,
+              ),
+              maximumActiveBookings: Number(values.maximumActiveBookings),
+            },
           }),
         });
         toast(t('settings.organizationSaved'));

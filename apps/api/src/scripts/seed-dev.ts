@@ -1,4 +1,8 @@
-import type { AuthContext } from '@court-manager/contracts';
+import {
+  DEFAULT_BOOKING_POLICY,
+  type AuthContext,
+  type CustomerAuthContext,
+} from '@court-manager/contracts';
 import { ensureTable, dynamo } from '../db.js';
 import {
   addLocalMinutes,
@@ -8,9 +12,11 @@ import {
 } from '../domain.js';
 import { hashPassword } from '../security.js';
 import { buildServices } from '../services/index.js';
+import { resolveDevelopmentBookingMode } from './seed-dev-config.js';
 await ensureTable();
 if ((process.env.NODE_ENV ?? 'development') === 'production')
   throw new Error('seed:dev refuses NODE_ENV=production.');
+const reservationMode = resolveDevelopmentBookingMode();
 const repo = dynamo(),
   found = (await repo.scan((x) => x.entity === 'organization'))[0];
 if (found) {
@@ -33,6 +39,7 @@ await repo.put({
   email: 'contato@arena.test',
   active: true,
   features: { classes: true, finance: true },
+  bookingPolicy: { ...DEFAULT_BOOKING_POLICY, reservationMode },
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -116,10 +123,6 @@ for (let i = 1; i <= 20; i++) {
     updatedAt: timestamp,
   });
 }
-console.log(
-  'Seeded Arena Central with owner, courts, and customers. Login: owner@arena.test / dev-password',
-);
-
 const services = buildServices(repo);
 const owner: AuthContext = { organizationId, userId, role: 'OWNER' };
 const staff = await services.staff.create(owner, {
@@ -144,6 +147,59 @@ const hour = Math.max(
 const time = `${String(hour).padStart(2, '0')}:00`;
 const nextTime = `${String(Math.min(21, hour + 2)).padStart(2, '0')}:00`;
 const customer = (n: number) => `seed-customer-${n}`;
+const customerAccount = async (
+  customerId: string,
+  email: string,
+  customerAccountId: string,
+) => {
+  const normalizedEmail = email.toLowerCase();
+  await repo.transactWrite([
+    {
+      type: 'put',
+      item: {
+        PK: `ORG#${organizationId}`,
+        SK: `CUSTOMER_ACCOUNT#${customerAccountId}`,
+        entity: 'customerAccount',
+        customerAccountId,
+        organizationId,
+        customerId,
+        email,
+        normalizedEmail,
+        passwordHash: await hashPassword('dev-password'),
+        status: 'ACTIVE',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+      condition: 'attribute_not_exists(PK)',
+    },
+    {
+      type: 'put',
+      item: {
+        PK: `CUSTOMER_ACCOUNT_EMAIL#${organizationId}#${normalizedEmail}`,
+        SK: 'META',
+        customerAccountId,
+        customerId,
+        organizationId,
+        normalizedEmail,
+      },
+      condition: 'attribute_not_exists(PK)',
+    },
+  ]);
+  return {
+    organizationId,
+    customerId,
+    customerAccountId,
+    actorType: 'CUSTOMER',
+  } satisfies CustomerAuthContext;
+};
+const primaryCustomer = await customerAccount(
+  customer(1),
+  'customer1@arena.test',
+  'seed-account-1',
+);
+await customerAccount(customer(5), 'customer5@arena.test', 'seed-account-5');
+await customerAccount(customer(6), 'customer6@arena.test', 'seed-account-6');
+await customerAccount(customer(10), 'customer10@arena.test', 'seed-account-10');
 const reservation = await services.reservations.create(owner, {
   courtId: 'seed-court-1',
   customerId: customer(1),
@@ -165,11 +221,14 @@ const arriving = await services.reservations.create(owner, {
   expectedAmount: 80,
   source: 'PHONE',
 });
+const historyDateValue = new Date(`${today}T12:00:00Z`);
+historyDateValue.setUTCDate(historyDateValue.getUTCDate() - 1);
+const historyDate = historyDateValue.toISOString().slice(0, 10);
 const completed = await services.reservations.create(owner, {
   courtId: 'seed-court-3',
-  customerId: customer(3),
-  startAt: zonedDateTimeToIso(today, '08:00', zone),
-  endAt: addLocalMinutes(today, '08:00', 60, zone),
+  customerId: customer(1),
+  startAt: zonedDateTimeToIso(historyDate, '08:00', zone),
+  endAt: addLocalMinutes(historyDate, '08:00', 60, zone),
   expectedAmount: 80,
   source: 'STAFF',
 });
@@ -217,7 +276,7 @@ const group = await services.classes.create(owner, {
   coachId: coach.userId,
   courtId: 'seed-court-3',
   type: 'GROUP',
-  capacity: 8,
+  capacity: 1,
   pricePerParticipant: 50,
   scheduleType: 'SINGLE',
   weekday,
@@ -226,7 +285,9 @@ const group = await services.classes.create(owner, {
   startDate: today,
 });
 await services.classes.enroll(owner, String(group.classId), customer(5));
-await services.classes.enroll(owner, String(group.classId), customer(6));
+await services.waitlists.joinClass(primaryCustomer, {
+  classId: String(group.classId),
+});
 const sessionId = `${group.classId}-${today}`;
 if (Date.parse(zonedDateTimeToIso(today, classStart, zone)) > Date.now())
   await services.classes.participantTransition(
@@ -257,12 +318,33 @@ await services.classes.enroll(
 const tomorrow = new Date(`${today}T12:00:00Z`);
 tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 const tomorrowKey = tomorrow.toISOString().slice(0, 10);
-await services.requests.createPublic('arena-central', {
+await services.reservations.create(owner, {
+  courtId: 'seed-court-2',
+  customerId: customer(1),
+  startAt: zonedDateTimeToIso(tomorrowKey, '18:00', zone),
+  endAt: addLocalMinutes(tomorrowKey, '18:00', 60, zone),
+  expectedAmount: 80,
+  source: 'CUSTOMER_PORTAL',
+});
+await services.reservations.create(owner, {
+  courtId: 'seed-court-4',
+  customerId: customer(10),
+  startAt: zonedDateTimeToIso(tomorrowKey, '20:00', zone),
+  endAt: addLocalMinutes(tomorrowKey, '20:00', 60, zone),
+  expectedAmount: 80,
+  source: 'STAFF',
+});
+await services.waitlists.joinCourt(primaryCustomer, {
+  courtId: 'seed-court-4',
+  desiredDate: tomorrowKey,
+  desiredStartTime: '20:00',
+  durationMinutes: 60,
+});
+await services.requests.createForCustomer(primaryCustomer, {
   courtId: 'seed-court-1',
-  requestedStartAt: zonedDateTimeToIso(tomorrowKey, '20:00', zone),
-  requestedEndAt: zonedDateTimeToIso(tomorrowKey, '21:00', zone),
-  customerName: 'Pending Request',
-  phone: '41999990099',
+  startAt: zonedDateTimeToIso(tomorrowKey, '19:00', zone),
+  endAt: addLocalMinutes(tomorrowKey, '19:00', 60, zone),
+  notes: 'Development seed pending request',
 });
 await services.payments.create(owner, {
   reservationId: reservation.reservationId,
@@ -273,7 +355,7 @@ await services.payments.create(owner, {
 });
 await services.payments.create(owner, {
   reservationId: completed.reservationId,
-  customerId: customer(3),
+  customerId: customer(1),
   amount: 80,
   method: 'CASH',
   paidAt: new Date().toISOString(),
@@ -286,3 +368,6 @@ await services.expenses.create(owner, {
 });
 void arriving;
 void staff;
+console.log(
+  `Seeded non-production Arena Central. Mode: ${reservationMode}. Staff: owner@arena.test / dev-password. Customer: customer1@arena.test / dev-password.`,
+);

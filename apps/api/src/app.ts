@@ -4,6 +4,8 @@ import {
   collection,
   CourtInputSchema,
   CustomerInputSchema,
+  CustomerPortalPasswordInputSchema,
+  CustomerPortalRegistrationInputSchema,
   DateSchema,
   ExpenseInputSchema,
   LoginInputSchema,
@@ -15,22 +17,21 @@ import {
   RecurringReservationInputSchema,
   SportInputSchema,
   ClassInputSchema,
+  OrganizationUpdateInputSchema,
   StaffCreateInputSchema,
   StaffUpdateInputSchema,
   StaffPasswordResetInputSchema,
 } from '@court-manager/contracts';
-import type { AuthContext } from '@court-manager/contracts';
 import { Hono } from 'hono';
-import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z, type ZodType } from 'zod';
 import type { Repository } from './db.js';
 import { dayKeyInTimezone } from './domain.js';
 import { AppError } from './errors.js';
+import { registerCustomerPortalRoutes } from './routes/customer-portal.js';
+import type { AppContext, AppVariables } from './routes/types.js';
 import { buildServices } from './services/index.js';
 
-type Variables = { auth: AuthContext; requestId: string };
-type AppContext = Context<{ Variables: Variables }>;
 const csv = (rows: Record<string, unknown>[]) => {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0] ?? {});
@@ -66,7 +67,7 @@ const queryValue = <T>(value: unknown, schema: ZodType<T>) => {
 
 export const createApp = (repo: Repository) => {
   const services = buildServices(repo);
-  const app = new Hono<{ Variables: Variables }>();
+  const app = new Hono<{ Variables: AppVariables }>();
   const publicRequests = new Map<string, { started: number; count: number }>();
   app.onError((error, c) => {
     const requestId = c.get('requestId') ?? randomUUID();
@@ -119,7 +120,7 @@ export const createApp = (repo: Repository) => {
     cors({
       origin: '*',
       allowHeaders: ['Authorization', 'Content-Type'],
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     }),
   );
   app.use('/public/*', async (c, next) => {
@@ -151,6 +152,23 @@ export const createApp = (repo: Repository) => {
     await auth(c);
     await next();
   };
+  const customerAuth = async (c: AppContext) => {
+    const header = c.req.header('Authorization');
+    if (!header?.startsWith('Bearer '))
+      throw new AppError('UNAUTHORIZED', 'Customer authentication required.');
+    c.set(
+      'customerAuth',
+      await services.customerAuth.authenticate(header.slice(7)),
+    );
+  };
+  const customerCtx = (c: AppContext) => c.get('customerAuth');
+  const customerProtectedRoute = async (
+    c: AppContext,
+    next: () => Promise<void>,
+  ) => {
+    await customerAuth(c);
+    await next();
+  };
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.post('/auth/login', async (c) => {
     const input = await body(c, LoginInputSchema);
@@ -161,6 +179,14 @@ export const createApp = (repo: Repository) => {
     const token = c.req.header('Authorization')?.slice(7);
     if (token) await services.auth.logout(token);
     return c.json(ok({ loggedOut: true }));
+  });
+  registerCustomerPortalRoutes(app, {
+    services,
+    body,
+    queryValue,
+    customerAuth,
+    customerCtx,
+    customerProtectedRoute,
   });
   app.get('/public/venues/:slug', async (c) =>
     c.json(ok(await services.requests.publicVenue(c.req.param('slug')))),
@@ -187,6 +213,39 @@ export const createApp = (repo: Repository) => {
       201,
     );
   });
+  app.post('/public/venues/:slug/portal/register', async (c) =>
+    c.json(
+      ok(
+        await services.customerAccounts.register(
+          c.req.param('slug'),
+          await body(c, CustomerPortalRegistrationInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.post('/public/venues/:slug/portal/activate', async (c) =>
+    c.json(
+      ok(
+        await services.customerAccounts.setPassword(
+          c.req.param('slug'),
+          await body(c, CustomerPortalPasswordInputSchema),
+          'ACTIVATION',
+        ),
+      ),
+    ),
+  );
+  app.post('/public/venues/:slug/portal/reset-password', async (c) =>
+    c.json(
+      ok(
+        await services.customerAccounts.setPassword(
+          c.req.param('slug'),
+          await body(c, CustomerPortalPasswordInputSchema),
+          'RESET',
+        ),
+      ),
+    ),
+  );
   app.use('/organization/*', protectedRoute);
   app.use('/courts/*', protectedRoute);
   app.use('/sports/*', protectedRoute);
@@ -201,6 +260,7 @@ export const createApp = (repo: Repository) => {
   app.use('/classes/*', protectedRoute);
   app.use('/class-sessions/*', protectedRoute);
   app.use('/staff/*', protectedRoute);
+  app.use('/waitlists/*', protectedRoute);
   app.use('/coaches', protectedRoute);
   app.use('/today', protectedRoute);
   app.use('/charges/*', protectedRoute);
@@ -216,7 +276,7 @@ export const createApp = (repo: Repository) => {
       ok(
         await services.organizations.update(
           ctx(c),
-          await body(c, z.record(z.unknown())),
+          await body(c, OrganizationUpdateInputSchema),
         ),
       ),
     ),
@@ -331,6 +391,16 @@ export const createApp = (repo: Repository) => {
   );
   app.post('/customers/:id/archive', async (c) =>
     c.json(ok(await services.customers.archive(ctx(c), c.req.param('id')))),
+  );
+  app.post('/customers/:id/portal-access', async (c) =>
+    c.json(
+      ok(await services.customerAccounts.enable(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.post('/customers/:id/portal-reset', async (c) =>
+    c.json(
+      ok(await services.customerAccounts.reset(ctx(c), c.req.param('id'))),
+    ),
   );
   app.get('/customers/duplicates', async (c) =>
     c.json(ok(await services.customers.duplicates(ctx(c), c.req.query()))),
@@ -611,6 +681,15 @@ export const createApp = (repo: Repository) => {
         ),
       ),
     ),
+  );
+  app.get('/waitlists', async (c) =>
+    c.json(collection(await services.waitlists.staffList(ctx(c)))),
+  );
+  app.post('/waitlists/:id/fulfill', async (c) =>
+    c.json(ok(await services.waitlists.fulfill(ctx(c), c.req.param('id')))),
+  );
+  app.post('/waitlists/:id/expire', async (c) =>
+    c.json(ok(await services.waitlists.expire(ctx(c), c.req.param('id')))),
   );
   app.get('/classes', async (c) =>
     c.json(collection(await services.classes.list(ctx(c)))),
