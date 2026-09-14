@@ -402,6 +402,11 @@ export const createApp = (repo: Repository) => {
       ok(await services.customerAccounts.reset(ctx(c), c.req.param('id'))),
     ),
   );
+  app.post('/customers/:id/portal-disable', async (c) =>
+    c.json(
+      ok(await services.customerAccounts.disable(ctx(c), c.req.param('id'))),
+    ),
+  );
   app.get('/customers/duplicates', async (c) =>
     c.json(ok(await services.customers.duplicates(ctx(c), c.req.query()))),
   );
