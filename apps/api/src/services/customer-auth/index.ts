@@ -730,6 +730,29 @@ export class CustomerAccountService {
   async reset(ctx: AuthContext, customerId: string) {
     return this.generateToken(ctx, customerId, 'RESET');
   }
+  /** Existing sessions stop working because authentication requires ACTIVE. */
+  async disable(ctx: AuthContext, customerId: string) {
+    assertRole(ctx, ['OWNER', 'STAFF']);
+    const account = (
+      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'CUSTOMER_ACCOUNT#',
+      })
+    ).find(
+      (item) =>
+        item.entity === 'customerAccount' && item.customerId === customerId,
+    );
+    if (!account)
+      throw new AppError('NOT_FOUND', 'Customer portal account was not found.');
+    await this.repo.put(
+      stored(
+        { ...as(account), status: 'DISABLED', updatedAt: now() },
+        account.PK,
+        account.SK,
+        'customerAccount',
+      ),
+    );
+    return { customerId, status: 'DISABLED' as const };
+  }
   async setPassword(
     slug: string,
     input: Input,

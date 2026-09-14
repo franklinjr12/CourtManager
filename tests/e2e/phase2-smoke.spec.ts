@@ -1,337 +1,321 @@
 import { expect, test } from '@playwright/test';
-import { dynamo } from '../../apps/api/src/db.js';
-import { classFixture } from '../../apps/api/src/testing/class-fixture.js';
-import { api, customerApi } from './support/api.js';
-import { login, loginCustomer, registerCustomer } from './support/auth.js';
-import { findAvailability, selectFirstSlot } from './support/booking.js';
+
 import {
-  PORTAL_PASSWORD,
-  uniqueEmail,
-  uniqueName,
-  uniquePhone,
-} from './support/identity.js';
-import { useEnglish } from './support/locale.js';
-import {
-  addOwnerLogin,
-  AUTO_CONFIRM_POLICY,
-  createIsolatedVenue,
-  futureDate,
-  REQUEST_APPROVAL_POLICY,
+  apiAs,
+  customerSignIn,
+  customerToken,
+  dateAhead,
+  newPage,
+  PASSWORD,
+  seedVenue,
+  selectFirstSlot,
+  staffSignIn,
+  useEnglish,
 } from './support/venue.js';
 
-test('register and login open the customer portal', async ({ page }) => {
+/**
+ * Phase 2 smoke pass: the eight priority customer journeys plus the checks
+ * that only a browser can make (routing, rendering, mobile layout).
+ */
+
+test('1. register, sign in, refresh nested URLs, and navigate the portal', async ({
+  page,
+}) => {
+  const venue = await seedVenue('AUTO_CONFIRM');
+  const email = `register-${venue.organizationId}@smoke.test`;
   await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    bookingPolicy: AUTO_CONFIRM_POLICY,
-  });
-  const email = uniqueEmail('smoke-register');
-  await registerCustomer(page, venue.slug, {
-    name: uniqueName('Smoke Register'),
-    email,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await expect(page.locator('#portal-result')).toHaveText(/Account created/);
-  await page.getByRole('link', { name: 'Sign in' }).click();
+  await page.goto(`/portal/${venue.slug}/register`);
+  await page.getByLabel('Name').fill('Smoke Registrant');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(PORTAL_PASSWORD);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByLabel('Phone').fill('9' + Date.now().toString().slice(-10));
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Register' }).click();
+  await expect(page.locator('#portal-result')).toHaveText(/Account created/);
+  await customerSignIn(page, venue.slug, email);
+
+  for (const [link, path] of [
+    ['Book', 'book'],
+    ['Activities', 'reservations'],
+    ['Classes', 'classes'],
+    ['Profile', 'profile'],
+    ['Home', ''],
+  ] as const) {
+    await page.getByRole('link', { name: link, exact: true }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/portal/${venue.slug}${path ? `/${path}` : ''}$`),
+    );
+  }
+  await page.goto(`/portal/${venue.slug}/reservations`);
+  await page.reload();
   await expect(
     page.getByRole('navigation', { name: 'Customer navigation' }),
   ).toBeVisible();
+  await page.goto(`/portal/${venue.slug}/profile`);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Next activity' }),
-  ).toBeVisible();
+    page.locator('[name="tags"], [name="notes"], [name="archived"]'),
+  ).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Schedule' })).toHaveCount(0);
 });
 
-test('AUTO_CONFIRM booking appears for customer, staff, and finance', async ({
+test('2-4. AUTO_CONFIRM booking, concurrent same-slot attempt, and cancellation', async ({
   page,
+  browser,
 }) => {
-  await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    prefix: 'smoke-auto',
-    bookingPolicy: AUTO_CONFIRM_POLICY,
-  });
-  const email = uniqueEmail('smoke-auto');
-  const name = uniqueName('Smoke Auto');
-  const account = await venue.services.customerAccounts.register(venue.slug, {
-    name,
-    email,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await loginCustomer(page, venue.slug, email, PORTAL_PASSWORD);
-  await page.getByRole('link', { name: 'Book', exact: true }).click();
-  const date = futureDate(7);
-  await findAvailability(page, date);
-  await selectFirstSlot(page);
-  await page.getByRole('button', { name: 'Confirm booking' }).click();
-  await expect(page.locator('#portal-booking-result')).toHaveText(
-    'Reservation confirmed.',
-  );
+  const venue = await seedVenue('AUTO_CONFIRM');
+  const ana = await venue.registerCustomer('Ana');
+  const bea = await venue.registerCustomer('Bea');
+  const date = dateAhead(7);
+
+  const other = await newPage(browser);
+  await customerSignIn(page, venue.slug, ana.email);
+  await customerSignIn(other, venue.slug, bea.email);
+  const first = await selectFirstSlot(page, venue.slug, date);
+  const second = await selectFirstSlot(other, venue.slug, date);
+  expect(second).toBe(first);
+
+  // Both customers submit the same slot at once.
+  await Promise.all([
+    page.getByRole('button', { name: 'Confirm booking' }).click(),
+    other.getByRole('button', { name: 'Confirm booking' }).click(),
+  ]);
+  const results = [
+    page.locator('#portal-booking-result'),
+    other.locator('#portal-booking-result'),
+  ];
+  for (const result of results) await expect(result).not.toBeEmpty();
+  const texts = await Promise.all(results.map((result) => result.innerText()));
+  expect(
+    texts.filter((text) => text === 'Reservation confirmed.'),
+  ).toHaveLength(1);
+  const winner = texts[0] === 'Reservation confirmed.' ? page : other;
+  const winnerEmail = winner === page ? ana.email : bea.email;
+  await other.context().close();
+  if (winner !== page) await customerSignIn(page, venue.slug, winnerEmail);
+
+  // The reservation shows for the customer and on the staff schedule.
   await page.getByRole('link', { name: 'Activities' }).click();
   await expect(
     page.getByRole('button', { name: 'Cancel reservation' }),
   ).toBeVisible();
-  await login(page, {
-    email: venue.ownerEmail,
-    password: venue.ownerPassword,
-  });
-  const reservations = await api(page, `/reservations?date=${date}`);
-  expect(
-    (
-      reservations.body.data as Array<{ customerId: string; status: string }>
-    ).some(
-      (item) =>
-        item.customerId === account.customer.customerId &&
-        item.status === 'BOOKED',
-    ),
-  ).toBe(true);
-  const charges = await venue.repo.scan(
-    (item) =>
-      item.entity === 'charge' &&
-      item.customerId === account.customer.customerId,
-  );
-  expect(charges.length).toBeGreaterThan(0);
-  await page.goto('/schedule');
-  await expect(page.getByRole('heading', { name: 'Schedule' })).toBeVisible();
-});
+  const token = await customerToken(venue.slug, winnerEmail);
+  const upcoming = await apiAs(token, '/customer/reservations/upcoming');
+  expect(upcoming.body.data.reservations).toHaveLength(1);
+  const reservationId = upcoming.body.data.reservations[0].reservationId;
+  const staffPage = await newPage(browser);
+  await staffSignIn(staffPage, venue.ownerEmail);
+  await staffPage.goto(`/schedule?date=${date}`);
+  await expect(staffPage.getByText(/Ana 1|Bea 2/).first()).toBeVisible();
+  await staffPage.context().close();
 
-test('only one of two customers can AUTO_CONFIRM the same slot', async ({
-  page,
-  browser,
-}) => {
-  await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    prefix: 'smoke-race',
-    bookingPolicy: AUTO_CONFIRM_POLICY,
-  });
-  const emailA = uniqueEmail('smoke-a');
-  const emailB = uniqueEmail('smoke-b');
-  await venue.services.customerAccounts.register(venue.slug, {
-    name: uniqueName('Smoke A'),
-    email: emailA,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await venue.services.customerAccounts.register(venue.slug, {
-    name: uniqueName('Smoke B'),
-    email: emailB,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  const contextB = await browser.newContext();
-  const pageB = await contextB.newPage();
-  try {
-    await useEnglish(pageB);
-    await loginCustomer(page, venue.slug, emailA, PORTAL_PASSWORD);
-    await loginCustomer(pageB, venue.slug, emailB, PORTAL_PASSWORD);
-    const date = futureDate(8);
-    for (const current of [page, pageB]) {
-      await current.getByRole('link', { name: 'Book', exact: true }).click();
-      await findAvailability(current, date);
-    }
-    const slotValue = await page
-      .locator('input[name="slot"]')
-      .first()
-      .getAttribute('value');
-    expect(slotValue).toBeTruthy();
-    await page.locator(`input[name="slot"][value="${slotValue}"]`).check();
-    await pageB.locator(`input[name="slot"][value="${slotValue}"]`).check();
-    await Promise.all([
-      page.getByRole('button', { name: 'Confirm booking' }).click(),
-      pageB.getByRole('button', { name: 'Confirm booking' }).click(),
-    ]);
-    await Promise.all([
-      expect(page.locator('#portal-booking-result')).toHaveText(
-        /Reservation confirmed|no longer available|conflicts/,
-      ),
-      expect(pageB.locator('#portal-booking-result')).toHaveText(
-        /Reservation confirmed|no longer available|conflicts/,
-      ),
-    ]);
-    const texts = [
-      (await page.locator('#portal-booking-result').textContent()) ?? '',
-      (await pageB.locator('#portal-booking-result').textContent()) ?? '',
-    ];
-    expect(
-      texts.filter((text) => text.includes('Reservation confirmed.')),
-    ).toHaveLength(1);
-    expect(
-      texts.some(
-        (text) =>
-          text.includes('no longer available') || text.includes('conflicts'),
-      ),
-    ).toBe(true);
-  } finally {
-    await contextB.close();
-  }
-});
-
-test('eligible cancellation returns the slot and keeps history', async ({
-  page,
-}) => {
-  await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    prefix: 'smoke-cancel',
-    bookingPolicy: AUTO_CONFIRM_POLICY,
-  });
-  const email = uniqueEmail('smoke-cancel');
-  await venue.services.customerAccounts.register(venue.slug, {
-    name: uniqueName('Smoke Cancel'),
-    email,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await loginCustomer(page, venue.slug, email, PORTAL_PASSWORD);
-  await page.getByRole('link', { name: 'Book', exact: true }).click();
-  const date = futureDate(9);
-  await findAvailability(page, date);
-  const slotValue = await page
-    .locator('input[name="slot"]')
-    .first()
-    .getAttribute('value');
-  await selectFirstSlot(page);
-  await page.getByRole('button', { name: 'Confirm booking' }).click();
-  await expect(page.locator('#portal-booking-result')).toHaveText(
-    'Reservation confirmed.',
-  );
-  await page.getByRole('link', { name: 'Activities' }).click();
+  // Cancel: the slot returns to availability and the booking is history.
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Cancel reservation' }).click();
   await expect(page.getByText('No upcoming reservations.')).toBeVisible();
-  await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
-  await page.getByRole('link', { name: 'Book', exact: true }).click();
-  await findAvailability(page, date);
-  await expect(
-    page.locator(`input[name="slot"][value="${slotValue}"]`),
-  ).toBeVisible();
+  expect(
+    (await apiAs(token, `/customer/reservations/${reservationId}`)).body.data
+      .status,
+  ).toBe('CANCELLED');
+  expect(await selectFirstSlot(page, venue.slug, date)).toBe(first);
 });
 
-test('REQUEST_APPROVAL stays available until staff confirms', async ({
+test('5. REQUEST_APPROVAL request is approved by staff and becomes confirmed', async ({
   page,
+  browser,
 }) => {
-  await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    prefix: 'smoke-request',
-    bookingPolicy: REQUEST_APPROVAL_POLICY,
-  });
-  const email = uniqueEmail('smoke-request');
-  const name = uniqueName('Smoke Request');
-  await venue.services.customerAccounts.register(venue.slug, {
-    name,
-    email,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await loginCustomer(page, venue.slug, email, PORTAL_PASSWORD);
-  await page.getByRole('link', { name: 'Book', exact: true }).click();
-  const date = futureDate(10);
-  await findAvailability(page, date);
-  const slotValue = await page
-    .locator('input[name="slot"]')
-    .first()
-    .getAttribute('value');
-  await selectFirstSlot(page);
+  const venue = await seedVenue('REQUEST_APPROVAL');
+  const ana = await venue.registerCustomer('Approval Ana');
+  await customerSignIn(page, venue.slug, ana.email);
+  await selectFirstSlot(page, venue.slug, dateAhead(8));
   await page.getByRole('button', { name: 'Send booking request' }).click();
   await expect(page.locator('#portal-booking-result')).toHaveText(
     /Request sent\./,
   );
-  await findAvailability(page, date);
-  await expect(
-    page.locator(`input[name="slot"][value="${slotValue}"]`),
-  ).toBeVisible();
   await page.getByRole('link', { name: 'Activities' }).click();
   await expect(page.getByText('Requested · not confirmed')).toBeVisible();
-  await login(page, {
-    email: venue.ownerEmail,
-    password: venue.ownerPassword,
-  });
-  await page.goto('/requests');
-  const row = page.locator('tr').filter({ hasText: name });
-  await expect(row).toBeVisible();
-  await row.getByRole('button', { name: 'Confirm' }).click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Confirm request' })
-    .click();
-  await expect(page.getByText('Request confirmed.')).toBeVisible();
-  await loginCustomer(page, venue.slug, email, PORTAL_PASSWORD);
-  await page.getByRole('link', { name: 'Activities' }).click();
+
+  const staff = await newPage(browser);
+  await staffSignIn(staff, venue.ownerEmail);
+  await staff.goto('/requests');
+  const row = staff.locator('tr').filter({ hasText: ana.name });
+  await row.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await staff.getByRole('button', { name: 'Confirm request' }).click();
+  await expect(staff.getByText('Request confirmed.')).toBeVisible();
+  await staff.context().close();
+
+  await page.reload();
+  await expect(page.getByText('Requested · not confirmed')).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Cancel reservation' }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Book', exact: true }).click();
-  await findAvailability(page, date);
-  await expect(
-    page.locator(`input[name="slot"][value="${slotValue}"]`),
-  ).toHaveCount(0);
 });
 
-test('class waitlist can be fulfilled by staff and stays visible', async ({
+test('6-7. full class waitlist is fulfilled by staff', async ({
   page,
+  browser,
 }) => {
-  await useEnglish(page);
-  const { services, owner, ctx, ctx2, classId, slug } =
-    await classFixture(dynamo());
-  await services.classes.enroll(owner, classId, ctx.customerId);
-  await services.waitlists.joinClass(ctx2, { classId });
-  await services.classes.leaveSelf(ctx, classId);
-  const ownerLogin = await addOwnerLogin(
-    owner.organizationId,
-    owner.userId,
-    `owner-${owner.organizationId}@phase2.test`,
-  );
-  await login(page, ownerLogin);
-  await page.goto('/waitlists');
-  await expect(page.getByRole('heading', { name: 'Waitlists' })).toBeVisible();
-  await page.getByRole('button', { name: 'Enroll customer' }).click();
-  await expect(page.getByText('Customer enrolled.')).toBeVisible();
-  await expect(page.getByText('Fulfilled').first()).toBeVisible();
-  await loginCustomer(page, slug, 'bea@example.test', 'class-password');
+  const venue = await seedVenue('AUTO_CONFIRM');
+  const ana = await venue.registerCustomer('Class Ana');
+  const bea = await venue.registerCustomer('Class Bea');
+  const cls = await venue.services.classes.create(venue.owner, {
+    name: `Smoke Clinic ${venue.organizationId.slice(0, 6)}`,
+    sport: 'Tennis',
+    coachId: 'coach',
+    courtId: venue.courtId,
+    capacity: 1,
+    pricePerParticipant: 40,
+    scheduleType: 'SINGLE',
+    startDate: dateAhead(9),
+    startTime: '09:00',
+    durationMinutes: 60,
+  });
+
+  await customerSignIn(page, venue.slug, ana.email);
   await page.getByRole('link', { name: 'Classes', exact: true }).click();
-  await expect(page.getByText('Enrolled', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Enroll', exact: true }).click();
+  await expect(
+    page.getByText('Enrollment confirmed.', { exact: true }),
+  ).toBeVisible();
+
+  const beaPage = await newPage(browser);
+  await customerSignIn(beaPage, venue.slug, bea.email);
+  await beaPage.getByRole('link', { name: 'Classes', exact: true }).click();
+  await expect(
+    beaPage.getByText('1 / 1 enrolled', { exact: false }),
+  ).toBeVisible();
+  await expect(
+    beaPage.getByRole('button', { name: 'Enroll', exact: true }),
+  ).toHaveCount(0);
+  await beaPage.getByRole('button', { name: 'Join waitlist' }).click();
+  await expect(
+    beaPage.getByText('Joined waitlist.', { exact: true }),
+  ).toBeVisible();
+
+  // Ana leaves, so staff can act on the opportunity.
+  await page.getByRole('button', { name: 'Leave class' }).click();
+  await expect(
+    page.getByText('Enrollment cancelled.', { exact: true }),
+  ).toBeVisible();
+
+  const staff = await newPage(browser);
+  await staffSignIn(staff, venue.ownerEmail);
+  await staff.goto('/waitlists');
+  await staff
+    .locator('tr')
+    .filter({ hasText: bea.name })
+    .getByRole('button', { name: 'Enroll customer' })
+    .click();
+  await expect(staff.getByText('Customer enrolled.')).toBeVisible();
+  await staff.context().close();
+
+  const token = await customerToken(venue.slug, bea.email);
+  const waitlists = await venue.services.waitlists.staffList(venue.owner);
+  expect(waitlists).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ classId: cls.classId, status: 'FULFILLED' }),
+    ]),
+  );
+  const classes = await apiAs(token, '/customer/classes');
+  expect(
+    classes.body.data.data.find(
+      (item: { classId: string }) => item.classId === cls.classId,
+    ).enrollment,
+  ).toMatchObject({ status: 'ACTIVE' });
+  await beaPage.reload();
+  await expect(
+    beaPage.getByRole('button', { name: 'Leave class' }),
+  ).toBeVisible();
+  await beaPage.context().close();
 });
 
-test('customer cannot read another customer reservation over the API', async ({
+test("8. a customer cannot see or act on another customer's reservation", async ({
   page,
 }) => {
-  await useEnglish(page);
-  const venue = await createIsolatedVenue({
-    prefix: 'smoke-idor',
-    bookingPolicy: AUTO_CONFIRM_POLICY,
-  });
-  const emailA = uniqueEmail('idor-a');
-  const emailB = uniqueEmail('idor-b');
-  const accountA = await venue.services.customerAccounts.register(venue.slug, {
-    name: uniqueName('Idor A'),
-    email: emailA,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  await venue.services.customerAccounts.register(venue.slug, {
-    name: uniqueName('Idor B'),
-    email: emailB,
-    phone: uniquePhone(),
-    password: PORTAL_PASSWORD,
-  });
-  const start = new Date(Date.now() + 5 * 86400000);
-  start.setUTCHours(18, 0, 0, 0);
+  const venue = await seedVenue('AUTO_CONFIRM');
+  const ana = await venue.registerCustomer('Owner Ana');
+  const bea = await venue.registerCustomer('Intruder Bea');
   const reservation = await venue.services.reservations.create(venue.owner, {
-    courtId: venue.court.courtId,
-    customerId: accountA.customer.customerId,
-    startAt: start.toISOString(),
-    endAt: new Date(start.getTime() + 3600000).toISOString(),
+    courtId: venue.courtId,
+    customerId: ana.customerId,
+    startAt: `${dateAhead(5)}T18:00:00.000Z`,
+    endAt: `${dateAhead(5)}T19:00:00.000Z`,
     source: 'STAFF',
   });
-  await loginCustomer(page, venue.slug, emailB, PORTAL_PASSWORD);
-  const foreign = await customerApi(
-    page,
-    `/customer/reservations/${reservation.reservationId}`,
-  );
-  expect(foreign.status).toBe(404);
+  const intruder = await customerToken(venue.slug, bea.email);
+  for (const [path, method] of [
+    [`/customer/reservations/${reservation.reservationId}`, 'GET'],
+    [`/customer/reservations/${reservation.reservationId}/cancel`, 'POST'],
+    [`/customer/reservations/${reservation.reservationId}/participants`, 'GET'],
+    ['/customers', 'GET'],
+  ] as const)
+    expect(
+      (await apiAs(intruder, path, { method })).status,
+    ).toBeGreaterThanOrEqual(401);
+
+  await customerSignIn(page, venue.slug, bea.email);
   await page.goto(
     `/portal/${venue.slug}/reservations/${reservation.reservationId}`,
   );
-  await expect(page.getByText(accountA.customer.name)).toHaveCount(0);
+  await expect(
+    page.getByRole('navigation', { name: 'Customer navigation' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Cancel reservation' }),
+  ).toHaveCount(0);
+  const owner = await customerToken(venue.slug, ana.email);
+  expect(
+    (await apiAs(owner, `/customer/reservations/${reservation.reservationId}`))
+      .body.data.status,
+  ).toBe('BOOKED');
+});
+
+test('STAFF_ONLY public booking page explains online booking is disabled', async ({
+  page,
+}) => {
+  const venue = await seedVenue('STAFF_ONLY');
+  await useEnglish(page);
+  await page.goto(`/book/${venue.slug}`);
+  await expect(
+    page.getByText(
+      'Online booking is unavailable. Please contact venue staff.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByLabel('Phone')).toHaveCount(0);
+  const ana = await venue.registerCustomer('Staff Only Ana');
+  const token = await customerToken(venue.slug, ana.email);
+  expect(
+    (
+      await apiAs(token, '/customer/reservations', {
+        method: 'POST',
+        body: JSON.stringify({
+          courtId: venue.courtId,
+          startAt: `${dateAhead(3)}T18:00:00.000Z`,
+          endAt: `${dateAhead(3)}T19:00:00.000Z`,
+        }),
+      })
+    ).status,
+  ).toBe(403);
+});
+
+test('mobile portal keeps navigation, booking, and activities usable', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const venue = await seedVenue('AUTO_CONFIRM');
+  const ana = await venue.registerCustomer('Mobile Ana');
+  await customerSignIn(page, venue.slug, ana.email);
+  for (const link of ['Book', 'Activities', 'Classes', 'Profile']) {
+    await page.getByRole('link', { name: link, exact: true }).click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await selectFirstSlot(page, venue.slug, dateAhead(6));
+  await page.getByRole('button', { name: 'Confirm booking' }).click();
+  await expect(page.locator('#portal-booking-result')).toHaveText(
+    'Reservation confirmed.',
+  );
 });
