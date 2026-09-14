@@ -2,17 +2,20 @@ import type { Page } from '@playwright/test';
 
 export const apiBase = 'http://localhost:8787';
 
-export async function api(page: Page, path: string, init: RequestInit = {}) {
+async function sessionFetch(
+  page: Page,
+  storageKey: string,
+  path: string,
+  init: RequestInit = {},
+) {
   return page.evaluate(
-    async ({ apiBase, path, init }) => {
-      const current = JSON.parse(
-        localStorage.getItem('court-manager-session') ?? 'null',
-      );
+    async ({ apiBase, storageKey, path, init }) => {
+      const current = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
       const response = await fetch(`${apiBase}${path}`, {
         ...init,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${current.token}`,
+          Authorization: `Bearer ${current?.token ?? ''}`,
           ...(init.headers ?? {}),
         },
       });
@@ -21,6 +24,18 @@ export async function api(page: Page, path: string, init: RequestInit = {}) {
         body: await response.json().catch(() => ({})),
       };
     },
-    { apiBase, path, init },
+    { apiBase, storageKey, path, init },
   );
+}
+
+export async function api(page: Page, path: string, init: RequestInit = {}) {
+  return sessionFetch(page, 'court-manager-session', path, init);
+}
+
+export async function customerApi(
+  page: Page,
+  path: string,
+  init: RequestInit = {},
+) {
+  return sessionFetch(page, 'court-manager-customer-session', path, init);
 }

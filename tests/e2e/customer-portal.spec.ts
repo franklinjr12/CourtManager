@@ -1,30 +1,33 @@
-import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
-import { dynamo } from '../../apps/api/src/db.js';
-import { buildServices } from '../../apps/api/src/services/index.js';
 import { api } from './support/api.js';
-import { login } from './support/auth.js';
-
-async function useEnglish(page: import('@playwright/test').Page) {
-  await page.goto('/login');
-  await page.evaluate(() =>
-    localStorage.setItem('court-manager-locale', 'en-US'),
-  );
-}
+import { login, loginCustomer, registerCustomer } from './support/auth.js';
+import { findAvailability, selectFirstSlot } from './support/booking.js';
+import {
+  PORTAL_PASSWORD,
+  uniqueEmail,
+  uniqueName,
+  uniquePhone,
+} from './support/identity.js';
+import { useEnglish } from './support/locale.js';
+import {
+  AUTO_CONFIRM_POLICY,
+  createIsolatedVenue,
+  REQUEST_APPROVAL_POLICY,
+} from './support/venue.js';
 
 test('new customer registers through venue portal', async ({ page }) => {
   await useEnglish(page);
   await login(page);
   const organization = await api(page, '/organization');
   const slug = organization.body.data.slug as string;
-  const name = `Portal Customer ${Date.now()}`;
-  await page.goto(`/portal/${slug}/register`);
-  await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(`portal-${Date.now()}@example.test`);
-  await page.getByLabel('Phone').fill('9' + Date.now().toString().slice(-10));
-  await page.getByLabel('Password').fill('portal-password');
-  await page.getByRole('button', { name: 'Register' }).click();
+  const name = uniqueName('Portal Customer');
+  await registerCustomer(page, slug, {
+    name,
+    email: uniqueEmail('portal'),
+    phone: uniquePhone(),
+    password: PORTAL_PASSWORD,
+  });
   await expect(page.locator('#portal-result')).toHaveText(/Account created/);
   await page.goto(`/customers?search=${encodeURIComponent(name)}`);
   await expect(page.locator('tr').filter({ hasText: name })).toBeVisible();
@@ -37,18 +40,18 @@ test('customer portal has separate navigation after sign in', async ({
   await login(page);
   const organization = await api(page, '/organization');
   const slug = organization.body.data.slug as string;
-  const email = `portal-nav-${Date.now()}@example.test`;
-  const password = 'portal-password';
-  await page.goto(`/portal/${slug}/register`);
-  await page.getByLabel('Name').fill(`Portal Nav ${Date.now()}`);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Phone').fill('9' + Date.now().toString().slice(-10));
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Register' }).click();
+  const email = uniqueEmail('portal-nav');
+  const name = uniqueName('Portal Nav');
+  await registerCustomer(page, slug, {
+    name,
+    email,
+    phone: uniquePhone(),
+    password: PORTAL_PASSWORD,
+  });
   await expect(page.locator('#portal-result')).toHaveText(/Account created/);
   await page.getByRole('link', { name: 'Sign in' }).click();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password').fill(PORTAL_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(
     page.getByRole('navigation', { name: 'Customer navigation' }),
@@ -75,85 +78,29 @@ test('customer searches all-court availability and confirms an instant booking',
   page,
 }) => {
   await useEnglish(page);
-  await login(page);
-  const organization = await api(page, '/organization');
-  const organizationId = randomUUID();
-  const slug = `participants-${organizationId}`;
-  const policy = {
-    reservationMode: 'AUTO_CONFIRM',
-    bookAheadDays: 365,
-    cancellationCutoffHours: 6,
-    minimumReservationMinutes: 60,
-    maximumReservationMinutes: 60,
-    maximumActiveBookings: 3,
-  };
-  // Isolate policy changes from concurrent anonymous-booking tests.
-  const repo = dynamo();
-  await repo.put({
-    ...organization.body.data,
-    PK: `ORG#${organizationId}`,
-    SK: 'META',
-    entity: 'organization',
-    organizationId,
-    slug,
-    bookingPolicy: policy,
+  const venue = await createIsolatedVenue({
+    prefix: 'participants',
+    bookingPolicy: AUTO_CONFIRM_POLICY,
   });
-  await buildServices(repo).courts.create(
-    { organizationId, userId: 'test-owner', role: 'OWNER' },
-    {
-      name: `Portal court ${Date.now()}`,
-      sport: 'Tennis',
-      slotMinutes: 30,
-      defaultHourlyPrice: 80,
-      publiclyRequestable: true,
-      active: true,
-      openingHours: Object.fromEntries(
-        [
-          'MONDAY',
-          'TUESDAY',
-          'WEDNESDAY',
-          'THURSDAY',
-          'FRIDAY',
-          'SATURDAY',
-          'SUNDAY',
-        ].map((day) => [day, { open: '07:00', close: '23:00' }]),
-      ),
-    },
-  );
-  const email = `portal-book-${Date.now()}@example.test`;
-  await page.goto(`/portal/${slug}/register`);
-  await page.getByLabel('Name').fill(`Portal Book ${Date.now()}`);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Phone').fill('9' + Date.now().toString().slice(-10));
-  await page.getByLabel('Password').fill('portal-password');
-  await page.getByRole('button', { name: 'Register' }).click();
+  const email = uniqueEmail('portal-book');
+  await registerCustomer(page, venue.slug, {
+    name: uniqueName('Portal Book'),
+    email,
+    phone: uniquePhone(),
+    password: PORTAL_PASSWORD,
+  });
   await expect(page.locator('#portal-result')).toHaveText(/Account created/);
   await page.getByRole('link', { name: 'Sign in' }).click();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('portal-password');
+  await page.getByLabel('Password').fill(PORTAL_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('link', { name: 'Book', exact: true }).click();
-  // Wait for initial policy/availability loading before changing the date.
   await expect(page.locator('input[name="slot"]').first()).toBeVisible();
   const future = new Date();
   future.setDate(future.getDate() + 7);
-  await page
-    .locator('input[name="date"]')
-    .fill(future.toISOString().slice(0, 10));
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response
-          .url()
-          .includes(
-            `/customer/availability?date=${future.toISOString().slice(0, 10)}`,
-          ) && response.ok(),
-    ),
-    page.getByRole('button', { name: 'Find availability' }).click(),
-  ]);
-  const slot = page.locator('input[name="slot"]').first();
-  await expect(slot).toBeVisible();
-  await slot.check();
+  const date = future.toISOString().slice(0, 10);
+  await findAvailability(page, date);
+  await selectFirstSlot(page);
   await page.getByRole('button', { name: 'Confirm booking' }).click();
   await expect(page.locator('#portal-booking-result')).toHaveText(
     'Reservation confirmed.',
@@ -225,73 +172,29 @@ test('customer sends REQUEST_APPROVAL booking and sees pending request', async (
   page,
 }) => {
   await useEnglish(page);
-  await login(page);
-  const organization = await api(page, '/organization');
-  const organizationId = randomUUID();
-  const slug = `approval-${organizationId}`;
-  const policy = {
-    reservationMode: 'REQUEST_APPROVAL',
-    bookAheadDays: 365,
-    cancellationCutoffHours: 6,
-    minimumReservationMinutes: 60,
-    maximumReservationMinutes: 60,
-    maximumActiveBookings: 3,
-  };
-  const repo = dynamo();
-  await repo.put({
-    ...organization.body.data,
-    PK: `ORG#${organizationId}`,
-    SK: 'META',
-    entity: 'organization',
-    organizationId,
-    slug,
-    timezone: 'UTC',
-    bookingPolicy: policy,
+  const venue = await createIsolatedVenue({
+    prefix: 'approval',
+    bookingPolicy: REQUEST_APPROVAL_POLICY,
   });
-  await buildServices(repo).courts.create(
-    { organizationId, userId: 'test-owner', role: 'OWNER' },
-    {
-      name: `Approval court ${Date.now()}`,
-      sport: 'Tennis',
-      slotMinutes: 30,
-      defaultHourlyPrice: 80,
-      publiclyRequestable: true,
-      active: true,
-      openingHours: Object.fromEntries(
-        [
-          'MONDAY',
-          'TUESDAY',
-          'WEDNESDAY',
-          'THURSDAY',
-          'FRIDAY',
-          'SATURDAY',
-          'SUNDAY',
-        ].map((day) => [day, { open: '07:00', close: '23:00' }]),
-      ),
-    },
-  );
-  const email = `approval-${Date.now()}@example.test`;
-  await page.goto(`/portal/${slug}/register`);
-  await page.getByLabel('Name').fill(`Approval Customer ${Date.now()}`);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Phone').fill('9' + Date.now().toString().slice(-10));
-  await page.getByLabel('Password').fill('portal-password');
-  await page.getByRole('button', { name: 'Register' }).click();
+  const email = uniqueEmail('approval');
+  await registerCustomer(page, venue.slug, {
+    name: uniqueName('Approval Customer'),
+    email,
+    phone: uniquePhone(),
+    password: PORTAL_PASSWORD,
+  });
   await expect(page.locator('#portal-result')).toHaveText(/Account created/);
   await page.getByRole('link', { name: 'Sign in' }).click();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('portal-password');
+  await page.getByLabel('Password').fill(PORTAL_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('link', { name: 'Book', exact: true }).click();
   await expect(page.locator('input[name="slot"]').first()).toBeVisible();
   const future = new Date();
   future.setDate(future.getDate() + 7);
   const date = future.toISOString().slice(0, 10);
-  await page.locator('input[name="date"]').fill(date);
-  await page.getByRole('button', { name: 'Find availability' }).click();
-  const slot = page.locator('input[name="slot"]').first();
-  await expect(slot).toBeVisible();
-  await slot.check();
+  await findAvailability(page, date);
+  await selectFirstSlot(page);
   await page.getByRole('button', { name: 'Send booking request' }).click();
   await expect(page.locator('#portal-booking-result')).toHaveText(
     /Request sent\./,
@@ -306,92 +209,45 @@ test('customer sends REQUEST_APPROVAL booking and sees pending request', async (
 test('customer books again from reservation history with a fresh availability check', async ({
   page,
 }) => {
-  await login(page);
-  const organization = await api(page, '/organization');
-  const organizationId = randomUUID();
-  const slug = `rebook-${organizationId}`;
-  const policy = {
-    reservationMode: 'AUTO_CONFIRM',
-    bookAheadDays: 365,
-    cancellationCutoffHours: 6,
-    minimumReservationMinutes: 60,
-    maximumReservationMinutes: 60,
-    maximumActiveBookings: 3,
-  };
-  const repo = dynamo();
-  await repo.put({
-    ...organization.body.data,
-    PK: `ORG#${organizationId}`,
-    SK: 'META',
-    entity: 'organization',
-    organizationId,
-    slug,
-    timezone: 'UTC',
-    bookingPolicy: policy,
+  const venue = await createIsolatedVenue({
+    prefix: 'rebook',
+    bookingPolicy: AUTO_CONFIRM_POLICY,
   });
-  const services = buildServices(repo);
-  const owner = {
-    organizationId,
-    userId: 'test-owner',
-    role: 'OWNER' as const,
-  };
-  const court = await services.courts.create(owner, {
-    name: `Rebook court ${Date.now()}`,
-    sport: 'Tennis',
-    slotMinutes: 30,
-    defaultHourlyPrice: 80,
-    publiclyRequestable: true,
-    active: true,
-    openingHours: Object.fromEntries(
-      [
-        'MONDAY',
-        'TUESDAY',
-        'WEDNESDAY',
-        'THURSDAY',
-        'FRIDAY',
-        'SATURDAY',
-        'SUNDAY',
-      ].map((day) => [day, { open: '07:00', close: '23:00' }]),
-    ),
-  });
-  const email = `rebook-${Date.now()}@example.test`;
-  const account = await services.customerAccounts.register(slug, {
-    name: `Rebook Customer ${Date.now()}`,
+  const email = uniqueEmail('rebook');
+  const account = await venue.services.customerAccounts.register(venue.slug, {
+    name: uniqueName('Rebook Customer'),
     email,
-    phone: '9' + Date.now().toString().slice(-10),
-    password: 'portal-password',
+    phone: uniquePhone(),
+    password: PORTAL_PASSWORD,
   });
   const previous = new Date(Date.now() - 8 * 86400000);
   previous.setUTCHours(10, 0, 0, 0);
-  const reservation = await services.reservations.create(owner, {
-    courtId: court.courtId,
+  const reservation = await venue.services.reservations.create(venue.owner, {
+    courtId: venue.court.courtId,
     customerId: account.customer.customerId,
     startAt: previous.toISOString(),
     endAt: new Date(previous.getTime() + 3600000).toISOString(),
     source: 'STAFF',
   });
-  await services.reservations.transition(
-    owner,
+  await venue.services.reservations.transition(
+    venue.owner,
     reservation.reservationId,
     'CHECKED_IN',
   );
-  await services.reservations.transition(
-    owner,
+  await venue.services.reservations.transition(
+    venue.owner,
     reservation.reservationId,
     'COMPLETED',
   );
 
   await useEnglish(page);
-  await page.goto(`/portal/${slug}/login`);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('portal-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await loginCustomer(page, venue.slug, email, PORTAL_PASSWORD);
   await page.getByRole('link', { name: 'Activities' }).click();
   const bookAgain = page.getByRole('link', { name: 'Book again' });
   await expect(bookAgain).toBeVisible();
   await expect(bookAgain).toHaveAttribute(
     'href',
-    `/portal/${slug}/book?rebook=${reservation.reservationId}`,
+    `/portal/${venue.slug}/book?rebook=${reservation.reservationId}`,
   );
   await Promise.all([
     page.waitForResponse(
@@ -405,7 +261,9 @@ test('customer books again from reservation history with a fresh availability ch
     bookAgain.click(),
   ]);
   await expect(page).toHaveURL(
-    new RegExp(`/portal/${slug}/book\\?rebook=${reservation.reservationId}`),
+    new RegExp(
+      `/portal/${venue.slug}/book\\?rebook=${reservation.reservationId}`,
+    ),
   );
   await expect(page.locator('select[name="durationMinutes"]')).toHaveValue(
     '60',

@@ -213,4 +213,51 @@ describe('CustomerReservationService rebooking', () => {
     expect(draft.date).toBe('2026-09-15');
     expect(draft.date > '2026-09-13').toBe(true);
   });
+
+  it('drops archived historical courts from the rebooking draft', async () => {
+    const { services, court: archivedCourt, customer } = await setup();
+    const publicCourt = await services.courts.create(owner, {
+      name: 'Court 2',
+      sport: 'Tennis',
+      slotMinutes: 30,
+      defaultHourlyPrice: 80,
+      publiclyRequestable: true,
+      active: true,
+      openingHours: hours,
+    });
+    const reservation = await services.reservations.create(owner, {
+      courtId: String(archivedCourt.courtId),
+      customerId: String(customer.customerId),
+      startAt: '2026-09-12T10:00:00.000Z',
+      endAt: '2026-09-12T11:00:00.000Z',
+      source: 'STAFF',
+    });
+    await services.reservations.transition(
+      owner,
+      String(reservation.reservationId),
+      'CHECKED_IN',
+    );
+    await services.reservations.transition(
+      owner,
+      String(reservation.reservationId),
+      'COMPLETED',
+    );
+    await services.courts.archive(owner, String(archivedCourt.courtId));
+
+    const draft = await services.customerReservations.rebookingDraft(
+      {
+        organizationId: 'org-1',
+        customerId: String(customer.customerId),
+        customerAccountId: 'account-1',
+        actorType: 'CUSTOMER',
+      },
+      String(reservation.reservationId),
+      new Date('2026-09-13T12:00:00.000Z'),
+    );
+
+    expect(draft.preferredCourtId).toBeNull();
+    expect(draft.availability.courts.map((item) => item.courtId)).toEqual([
+      String(publicCourt.courtId),
+    ]);
+  });
 });

@@ -291,6 +291,64 @@ describe('customer authentication HTTP boundary', () => {
     ).toBe(401);
   });
 
+  it('activates and resets passwords through public portal HTTP once', async () => {
+    const { app, repo } = await setup();
+    const services = buildServices(repo);
+    const customer = await services.customers.create(ownerContext, {
+      name: 'Existing',
+      email: 'existing@example.test',
+      phone: '41999990009',
+    });
+    const activation = await services.customerAccounts.enable(
+      ownerContext,
+      String(customer.customerId),
+    );
+    const token = new URL(
+      `https://court.test${activation.link}`,
+    ).searchParams.get('token');
+    const headers = { 'Content-Type': 'application/json' };
+    const activated = await app.request(
+      '/public/venues/arena-one/portal/activate',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ token, password: 'new-secret' }),
+      },
+    );
+    expect(activated.status).toBe(200);
+    expect(
+      (
+        await app.request('/public/venues/arena-one/portal/activate', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ token, password: 'again' }),
+        })
+      ).status,
+    ).toBe(401);
+    const reset = await services.customerAccounts.reset(
+      ownerContext,
+      String(customer.customerId),
+    );
+    const resetToken = new URL(
+      `https://court.test${reset.link}`,
+    ).searchParams.get('token');
+    const tokenRecord = (
+      await repo.query('ORG#org-one', {
+        beginsWith: 'CUSTOMER_ACCOUNT_TOKEN#',
+      })
+    ).find((item) => item.type === 'RESET')!;
+    await repo.put({ ...tokenRecord, expiresAt: 1 });
+    expect(
+      (
+        await app.request('/public/venues/arena-one/portal/reset-password', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ token: resetToken, password: 'fresh' }),
+        })
+      ).status,
+    ).toBe(401);
+  });
+
   it('enforces policy for authenticated customer reservations', async () => {
     const { app, first, repo } = await setup();
     const services = buildServices(repo);

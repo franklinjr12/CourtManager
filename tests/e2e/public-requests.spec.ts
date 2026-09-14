@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { api, apiBase } from './support/api.js';
 import { login } from './support/auth.js';
+import { uniquePhone } from './support/identity.js';
 
 test('public request flows through confirmation, payment, completion, and history', async ({
   page,
@@ -17,12 +18,19 @@ test('public request flows through confirmation, payment, completion, and histor
   await page.goto(`/book/${organization.body.data.slug}`);
   await page.locator('select[name="courtId"]').selectOption(court.courtId);
   await page.locator('input[name="date"]').fill(date);
-  await expect(
-    page.locator('select[name="time"] option').first(),
-  ).not.toHaveText('Carregando…');
+  const time = page.locator('select[name="time"]');
+  const timeOption = time.locator('option[value]:not([value=""])').first();
+  await expect(timeOption).toBeAttached();
+  await time.selectOption(String(await timeOption.getAttribute('value')));
   await page.locator('input[name="customerName"]').fill(unique);
-  await page.locator('input[name="phone"]').fill('41999997777');
+  await page.locator('input[name="phone"]').fill(uniquePhone());
+  const submitted = page.waitForResponse(
+    (response) =>
+      /\/public\/venues\/[^/]+\/requests$/.test(response.url()) &&
+      response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Enviar solicitação' }).click();
+  expect((await submitted).ok()).toBe(true);
   await expect(page.locator('#public-result')).toHaveText(
     /Solicitação enviada/,
   );

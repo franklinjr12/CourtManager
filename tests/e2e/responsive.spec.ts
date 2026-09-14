@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 
 import { dynamo } from '../../apps/api/src/db.js';
 import { classFixture } from '../../apps/api/src/testing/class-fixture.js';
-import { login } from './support/auth.js';
+import { login, loginCustomer } from './support/auth.js';
+import { useEnglish } from './support/locale.js';
 
 test('mobile schedule keeps actions usable and modal closes with Escape', async ({
   page,
@@ -24,14 +25,8 @@ test('mobile customer portal keeps navigation and booking form usable', async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const { slug } = await classFixture(dynamo());
-  await page.goto('/login');
-  await page.evaluate(() =>
-    localStorage.setItem('court-manager-locale', 'en-US'),
-  );
-  await page.goto(`/portal/${slug}/login`);
-  await page.getByLabel('Email').fill('ana@example.test');
-  await page.getByLabel('Password').fill('class-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await useEnglish(page);
+  await loginCustomer(page, slug, 'ana@example.test', 'class-password');
   await expect(
     page.getByRole('navigation', { name: 'Customer navigation' }),
   ).toBeVisible();
