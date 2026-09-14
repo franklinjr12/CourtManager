@@ -49,7 +49,11 @@ describe('journey: reservation participants', () => {
     expect(listed.body.data).toMatchObject({ mutable: true });
     expect(listed.body.data.participants).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ participantId: joao, name: 'João Pedro', status: 'ACTIVE' }),
+        expect.objectContaining({
+          participantId: joao,
+          name: 'João Pedro',
+          status: 'ACTIVE',
+        }),
         expect.objectContaining({ participantId: carla, status: 'REMOVED' }),
       ]),
     );
@@ -85,7 +89,10 @@ describe('journey: reservation participants', () => {
       reservationMode: 'AUTO_CONFIRM',
     });
     const ana = await customer();
-    await customer({ email: 'registered@journey.test', name: 'Registered Rui' });
+    await customer({
+      email: 'registered@journey.test',
+      name: 'Registered Rui',
+    });
     const booked = await call(
       app,
       'POST',
@@ -98,10 +105,16 @@ describe('journey: reservation participants', () => {
       name: 'Rui',
       email: 'registered@journey.test',
     });
-    const unknown = await call(app, 'PUT', `${base}/${randomUUID()}`, ana.token, {
-      name: 'Stranger',
-      email: 'nobody@journey.test',
-    });
+    const unknown = await call(
+      app,
+      'PUT',
+      `${base}/${randomUUID()}`,
+      ana.token,
+      {
+        name: 'Stranger',
+        email: 'nobody@journey.test',
+      },
+    );
     expect(known.status).toBe(200);
     expect(unknown.status).toBe(200);
     expect(Object.keys(known.body.data).sort()).toEqual(
@@ -111,7 +124,9 @@ describe('journey: reservation participants', () => {
       /customerId|Registered Rui|linked/i,
     );
     const listed = await call(app, 'GET', base, ana.token);
-    expect(JSON.stringify(listed.body)).not.toMatch(/customerId|Registered Rui/);
+    expect(JSON.stringify(listed.body)).not.toMatch(
+      /customerId|Registered Rui/,
+    );
   });
 
   it("refuses changes to another customer's participants", async () => {

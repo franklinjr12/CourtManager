@@ -53,9 +53,17 @@ describe('journey: classes', () => {
     );
     expect(enrolled.status).toBe(201);
     expect(enrolled.body.data.customerId).toBe(ana.customerId);
-    const activities = await call(app, 'GET', '/customer/activities', ana.token);
+    const activities = await call(
+      app,
+      'GET',
+      '/customer/activities',
+      ana.token,
+    );
     expect(activities.body.data).toEqual([
-      expect.objectContaining({ activityType: 'CLASS', title: 'Beginner Tennis' }),
+      expect.objectContaining({
+        activityType: 'CLASS',
+        title: 'Beginner Tennis',
+      }),
     ]);
     const classCharges = () =>
       repo.scan(
@@ -69,8 +77,14 @@ describe('journey: classes', () => {
     ]);
 
     expect(
-      (await call(app, 'POST', `/customer/classes/${classId}/enroll`, ana.token))
-        .status,
+      (
+        await call(
+          app,
+          'POST',
+          `/customer/classes/${classId}/enroll`,
+          ana.token,
+        )
+      ).status,
     ).toBe(409);
     const full = await call(
       app,
@@ -91,23 +105,38 @@ describe('journey: classes', () => {
     expect(
       (await call(app, 'GET', '/customer/activities', ana.token)).body.data,
     ).toEqual([]);
-    const roster = await call(app, 'GET', `/classes/${classId}/enrollments`, staff);
+    const roster = await call(
+      app,
+      'GET',
+      `/classes/${classId}/enrollments`,
+      staff,
+    );
     expect(roster.body.data).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ customerId: ana.customerId, status: 'CANCELLED' }),
+        expect.objectContaining({
+          customerId: ana.customerId,
+          status: 'CANCELLED',
+        }),
       ]),
     );
     // The seat is free again.
     expect(
-      (await call(app, 'POST', `/customer/classes/${classId}/enroll`, bea.token))
-        .status,
+      (
+        await call(
+          app,
+          'POST',
+          `/customer/classes/${classId}/enroll`,
+          bea.token,
+        )
+      ).status,
     ).toBe(201);
   });
 });
 
 describe('journey: waitlists', () => {
   it('joins class and court waitlists once, lists them, and leaves one', async () => {
-    const { app, venue, staff, classId, date, customer } = await classJourney(1);
+    const { app, venue, staff, classId, date, customer } =
+      await classJourney(1);
     const ana = await customer();
     const bea = await customer();
     await call(app, 'POST', `/customer/classes/${classId}/enroll`, ana.token);
@@ -127,7 +156,10 @@ describe('journey: waitlists', () => {
       bea.token,
     );
     expect(classWait.status).toBe(201);
-    expect(classWait.body.data).toMatchObject({ type: 'CLASS', status: 'ACTIVE' });
+    expect(classWait.body.data).toMatchObject({
+      type: 'CLASS',
+      status: 'ACTIVE',
+    });
     const courtInput = {
       courtId: venue.courts.padel,
       desiredDate: date,
@@ -148,12 +180,24 @@ describe('journey: waitlists', () => {
     });
 
     expect(
-      (await call(app, 'POST', `/customer/classes/${classId}/waitlist`, bea.token))
-        .status,
+      (
+        await call(
+          app,
+          'POST',
+          `/customer/classes/${classId}/waitlist`,
+          bea.token,
+        )
+      ).status,
     ).toBe(409);
     expect(
       (
-        await call(app, 'POST', '/customer/waitlists/court', bea.token, courtInput)
+        await call(
+          app,
+          'POST',
+          '/customer/waitlists/court',
+          bea.token,
+          courtInput,
+        )
       ).status,
     ).toBe(409);
     // A free slot has nothing to wait for.
@@ -196,7 +240,8 @@ describe('journey: waitlists', () => {
   });
 
   it('lets staff fulfill class and court waitlists into real bookings', async () => {
-    const { app, venue, staff, classId, date, customer } = await classJourney(1);
+    const { app, venue, staff, classId, date, customer } =
+      await classJourney(1);
     const ana = await customer();
     const bea = await customer();
     const enrolled = await call(
@@ -218,12 +263,18 @@ describe('journey: waitlists', () => {
       `/customer/classes/${classId}/waitlist`,
       bea.token,
     );
-    const courtWait = await call(app, 'POST', '/customer/waitlists/court', bea.token, {
-      courtId: venue.courts.padel,
-      desiredDate: date,
-      desiredStartTime: '18:00',
-      durationMinutes: 60,
-    });
+    const courtWait = await call(
+      app,
+      'POST',
+      '/customer/waitlists/court',
+      bea.token,
+      {
+        courtId: venue.courts.padel,
+        desiredDate: date,
+        desiredStartTime: '18:00',
+        durationMinutes: 60,
+      },
+    );
 
     // Capacity frees up: Ana leaves the class and cancels her court.
     await call(app, 'POST', `/customer/classes/${classId}/leave`, ana.token);
@@ -283,9 +334,9 @@ describe('journey: waitlists', () => {
     ]);
     const classes = await call(app, 'GET', '/customer/classes', bea.token);
     expect(
-      (classes.body.data.data as { classId: string; enrollment: unknown }[]).find(
-        (item) => item.classId === classId,
-      )?.enrollment,
+      (
+        classes.body.data.data as { classId: string; enrollment: unknown }[]
+      ).find((item) => item.classId === classId)?.enrollment,
     ).toMatchObject({ status: 'ACTIVE' });
     const staffView = await call(app, 'GET', '/waitlists', staff);
     const statuses = Object.fromEntries(

@@ -7,7 +7,11 @@ import {
   slot,
 } from '../testing/journey-fixture.js';
 
-type AvailabilityCourt = { courtId: string; sport: string; available: string[] };
+type AvailabilityCourt = {
+  courtId: string;
+  sport: string;
+  available: string[];
+};
 
 describe('journey: customer availability search', () => {
   it('searches all public courts by date and duration, optionally by sport', async () => {

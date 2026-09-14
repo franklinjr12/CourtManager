@@ -39,7 +39,12 @@ describe('journey: STAFF_ONLY venue', () => {
     expect(venuePage.body.data.bookingPolicy.reservationMode).toBe(
       'STAFF_ONLY',
     );
-    const policy = await call(app, 'GET', '/customer/booking-policy', ana.token);
+    const policy = await call(
+      app,
+      'GET',
+      '/customer/booking-policy',
+      ana.token,
+    );
     expect(policy.body.data.reservationMode).toBe('STAFF_ONLY');
     const availability = await call(
       app,
@@ -143,9 +148,9 @@ describe('journey: REQUEST_APPROVAL venue', () => {
     ).toContain('10:00');
 
     const inbox = await call(app, 'GET', '/requests', staff);
-    const listed = (inbox.body.data as { requestId: string; linkedCustomerId: string }[]).find(
-      (item) => item.requestId === requestId,
-    );
+    const listed = (
+      inbox.body.data as { requestId: string; linkedCustomerId: string }[]
+    ).find((item) => item.requestId === requestId);
     expect(listed).toMatchObject({ linkedCustomerId: ana.customerId });
     // The staff inbox preselects the linked customer when confirming.
     const confirmed = await call(
@@ -198,9 +203,15 @@ describe('journey: REQUEST_APPROVAL venue', () => {
     const requestId = submitted.body.data.requestId as string;
     expect(
       (
-        await call(fixture.app, 'POST', `/requests/${requestId}/reject`, staff, {
-          reason: 'Tournament',
-        })
+        await call(
+          fixture.app,
+          'POST',
+          `/requests/${requestId}/reject`,
+          staff,
+          {
+            reason: 'Tournament',
+          },
+        )
       ).status,
     ).toBe(200);
     return { ...fixture, ana, requestId };
@@ -210,16 +221,19 @@ describe('journey: REQUEST_APPROVAL venue', () => {
   // customer's RESERVATION_REQUEST# index (confirm and withdraw update both).
   // /customer/reservations/upcoming filters that index on status REQUESTED,
   // so a rejected request keeps showing as pending in the portal forever.
-  it.fails('removes a rejected request from the customer pending list', async () => {
-    const { app, ana } = await rejectedRequest();
-    const upcoming = await call(
-      app,
-      'GET',
-      '/customer/reservations/upcoming',
-      ana.token,
-    );
-    expect(upcoming.body.data.requests).toEqual([]);
-  });
+  it.fails(
+    'removes a rejected request from the customer pending list',
+    async () => {
+      const { app, ana } = await rejectedRequest();
+      const upcoming = await call(
+        app,
+        'GET',
+        '/customer/reservations/upcoming',
+        ana.token,
+      );
+      expect(upcoming.body.data.requests).toEqual([]);
+    },
+  );
 
   it('frees the active booking allowance and refuses withdrawal after staff reject a request', async () => {
     const { app, venue, ana, requestId, repo } = await rejectedRequest();
@@ -257,29 +271,32 @@ describe('journey: REQUEST_APPROVAL venue', () => {
   // confirmed reservation (and the venue gets a duplicate customer). The
   // staff UI only avoids this when the linked customer is among the first
   // 100 customers loaded into the confirm dialog.
-  it.fails('keeps the portal customer when a linked request is confirmed without an explicit customer', async () => {
-    const { app, venue, customer, staffLogin } = await journey({
-      reservationMode: 'REQUEST_APPROVAL',
-    });
-    const ana = await customer();
-    const staff = await staffLogin();
-    const submitted = await call(
-      app,
-      'POST',
-      '/customer/reservations',
-      ana.token,
-      slot(venue.courts.tennis, 3),
-    );
-    const confirmed = await call(
-      app,
-      'POST',
-      `/requests/${submitted.body.data.requestId}/confirm`,
-      staff,
-      {},
-    );
-    expect(confirmed.status).toBe(200);
-    expect(confirmed.body.data.customerId).toBe(ana.customerId);
-  });
+  it.fails(
+    'keeps the portal customer when a linked request is confirmed without an explicit customer',
+    async () => {
+      const { app, venue, customer, staffLogin } = await journey({
+        reservationMode: 'REQUEST_APPROVAL',
+      });
+      const ana = await customer();
+      const staff = await staffLogin();
+      const submitted = await call(
+        app,
+        'POST',
+        '/customer/reservations',
+        ana.token,
+        slot(venue.courts.tennis, 3),
+      );
+      const confirmed = await call(
+        app,
+        'POST',
+        `/requests/${submitted.body.data.requestId}/confirm`,
+        staff,
+        {},
+      );
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.data.customerId).toBe(ana.customerId);
+    },
+  );
 });
 
 describe('journey: AUTO_CONFIRM venue', () => {

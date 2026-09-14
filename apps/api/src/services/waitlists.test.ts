@@ -1,5 +1,6 @@
 import type { Court } from '@court-manager/contracts';
 import { expect, it, vi } from 'vitest';
+import { createApp } from '../app.js';
 import { MemoryRepository } from '../db.js';
 import { classFixture } from '../testing/class-fixture.js';
 
@@ -244,4 +245,38 @@ it('returns conflict when a court opportunity is taken before fulfillment and ex
   expect(
     await repo.get({ PK: `WAITLIST#${waitlist.waitlistId}`, SK: 'META' }),
   ).toMatchObject({ status: 'EXPIRED' });
+});
+
+it('hides another customer waitlist from HTTP leave and list', async () => {
+  const repo = new MemoryRepository();
+  const { services, owner, ctx, ctx2, classId, slug } =
+    await classFixture(repo);
+  await services.classes.enroll(owner, classId, ctx.customerId);
+  const waitlist = await services.waitlists.joinClass(ctx2, { classId });
+  const app = createApp(repo);
+  const login = await app.request('/customer-auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug,
+      email: 'ana@example.test',
+      password: 'class-password',
+    }),
+  });
+  const token = ((await login.json()) as { data: { token: string } }).data
+    .token;
+  const headers = { Authorization: `Bearer ${token}` };
+  expect(
+    (
+      await app.request(`/customer/waitlists/${waitlist.waitlistId}`, {
+        method: 'DELETE',
+        headers,
+      })
+    ).status,
+  ).toBe(404);
+  const listed = await app.request('/customer/waitlists', { headers });
+  expect(listed.status).toBe(200);
+  expect(
+    ((await listed.json()) as { data: Array<{ waitlistId: string }> }).data,
+  ).toEqual([]);
 });

@@ -6,6 +6,16 @@ test('owner operational screens expose workflows instead of placeholders', async
   page,
 }) => {
   await login(page);
+  await page.goto('/today');
+  await expect(page.getByRole('heading', { name: /Hoje/ })).toBeVisible();
+  await page.goto('/schedule');
+  await expect(
+    page.getByRole('button', { name: 'Nova reserva' }),
+  ).toBeVisible();
+  await page.goto('/waitlists');
+  await expect(
+    page.getByRole('heading', { name: 'Listas de espera' }),
+  ).toBeVisible();
   await page.goto('/settings');
   await expect(
     page.getByText('Use the API or add courts through the settings workflow.'),

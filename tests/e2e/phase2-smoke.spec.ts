@@ -86,9 +86,9 @@ test('2-4. AUTO_CONFIRM booking, concurrent same-slot attempt, and cancellation'
   ];
   for (const result of results) await expect(result).not.toBeEmpty();
   const texts = await Promise.all(results.map((result) => result.innerText()));
-  expect(texts.filter((text) => text === 'Reservation confirmed.')).toHaveLength(
-    1,
-  );
+  expect(
+    texts.filter((text) => text === 'Reservation confirmed.'),
+  ).toHaveLength(1);
   const winner = texts[0] === 'Reservation confirmed.' ? page : other;
   const winnerEmail = winner === page ? ana.email : bea.email;
   await other.context().close();
@@ -174,19 +174,29 @@ test('6-7. full class waitlist is fulfilled by staff', async ({
   await customerSignIn(page, venue.slug, ana.email);
   await page.getByRole('link', { name: 'Classes', exact: true }).click();
   await page.getByRole('button', { name: 'Enroll', exact: true }).click();
-  await expect(page.getByText('Enrollment confirmed.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Enrollment confirmed.', { exact: true }),
+  ).toBeVisible();
 
   const beaPage = await newPage(browser);
   await customerSignIn(beaPage, venue.slug, bea.email);
   await beaPage.getByRole('link', { name: 'Classes', exact: true }).click();
-  await expect(beaPage.getByText('1 / 1 enrolled', { exact: false })).toBeVisible();
-  await expect(beaPage.getByRole('button', { name: 'Enroll', exact: true })).toHaveCount(0);
+  await expect(
+    beaPage.getByText('1 / 1 enrolled', { exact: false }),
+  ).toBeVisible();
+  await expect(
+    beaPage.getByRole('button', { name: 'Enroll', exact: true }),
+  ).toHaveCount(0);
   await beaPage.getByRole('button', { name: 'Join waitlist' }).click();
-  await expect(beaPage.getByText('Joined waitlist.', { exact: true })).toBeVisible();
+  await expect(
+    beaPage.getByText('Joined waitlist.', { exact: true }),
+  ).toBeVisible();
 
   // Ana leaves, so staff can act on the opportunity.
   await page.getByRole('button', { name: 'Leave class' }).click();
-  await expect(page.getByText('Enrollment cancelled.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Enrollment cancelled.', { exact: true }),
+  ).toBeVisible();
 
   const staff = await newPage(browser);
   await staffSignIn(staff, venue.ownerEmail);
@@ -213,7 +223,9 @@ test('6-7. full class waitlist is fulfilled by staff', async ({
     ).enrollment,
   ).toMatchObject({ status: 'ACTIVE' });
   await beaPage.reload();
-  await expect(beaPage.getByRole('button', { name: 'Leave class' })).toBeVisible();
+  await expect(
+    beaPage.getByRole('button', { name: 'Leave class' }),
+  ).toBeVisible();
   await beaPage.context().close();
 });
 
@@ -237,12 +249,14 @@ test("8. a customer cannot see or act on another customer's reservation", async 
     [`/customer/reservations/${reservation.reservationId}/participants`, 'GET'],
     ['/customers', 'GET'],
   ] as const)
-    expect((await apiAs(intruder, path, { method })).status).toBeGreaterThanOrEqual(
-      401,
-    );
+    expect(
+      (await apiAs(intruder, path, { method })).status,
+    ).toBeGreaterThanOrEqual(401);
 
   await customerSignIn(page, venue.slug, bea.email);
-  await page.goto(`/portal/${venue.slug}/reservations/${reservation.reservationId}`);
+  await page.goto(
+    `/portal/${venue.slug}/reservations/${reservation.reservationId}`,
+  );
   await expect(
     page.getByRole('navigation', { name: 'Customer navigation' }),
   ).toBeVisible();
@@ -263,7 +277,9 @@ test('STAFF_ONLY public booking page explains online booking is disabled', async
   await useEnglish(page);
   await page.goto(`/book/${venue.slug}`);
   await expect(
-    page.getByText('Online booking is unavailable. Please contact venue staff.'),
+    page.getByText(
+      'Online booking is unavailable. Please contact venue staff.',
+    ),
   ).toBeVisible();
   await expect(page.getByLabel('Phone')).toHaveCount(0);
   const ana = await venue.registerCustomer('Staff Only Ana');

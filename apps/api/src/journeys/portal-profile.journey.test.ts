@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { call, journey } from '../testing/journey-fixture.js';
 
-const STAFF_ONLY_FIELDS = /"(notes|tags|normalizedPhone|normalizedEmail|passwordHash|archived)"/;
+const STAFF_ONLY_FIELDS =
+  /"(notes|tags|normalizedPhone|normalizedEmail|passwordHash|archived)"/;
 
 describe('journey: customer portal profile', () => {
   it('edits own contact details and sports without exposing staff-only fields', async () => {
@@ -23,7 +24,9 @@ describe('journey: customer portal profile', () => {
         STAFF_ONLY_FIELDS,
       );
       expect(JSON.stringify(response.body)).not.toMatch(/"passwordHash"|vip/);
-      expect(JSON.stringify(response.body)).not.toContain('Owes for last month');
+      expect(JSON.stringify(response.body)).not.toContain(
+        'Owes for last month',
+      );
     }
 
     const updated = await call(app, 'PATCH', '/customer/me', ana.token, {
@@ -45,10 +48,7 @@ describe('journey: customer portal profile', () => {
         })
       ).status,
     ).toBe(400);
-    const staffView = await services.customers.get(
-      venue.owner,
-      ana.customerId,
-    );
+    const staffView = await services.customers.get(venue.owner, ana.customerId);
     expect(staffView).toMatchObject({
       notes: 'Owes for last month',
       tags: ['vip'],
@@ -58,7 +58,9 @@ describe('journey: customer portal profile', () => {
       (await customerLogin('ana.maria@journey.test', password)).status,
     ).toBe(200);
 
-    const tennis = await services.sports.create(venue.owner, { name: 'Squash' });
+    const tennis = await services.sports.create(venue.owner, {
+      name: 'Squash',
+    });
     const padel = await services.sports.create(venue.owner, {
       name: 'Beach Tennis',
     });

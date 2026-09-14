@@ -61,14 +61,37 @@ describe('journey: authorization boundaries', () => {
   }
 
   it("keeps customer A out of customer B's reservations, participants, and waitlists", async () => {
-    const { app, repo, ana, foreigner, bea, reservationId, participantId, waitlistId } =
-      await twoCustomersWithActivity();
+    const {
+      app,
+      repo,
+      ana,
+      foreigner,
+      bea,
+      reservationId,
+      participantId,
+      waitlistId,
+    } = await twoCustomersWithActivity();
     for (const intruder of [ana.token, foreigner.token]) {
       const attempts = [
         call(app, 'GET', `/customer/reservations/${reservationId}`, intruder),
-        call(app, 'POST', `/customer/reservations/${reservationId}/cancel`, intruder),
-        call(app, 'GET', `/customer/reservations/${reservationId}/rebook`, intruder),
-        call(app, 'GET', `/customer/reservations/${reservationId}/participants`, intruder),
+        call(
+          app,
+          'POST',
+          `/customer/reservations/${reservationId}/cancel`,
+          intruder,
+        ),
+        call(
+          app,
+          'GET',
+          `/customer/reservations/${reservationId}/rebook`,
+          intruder,
+        ),
+        call(
+          app,
+          'GET',
+          `/customer/reservations/${reservationId}/participants`,
+          intruder,
+        ),
         call(
           app,
           'PUT',
@@ -120,27 +143,43 @@ describe('journey: authorization boundaries', () => {
           bea.token,
         )
       ).body.data.participants,
-    ).toEqual([expect.objectContaining({ name: 'Bea guest', status: 'ACTIVE' })]);
+    ).toEqual([
+      expect.objectContaining({ name: 'Bea guest', status: 'ACTIVE' }),
+    ]);
   });
 
   it('never lets a venue A customer act on venue B', async () => {
-    const { app, otherVenue, ana, staffLogin } = await twoCustomersWithActivity();
+    const { app, otherVenue, ana, staffLogin } =
+      await twoCustomersWithActivity();
     const otherStaff = await staffLogin(otherVenue);
     const foreignCustomer = await call(app, 'POST', '/customers', otherStaff, {
       name: 'Other venue customer',
       phone: '41955556666',
     });
-    const foreignReservation = await call(app, 'POST', '/reservations', otherStaff, {
-      ...slot(otherVenue.courts.tennis, 3),
-      customerId: foreignCustomer.body.data.customerId,
-    });
+    const foreignReservation = await call(
+      app,
+      'POST',
+      '/reservations',
+      otherStaff,
+      {
+        ...slot(otherVenue.courts.tennis, 3),
+        customerId: foreignCustomer.body.data.customerId,
+      },
+    );
     const id = foreignReservation.body.data.reservationId as string;
     expect(
-      (await call(app, 'GET', `/customer/reservations/${id}`, ana.token)).status,
+      (await call(app, 'GET', `/customer/reservations/${id}`, ana.token))
+        .status,
     ).toBe(404);
     expect(
-      (await call(app, 'POST', `/customer/reservations/${id}/cancel`, ana.token))
-        .status,
+      (
+        await call(
+          app,
+          'POST',
+          `/customer/reservations/${id}/cancel`,
+          ana.token,
+        )
+      ).status,
     ).toBe(404);
     expect(
       (
@@ -191,11 +230,15 @@ describe('journey: authorization boundaries', () => {
       expect((await call(app, 'GET', path, staff)).status).toBe(401);
 
     // Both sessions work side by side; logging one out leaves the other.
-    expect((await call(app, 'GET', '/customer/me', ana.token)).status).toBe(200);
+    expect((await call(app, 'GET', '/customer/me', ana.token)).status).toBe(
+      200,
+    );
     expect((await call(app, 'GET', '/organization', staff)).status).toBe(200);
     await call(app, 'POST', '/auth/logout', staff);
     expect((await call(app, 'GET', '/organization', staff)).status).toBe(401);
-    expect((await call(app, 'GET', '/customer/me', ana.token)).status).toBe(200);
+    expect((await call(app, 'GET', '/customer/me', ana.token)).status).toBe(
+      200,
+    );
     // A second customer session for the same account also coexists.
     const second = await customerLogin(ana.email, password);
     await call(app, 'POST', '/customer-auth/logout', ana.token);

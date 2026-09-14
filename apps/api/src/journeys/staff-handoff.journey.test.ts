@@ -50,7 +50,11 @@ describe('journey: staff and customer share the same records', () => {
       token,
     );
     expect(upcoming.body.data.reservations).toEqual([
-      expect.objectContaining({ reservationId, status: 'BOOKED', source: 'STAFF' }),
+      expect.objectContaining({
+        reservationId,
+        status: 'BOOKED',
+        source: 'STAFF',
+      }),
     ]);
     // Exactly one customer and one reservation exist: no parallel records.
     expect(
@@ -79,7 +83,9 @@ describe('journey: staff and customer share the same records', () => {
     expect(
       (await call(app, 'GET', '/customer/reservations/history', token)).body
         .data,
-    ).toEqual([expect.objectContaining({ reservationId, status: 'CANCELLED' })]);
+    ).toEqual([
+      expect.objectContaining({ reservationId, status: 'CANCELLED' }),
+    ]);
   });
 
   it('shows customer bookings and enrollments in staff views, and staff enrollments in the portal', async () => {
@@ -134,21 +140,29 @@ describe('journey: staff and customer share the same records', () => {
       { customerId: ana.customerId },
     );
     expect(enrollment.status).toBe(201);
-    const activities = await call(app, 'GET', '/customer/activities', ana.token);
+    const activities = await call(
+      app,
+      'GET',
+      '/customer/activities',
+      ana.token,
+    );
     expect(activities.body.data).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           activityType: 'CLASS',
           title: 'Staff enrolled clinic',
         }),
-        expect.objectContaining({ activityType: 'RESERVATION', sourceId: reservationId }),
+        expect.objectContaining({
+          activityType: 'RESERVATION',
+          sourceId: reservationId,
+        }),
       ]),
     );
     const classes = await call(app, 'GET', '/customer/classes', ana.token);
     expect(
-      (classes.body.data.data as { classId: string; enrollment: unknown }[]).find(
-        (item) => item.classId === cls.body.data.classId,
-      )?.enrollment,
+      (
+        classes.body.data.data as { classId: string; enrollment: unknown }[]
+      ).find((item) => item.classId === cls.body.data.classId)?.enrollment,
     ).toMatchObject({ status: 'ACTIVE' });
 
     // Staff cancel the enrollment; the customer's activity disappears.

@@ -1,23 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { dynamo } from '../../apps/api/src/db.js';
 import { classFixture } from '../../apps/api/src/testing/class-fixture.js';
-
-async function useEnglish(page: import('@playwright/test').Page) {
-  await page.goto('/login');
-  await page.evaluate(() =>
-    localStorage.setItem('court-manager-locale', 'en-US'),
-  );
-}
+import { loginCustomer } from './support/auth.js';
+import { useEnglish } from './support/locale.js';
 
 test('customer discovers paid class, enrolls, leaves, and sees full-class waitlist action', async ({
   page,
 }) => {
   const { services, owner, ctx2, classId, slug } = await classFixture(dynamo());
   await useEnglish(page);
-  await page.goto(`/portal/${slug}/login`);
-  await page.getByLabel('Email').fill('ana@example.test');
-  await page.getByLabel('Password').fill('class-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await loginCustomer(page, slug, 'ana@example.test', 'class-password');
   await page.getByRole('link', { name: 'Classes', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Customer Tennis' }),

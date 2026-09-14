@@ -92,8 +92,8 @@ describe('journey: staff regression pass after Phase 2', () => {
     });
     const id = first.body.data.reservationId as string;
     expect(
-      (await call(app, 'POST', `/reservations/${id}/check-in`, staff)).body
-        .data.status,
+      (await call(app, 'POST', `/reservations/${id}/check-in`, staff)).body.data
+        .status,
     ).toBe('CHECKED_IN');
     expect(
       (await call(app, 'POST', `/reservations/${id}/complete`, staff)).body.data
@@ -132,11 +132,17 @@ describe('journey: staff regression pass after Phase 2', () => {
     ).toBe(201);
 
     const start = slot(venue.courts.padel, 2, '19:00');
-    const recurring = await call(app, 'POST', '/reservations/recurring', staff, {
-      ...start,
-      customerId,
-      untilDate: dateAhead(2 + 21),
-    });
+    const recurring = await call(
+      app,
+      'POST',
+      '/reservations/recurring',
+      staff,
+      {
+        ...start,
+        customerId,
+        untilDate: dateAhead(2 + 21),
+      },
+    );
     expect(recurring.status).toBe(201);
     expect(
       (

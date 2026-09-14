@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  call,
-  dateAhead,
-  journey,
-  slot,
-} from '../testing/journey-fixture.js';
+import { call, dateAhead, journey, slot } from '../testing/journey-fixture.js';
 
 type AvailabilityCourt = { courtId: string; available: string[] };
 
@@ -193,8 +188,14 @@ describe('journey: customer cancellation', () => {
     expect(await times()).toContain('17:00');
 
     expect(
-      (await call(app, 'GET', `/customer/reservations/${reservationId}`, ana.token))
-        .body.data.status,
+      (
+        await call(
+          app,
+          'GET',
+          `/customer/reservations/${reservationId}`,
+          ana.token,
+        )
+      ).body.data.status,
     ).toBe('CANCELLED');
     const history = await call(
       app,
@@ -206,13 +207,13 @@ describe('journey: customer cancellation', () => {
       expect.objectContaining({ reservationId, status: 'CANCELLED' }),
     ]);
     expect(
-      (
-        await call(app, 'GET', '/customer/reservations/upcoming', ana.token)
-      ).body.data.reservations,
+      (await call(app, 'GET', '/customer/reservations/upcoming', ana.token))
+        .body.data.reservations,
     ).toEqual([]);
     const [charge] = await repo.scan(
       (item) =>
-        item.entity === 'charge' && item.chargeId === `reservation-${reservationId}`,
+        item.entity === 'charge' &&
+        item.chargeId === `reservation-${reservationId}`,
     );
     expect(charge).toMatchObject({ status: 'VOID' });
     const staffDetail = await call(
@@ -338,9 +339,8 @@ describe('journey: customer cancellation', () => {
     expect(withdrawn.status).toBe(200);
     expect(withdrawn.body.data.status).toBe('WITHDRAWN');
     expect(
-      (
-        await call(app, 'GET', '/customer/reservations/upcoming', ana.token)
-      ).body.data.requests,
+      (await call(app, 'GET', '/customer/reservations/upcoming', ana.token))
+        .body.data.requests,
     ).toEqual([]);
     // Staff can no longer approve a withdrawn request.
     expect(

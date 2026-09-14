@@ -173,4 +173,71 @@ describe('customer booking safety', () => {
     expect(locks.length).toBeGreaterThanOrEqual(2);
     expect(new Set(locks.map((lock) => lock.occupancyId))).toHaveLength(1);
   });
+
+  it('allows the last book-ahead day and rejects the day after', async () => {
+    const { services, court, first } = await setup();
+    await services.organizations.update(owner, {
+      bookingPolicy: {
+        ...DEFAULT_BOOKING_POLICY,
+        reservationMode: 'AUTO_CONFIRM',
+        bookAheadDays: 1,
+        minimumReservationMinutes: 60,
+        maximumReservationMinutes: 120,
+        maximumActiveBookings: 3,
+      },
+    });
+    const policy = await services.bookingPolicy.policy(owner.organizationId);
+    const window = services.bookingPolicy.customerBookingWindow(policy, 'UTC');
+    const allowedStart = new Date(`${window.lastDate}T18:00:00.000Z`);
+    await expect(
+      services.customerBookings.create(first, {
+        courtId: court.courtId,
+        startAt: allowedStart.toISOString(),
+        endAt: new Date(allowedStart.getTime() + 60 * 60000).toISOString(),
+      }),
+    ).resolves.toMatchObject({ status: 'BOOKED' });
+    const beyond = new Date(`${window.lastDate}T18:00:00.000Z`);
+    beyond.setUTCDate(beyond.getUTCDate() + 1);
+    await expect(
+      services.customerBookings.create(first, {
+        courtId: court.courtId,
+        startAt: beyond.toISOString(),
+        endAt: new Date(beyond.getTime() + 60 * 60000).toISOString(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      message: 'Requested time is outside the customer booking window.',
+    });
+  });
+
+  it('counts pending approval requests toward maximum active bookings', async () => {
+    const { services, court, first } = await setup();
+    await services.organizations.update(owner, {
+      bookingPolicy: {
+        ...DEFAULT_BOOKING_POLICY,
+        reservationMode: 'REQUEST_APPROVAL',
+        bookAheadDays: 30,
+        minimumReservationMinutes: 60,
+        maximumReservationMinutes: 120,
+        maximumActiveBookings: 1,
+      },
+    });
+    const slot = futureSlot();
+    await expect(
+      services.customerBookings.create(first, {
+        courtId: court.courtId,
+        ...slot,
+      }),
+    ).resolves.toMatchObject({ status: 'REQUESTED' });
+    await expect(
+      services.customerBookings.create(first, {
+        courtId: court.courtId,
+        startAt: new Date(Date.parse(slot.startAt) + 2 * 3600000).toISOString(),
+        endAt: new Date(Date.parse(slot.endAt) + 2 * 3600000).toISOString(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'Maximum active customer bookings reached.',
+    });
+  });
 });
