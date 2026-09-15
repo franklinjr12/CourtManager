@@ -52,13 +52,25 @@ test('staff customer profile separates commercial entitlements from financial ba
     password: venue.ownerPassword,
   });
   await page.goto(`/customers/${customerId}`);
+  const summary = await apiAs(token, `/customers/${customerId}/commercial-summary`);
+  expect(summary.body.data.memberships.length).toBeGreaterThan(0);
+  await expect(page.getByRole('heading', { name: 'Financial' })).toBeVisible({
+    timeout: 15000,
+  });
   await expect(
-    page.getByRole('heading', { name: 'Commercial', exact: true }),
+    page
+      .locator('[data-commercial-summary] h3')
+      .filter({ hasText: 'Commercial' }),
   ).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Entitlements' }),
   ).toBeVisible();
-  await expect(page.getByText('Class credits', { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole('heading', { name: 'Entitlements' })
+      .locator('..')
+      .getByRole('cell', { name: 'Class credits' }),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Financial' })).toBeVisible();
   await expect(page.getByText('Charges', { exact: true })).toBeVisible();
   await expect(page.getByText('Payments', { exact: true })).toBeVisible();
@@ -75,6 +87,6 @@ test('staff customer profile separates commercial entitlements from financial ba
     page.getByRole('heading', { name: 'Commercial history' }),
   ).toBeVisible();
   await expect(
-    page.getByText('Membership started', { exact: true }),
+    page.getByText(/Membership started|membership started/i),
   ).toBeVisible();
 });

@@ -1091,6 +1091,18 @@ Playwright:
 corepack pnpm test:e2e
 ```
 
+Phase 3 commercial regression:
+
+```bash
+corepack pnpm test:phase3
+corepack pnpm test:phase3:integration
+corepack pnpm test:phase3:e2e
+corepack pnpm test:phase3:all
+corepack pnpm test:coverage
+```
+
+See `docs/testing/phase3-coverage.md` for the coverage matrix, fixtures, and thresholds.
+
 Development seed:
 
 ```bash

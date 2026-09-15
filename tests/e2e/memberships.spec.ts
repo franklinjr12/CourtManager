@@ -45,14 +45,18 @@ test('staff can assign and pause a customer membership', async ({ page }) => {
   await page.goto('/commercial/memberships');
   await expect(
     page.getByRole('heading', { name: 'Memberships' }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await page.getByRole('button', { name: 'Add membership' }).click();
   await page.getByLabel('Customer').selectOption(customerId);
   await page.getByLabel('Plan').selectOption(planId);
   await page.getByLabel('Price').fill('270');
   await page.getByRole('button', { name: 'Create membership' }).click();
-  await expect(page.getByText('Membership Customer')).toBeVisible();
-  await expect(page.getByText('Monthly classes')).toBeVisible();
+  await expect(
+    page.locator('table tbody').getByText('Membership Customer'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Monthly classes' }),
+  ).toBeVisible();
   const initialCharges = await apiAs(token, '/charges?sourceType=MEMBERSHIP');
   expect(initialCharges.status).toBe(200);
   expect(initialCharges.body.data).toHaveLength(1);

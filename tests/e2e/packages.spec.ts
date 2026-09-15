@@ -37,7 +37,9 @@ test('staff can define and issue a prepaid package', async ({ page }) => {
     .locator('[data-package-benefit] [data-field="quantity"]')
     .fill('600');
   await page.getByRole('button', { name: 'Create package' }).click();
-  await expect(page.getByText('10 Court Hours')).toBeVisible({
+  await expect(
+    page.locator('table tbody').getByText('10 Court Hours'),
+  ).toBeVisible({
     timeout: 15000,
   });
   await page.locator('#issue-package').click();

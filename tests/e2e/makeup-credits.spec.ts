@@ -49,7 +49,16 @@ test('staff can grant a makeup credit from a roster and the customer can view it
     classRecord.classId,
     customerId,
   );
-  const sessionId = `${classRecord.classId}-2099-01-05`;
+  const loginResponse = await page.request.post(
+    'http://localhost:8787/auth/login',
+    {
+      data: { email: venue.ownerEmail, password: venue.ownerPassword },
+    },
+  );
+  const token = ((await loginResponse.json()) as { data: { token: string } })
+    .data.token;
+  const classDetail = await apiAs(token, `/classes/${classRecord.classId}`);
+  const sessionId = classDetail.body.data.sessions[0].sessionId as string;
 
   await useEnglish(page);
   await login(page, {
@@ -57,7 +66,9 @@ test('staff can grant a makeup credit from a roster and the customer can view it
     password: venue.ownerPassword,
   });
   await page.goto(`/class-sessions/${sessionId}`);
-  await expect(page.getByRole('heading', { name: 'Roster' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Roster' })).toBeVisible({
+    timeout: 15000,
+  });
   await page.getByRole('button', { name: 'Grant makeup credit' }).click();
   const form = page.locator('#makeup-credit-form');
   await expect(form).toBeVisible();

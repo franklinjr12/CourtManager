@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      dynamodb:
+        image: amazon/dynamodb-local:latest
+        ports:
+          - 8120:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm format
+      - run: corepack pnpm lint
+      - run: corepack pnpm typecheck
+      - run: corepack pnpm test
+      - run: corepack pnpm test:integration
+        env:
+          DYNAMODB_ENDPOINT: http://localhost:8120
+          DYNAMODB_TABLE: court-manager-integration
+          AWS_REGION: us-east-1
+      - run: corepack pnpm test:coverage
+      - run: corepack pnpm build
+      - run: corepack pnpm exec playwright install chromium --with-deps
+      - run: corepack pnpm test:e2e
+        env:
+          DYNAMODB_ENDPOINT: http://localhost:8120
+          DYNAMODB_TABLE: court-manager
+          AWS_REGION: us-east-1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/

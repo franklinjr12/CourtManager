@@ -137,7 +137,7 @@ test('customer booking consumes package time and cancellation restores it in the
 
   await page.goto(`/portal/${venue.slug}/credits`);
   await expect(
-    page.getByText('60 court minutes', { exact: false }),
+    page.getByText('60 court minutes', { exact: false }).first(),
   ).toBeVisible();
   await page.goto(`/portal/${venue.slug}/reservations`);
   page.once('dialog', (dialog) => void dialog.accept());
@@ -148,7 +148,7 @@ test('customer booking consumes package time and cancellation restores it in the
 
   await page.goto(`/portal/${venue.slug}/credits`);
   await expect(
-    page.getByText('120 court minutes', { exact: false }),
+    page.getByText('120 court minutes', { exact: false }).first(),
   ).toBeVisible();
   const balance = await venue.services.entitlements.getRemainingBalance({
     organizationId: venue.organizationId,

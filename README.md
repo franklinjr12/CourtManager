@@ -53,7 +53,19 @@ corepack pnpm test
 corepack pnpm test:integration
 corepack pnpm build
 corepack pnpm test:e2e
+corepack pnpm test:coverage
 ```
+
+Phase 3 commercial regression:
+
+```bash
+corepack pnpm test:phase3
+corepack pnpm test:phase3:integration
+corepack pnpm test:phase3:e2e
+corepack pnpm test:phase3:all
+```
+
+See [docs/testing/phase3-coverage.md](docs/testing/phase3-coverage.md) for the coverage matrix, fixtures, and canonical scenarios.
 
 The first four run fast domain, service, repository, DOM, and browser-router tests. Integration tests use the same repository contract and can be run against DynamoDB Local. E2E uses Playwright Chromium and the Docker development environment.
 

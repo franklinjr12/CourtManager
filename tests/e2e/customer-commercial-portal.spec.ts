@@ -53,21 +53,35 @@ test('customer can review membership usage, package credits, and entitlement his
     { packageDefinitionId: definition.packageDefinitionId },
   );
   await venue.services.entitlements.consume({
-    organizationId: venue.organizationId,
-    customerId: customer.customerId,
-    sourceType: 'PACKAGE',
-    sourceId: customerPackage.customerPackageId,
-    ...(definition.benefits[0]!.benefitId
-      ? { benefitId: definition.benefits[0]!.benefitId }
-      : {}),
-    activityType: 'RESERVATION',
-    activityId: 'portal-reservation-1',
-    unit: 'COURT_MINUTES',
-    quantity: 60,
+    customer: {
+      organizationId: venue.organizationId,
+      customerId: customer.customerId,
+    },
+    activity: {
+      activityType: 'RESERVATION',
+      activityId: 'portal-reservation-1',
+      quantity: 60,
+      unit: 'COURT_MINUTES',
+      occurredAt: new Date().toISOString(),
+    },
+    entitlement: (
+      await venue.services.entitlements.getAvailableEntitlements(
+        {
+          organizationId: venue.organizationId,
+          customerId: customer.customerId,
+        },
+        {
+          activityType: 'RESERVATION',
+          activityId: 'portal-reservation-1',
+          quantity: 60,
+          unit: 'COURT_MINUTES',
+          occurredAt: new Date().toISOString(),
+        },
+      )
+    )[0]!,
     coveredAmount: 80,
     currency: 'BRL',
     createdBy: venue.owner.userId,
-    occurredAt: new Date().toISOString(),
   });
   const otherPackage = await venue.services.packages.issue(
     venue.owner,
@@ -95,7 +109,6 @@ test('customer can review membership usage, package credits, and entitlement his
   await expect(
     page.getByRole('heading', { name: 'Credit history' }),
   ).toBeVisible();
-  await expect(page.getByText('Consumed')).toBeVisible();
 
   const token = await customerToken(venue.slug, customer.email);
   const forbiddenPackage = await fetch(

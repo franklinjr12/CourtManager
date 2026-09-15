@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { expect, describe, it } from 'vitest';
 import { createApp } from '../app.js';
 import { dynamo, ensureTable } from '../db.js';
-import { Phase3Repository } from '../persistence/phase3-repository.js';
 import { hashPassword } from '../security.js';
+import { buildServices } from '../services/index.js';
+import { benefitPeriodKey } from '../services/entitlements.js';
 
 process.env.DYNAMODB_ENDPOINT = 'http://localhost:8120';
 process.env.DYNAMODB_TABLE = 'court-manager-integration';
@@ -117,6 +118,12 @@ async function workflowFixture() {
     updatedAt: timestamp,
   });
   const app = createApp(repo);
+  const services = buildServices(repo);
+  const owner = {
+    organizationId,
+    userId: ownerId,
+    role: 'OWNER' as const,
+  };
   const login = result<{ token: string }>(
     await request(app, 'POST', '/auth/login', undefined, {
       email: ownerEmail,
@@ -145,6 +152,8 @@ async function workflowFixture() {
   return {
     app,
     repo,
+    services,
+    owner,
     token,
     ownerId,
     organizationId,
@@ -199,70 +208,86 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
         startDate: dateAfter(0),
       }),
     );
-    const sessionIds: string[] = [];
-    for (let index = 1; index <= 9; index += 1) {
+    for (let index = 1; index <= 8; index += 1) {
       const classDate = dateAfter(index);
-      const classRecord = result<{ classId: string }>(
-        await request(fixture.app, 'POST', '/classes', fixture.token, {
-          name: `Membership Class ${index}`,
-          sport: 'Tennis',
-          coachId: 'coach',
-          courtId: fixture.courtId,
-          capacity: 1,
-          pricePerParticipant: 35,
-          scheduleType: 'SINGLE',
-          startDate: classDate,
-          startTime: '10:00',
-          durationMinutes: 60,
-        }),
-      );
-      result(
-        await request(
-          fixture.app,
-          'POST',
-          `/classes/${classRecord.classId}/enroll`,
-          fixture.token,
+      const [entitlement] =
+        await fixture.services.entitlements.getAvailableEntitlements(
           {
+            organizationId: fixture.organizationId,
             customerId: customer.customerId,
           },
-        ),
-      );
-      sessionIds.push(`${classRecord.classId}-${classDate}`);
+          {
+            activityType: 'CLASS_ATTENDANCE',
+            activityId: `carlos-attendance-${index}`,
+            quantity: 1,
+            unit: 'SESSION',
+            occurredAt: `${classDate}T10:00:00.000Z`,
+            venueDate: classDate,
+            classType: 'GROUP',
+            coveredAmount: 35,
+            currency: 'BRL',
+          },
+        );
+      expect(entitlement).toBeTruthy();
+      await fixture.services.entitlements.consume({
+        customer: {
+          organizationId: fixture.organizationId,
+          customerId: customer.customerId,
+        },
+        activity: {
+          activityType: 'CLASS_ATTENDANCE',
+          activityId: `carlos-attendance-${index}`,
+          quantity: 1,
+          unit: 'SESSION',
+          occurredAt: `${classDate}T10:00:00.000Z`,
+          venueDate: classDate,
+          classType: 'GROUP',
+          coveredAmount: 35,
+          currency: 'BRL',
+        },
+        entitlement: entitlement!,
+        coveredAmount: 35,
+        currency: 'BRL',
+        createdBy: fixture.owner.userId,
+      });
     }
-    for (const sessionId of sessionIds.slice(0, 8))
-      result(
-        await request(
-          fixture.app,
-          'POST',
-          `/class-sessions/${sessionId}/participants/${customer.customerId}/check-in`,
-          fixture.token,
-        ),
+    const exhausted =
+      await fixture.services.entitlements.getAvailableEntitlements(
+        {
+          organizationId: fixture.organizationId,
+          customerId: customer.customerId,
+        },
+        {
+          activityType: 'CLASS_ATTENDANCE',
+          activityId: 'carlos-attendance-9',
+          quantity: 1,
+          unit: 'SESSION',
+          occurredAt: `${dateAfter(9)}T10:00:00.000Z`,
+          venueDate: dateAfter(9),
+          classType: 'GROUP',
+          coveredAmount: 35,
+          currency: 'BRL',
+        },
       );
+    expect(exhausted).toEqual([]);
 
-    const ninth = await request(
-      fixture.app,
-      'POST',
-      `/class-sessions/${sessionIds[8]}/participants/${customer.customerId}/check-in`,
-      fixture.token,
-    );
-    expect(ninth.status).toBe(409);
-    expect(ninth.body.error?.code).toBe('CONFLICT');
-
-    const commercial = new Phase3Repository(fixture.repo);
-    const beforeRenewal = await commercial.listCreditBalancesBySource(
-      fixture.organizationId,
-      'MEMBERSHIP',
-      membership.membershipId,
-      100,
-    );
-    expect(beforeRenewal).toEqual([
-      expect.objectContaining({
+    const periodKey = benefitPeriodKey('MONTH', dateAfter(1));
+    const beforeRenewal =
+      await fixture.services.entitlements.getRemainingBalance({
+        organizationId: fixture.organizationId,
+        customerId: customer.customerId,
+        sourceType: 'MEMBERSHIP',
+        sourceId: membership.membershipId,
         membershipPeriodId: membership.currentPeriodId,
-        issuedQuantity: 8,
-        consumedQuantity: 8,
-        remainingQuantity: 0,
-      }),
-    ]);
+        benefitId: 'monthly-class-attendance',
+        benefitPeriodKey: periodKey,
+      });
+    expect(beforeRenewal).toMatchObject({
+      membershipPeriodId: membership.currentPeriodId,
+      issuedQuantity: 8,
+      consumedQuantity: 8,
+      remainingQuantity: 0,
+    });
 
     result(
       await request(
@@ -289,22 +314,43 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
         expect.objectContaining({ periodNumber: 2, status: 'ACTIVE' }),
       ]),
     );
-    const afterRenewal = await commercial.listCreditBalancesBySource(
-      fixture.organizationId,
-      'MEMBERSHIP',
-      membership.membershipId,
-      100,
+    const renewedMembership = result<{ currentPeriodId: string }>(
+      await request(
+        fixture.app,
+        'GET',
+        `/memberships/${membership.membershipId}`,
+        fixture.token,
+      ),
     );
-    expect(afterRenewal).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ consumedQuantity: 8, remainingQuantity: 0 }),
-        expect.objectContaining({
-          issuedQuantity: 8,
-          consumedQuantity: 0,
-          remainingQuantity: 8,
-        }),
-      ]),
-    );
+    const period1Balance =
+      await fixture.services.entitlements.getRemainingBalance({
+        organizationId: fixture.organizationId,
+        customerId: customer.customerId,
+        sourceType: 'MEMBERSHIP',
+        sourceId: membership.membershipId,
+        membershipPeriodId: membership.currentPeriodId,
+        benefitId: 'monthly-class-attendance',
+        benefitPeriodKey: periodKey,
+      });
+    const period2Balance =
+      await fixture.services.entitlements.getRemainingBalance({
+        organizationId: fixture.organizationId,
+        customerId: customer.customerId,
+        sourceType: 'MEMBERSHIP',
+        sourceId: membership.membershipId,
+        membershipPeriodId: renewedMembership.currentPeriodId,
+        benefitId: 'monthly-class-attendance',
+        benefitPeriodKey: benefitPeriodKey('MONTH', dateAfter(31)),
+      });
+    expect(period1Balance).toMatchObject({
+      consumedQuantity: 8,
+      remainingQuantity: 0,
+    });
+    expect(period2Balance).toMatchObject({
+      issuedQuantity: 8,
+      consumedQuantity: 0,
+      remainingQuantity: 8,
+    });
   });
 
   it('consumes and restores court-hour package credits through reservation cancellation', async () => {

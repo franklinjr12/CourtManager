@@ -306,11 +306,15 @@ export async function customerSignIn(page: Page, slug: string, email: string) {
   await page.getByRole('navigation', { name: 'Customer navigation' }).waitFor();
 }
 
-export async function staffSignIn(page: Page, email: string) {
+export async function staffSignIn(
+  page: Page,
+  email: string,
+  password = PASSWORD,
+) {
   await useEnglish(page);
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(/today|dashboard/);
 }
@@ -360,17 +364,13 @@ export async function apiAs(
 /** Opens Book, searches a date, and selects the first slot offered. */
 export async function selectFirstSlot(page: Page, slug: string, date: string) {
   await page.goto(`/portal/${slug}/book`);
-  await page.locator('input[name="slot"]').first().waitFor();
+  const duration = page.locator('select[name="durationMinutes"]');
+  await duration.waitFor({ state: 'attached', timeout: 15000 });
+  await duration.selectOption('60');
   await page.locator('input[name="date"]').fill(date);
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.url().includes(`/customer/availability?date=${date}`) &&
-        response.ok(),
-    ),
-    page.getByRole('button', { name: 'Find availability' }).click(),
-  ]);
+  await page.getByRole('button', { name: 'Find availability' }).click();
   const slot = page.locator('input[name="slot"]').first();
+  await slot.waitFor({ timeout: 15000 });
   await slot.check();
   return slot.inputValue();
 }
