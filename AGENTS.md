@@ -538,6 +538,54 @@ Keep financial functionality centered on sports-center operations such as:
 
 Do not build general-ledger/accounting behavior unless explicitly requested.
 
+### Commercial relationships and entitlements
+
+Phase 3 commercial records must preserve these distinctions:
+
+- A `Plan` is a reusable offering; a `Membership` is a customer-specific
+  snapshot of that offering; a `MembershipPeriod` is its dated usage and
+  billing boundary.
+- A `PackageDefinition` is a reusable offering; a `CustomerPackage` is the
+  issued customer-specific snapshot.
+- An entitlement is a service right, not a payment. A credit transaction is an
+  append-only signed ledger entry, and an entitlement allocation is the
+  auditable link between that right and a reservation or class attendance.
+- A materialized credit balance may accelerate reads and conditional writes,
+  but the durable credit ledger remains authoritative. Never replace it with
+  an unexplained mutable `remainingCredits` field.
+- Consumption must be idempotent and tenant-scoped. The logical usage key must
+  prevent a retry from consuming the same source/benefit for the same activity
+  twice.
+- Reservation coverage is applied after the existing atomic schedule lock is
+  acquired. Keep the reservation and class attendance records authoritative;
+  do not create a second booking or attendance model.
+- For reservation coverage, a matching fixed-court agreement is considered
+  first. Other eligible sources are ordered by earliest expiry, then makeup
+  credit, membership, package, and other source priority, with stable IDs as
+  tie-breakers. Partial coverage is allowed and must be recorded per source.
+- Restore active reservation allocations on eligible pre-cutoff cancellation
+  exactly once, including staff cancellation. Do not restore a no-show. Keep
+  the original consumption and restoration reason in the ledger.
+- Membership periods use venue-local inclusive calendar dates. Renewal creates
+  a new period and charge; it does not rewrite historical period usage. Package
+  expiry writes `EXPIRED` ledger entries for remaining finite credit and keeps
+  the package and history.
+- Fixed-court agreements are commercial contracts. Their recurring occurrences
+  use the one authoritative reservation/schedule-lock model; agreement billing
+  is separate from occurrence occupancy.
+- Customer balances are financial: active charges minus linked recorded
+  payments. Credits, allocations, and service coverage are never cash
+  payments. Payment processing remains external and manual.
+- Staff manage commercial terms, issuance, renewal, adjustment, restoration,
+  and cancellation. Customer portal commercial views are read-only and must
+  derive organization/customer identity from authentication context.
+- Existing Phase 2 data must migrate additively. `migrate:phase3` may create
+  missing access indexes, but must not invent memberships, packages, balances,
+  allocations, usage, or other artificial commercial relationships.
+- Commercial lifecycle facts should remain available as durable customer
+  activity events so later retention/intelligence work can consume them
+  without reconstructing history from mutable records.
+
 ---
 
 ## API Design Rules

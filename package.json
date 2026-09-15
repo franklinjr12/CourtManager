@@ -16,6 +16,8 @@
     "seed:dev": "corepack pnpm --filter @court-manager/api seed:dev",
     "migrate:phase1": "corepack pnpm --filter @court-manager/api migrate:phase1",
     "migrate:phase2": "corepack pnpm --filter @court-manager/api migrate:phase2",
+    "migrate:phase3": "corepack pnpm --filter @court-manager/api migrate:phase3",
+    "reconcile:commercial": "corepack pnpm --filter @court-manager/api reconcile:commercial",
     "reset:dev": "node scripts/reset-dev.mjs",
     "migrate:class-discovery": "corepack pnpm --filter @court-manager/api migrate:class-discovery"
   },

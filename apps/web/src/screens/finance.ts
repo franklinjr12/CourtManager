@@ -56,8 +56,11 @@ export async function openPaymentModal(reservation?: Reservation) {
   });
 }
 export async function finance() {
+  const customerId = new URLSearchParams(location.search).get('customerId');
   const [data, summary, balances, charges] = await Promise.all([
-    request<Payment[]>('/payments'),
+    request<Payment[]>(
+      `/payments${customerId ? `?customerId=${encodeURIComponent(customerId)}` : ''}`,
+    ),
     request<{
       expectedRevenue: number;
       recordedPayments: number;
@@ -73,7 +76,9 @@ export async function finance() {
         outstanding: number;
       }>
     >('/finance/balances'),
-    request<Array<Record<string, unknown>>>('/charges'),
+    request<Array<Record<string, unknown>>>(
+      `/charges${customerId ? `?customerId=${encodeURIComponent(customerId)}` : ''}`,
+    ),
   ]);
   await shell(
     async () => {

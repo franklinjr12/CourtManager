@@ -9,6 +9,8 @@
     "seed:dev": "tsx src/scripts/seed-dev.ts",
     "migrate:phase1": "tsx src/scripts/migrate-phase1.ts",
     "migrate:phase2": "tsx src/scripts/migrate-phase2.ts",
+    "migrate:phase3": "tsx src/scripts/migrate-phase3.ts",
+    "reconcile:commercial": "tsx src/scripts/reconcile-commercial.ts",
     "migrate:class-discovery": "tsx src/scripts/migrate-class-discovery.ts"
   },
   "dependencies": {

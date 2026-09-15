@@ -1,5 +1,6 @@
 import type {
   Court,
+  CustomerCommercialActivityEvent,
   CustomerActivityItem,
   CustomerAuthContext,
   Reservation,
@@ -81,11 +82,38 @@ export const classActivity = (input: {
     createdAt: input.createdAt,
   });
 
+const commercialTitle = (eventType: string) =>
+  eventType
+    .toLowerCase()
+    .split('_')
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ');
+
+export const commercialActivity = (
+  event: CustomerCommercialActivityEvent,
+): CustomerActivityItem => ({
+  activityId: event.eventId,
+  organizationId: event.organizationId,
+  customerId: event.customerId,
+  activityType: 'COMMERCIAL',
+  sourceId: event.sourceId,
+  eventType: event.eventType,
+  sourceType: event.sourceType,
+  title: commercialTitle(event.eventType),
+  subtitle: event.sourceType,
+  startAt: event.occurredAt,
+  endAt: event.occurredAt,
+  status: 'RECORDED',
+  actions: ['VIEW'],
+  createdAt: event.createdAt,
+});
+
 export class CustomerActivityService {
   constructor(private readonly repo: Repository) {}
 
-  async list(
-    ctx: CustomerAuthContext,
+  private async listByCustomer(
+    organizationId: string,
+    customerId: string,
     input: { from: string; to: string; limit: number; cursor?: string },
   ) {
     if (Date.parse(input.to) <= Date.parse(input.from))
@@ -103,7 +131,7 @@ export class CustomerActivityService {
     if (cursor && !cursor.startsWith(prefix))
       throw new AppError('VALIDATION_ERROR', 'Invalid activity cursor.');
     const rows = await this.repo.query<RecordItem>(
-      phase2Keys.customerActivities(ctx.organizationId, ctx.customerId).PK,
+      phase2Keys.customerActivities(organizationId, customerId).PK,
       {
         between: [
           cursor ? `${cursor}\u0000` : `${prefix}${input.from}`,
@@ -113,18 +141,55 @@ export class CustomerActivityService {
       },
     );
     const visible = rows
-      .filter((row) => row.entity === 'customerActivity')
       .filter(
         (row) =>
-          !(Date.parse(input.from) >= Date.now() && row.status === 'CANCELLED'),
+          row.entity === 'customerActivity' ||
+          row.entity === 'customerActivityEvent',
+      )
+      .filter(
+        (row) =>
+          !(
+            Date.parse(String(row.startAt)) >= Date.now() &&
+            row.status === 'CANCELLED'
+          ),
       );
     const page = visible.slice(0, input.limit);
     return {
-      data: page.map((row) => as<CustomerActivityItem>(row)),
+      data: page.map((row) =>
+        row.entity === 'customerActivityEvent'
+          ? commercialActivity({
+              eventId: String(row.eventId),
+              organizationId: String(row.organizationId),
+              customerId: String(row.customerId),
+              eventType:
+                row.eventType as CustomerCommercialActivityEvent['eventType'],
+              sourceType:
+                row.sourceType as CustomerCommercialActivityEvent['sourceType'],
+              sourceId: String(row.sourceId),
+              occurredAt: String(row.occurredAt),
+              createdAt: String(row.createdAt),
+            })
+          : as<CustomerActivityItem>(row),
+      ),
       nextCursor:
         visible.length > input.limit
           ? encodeURIComponent(String(page.at(-1)?.SK))
           : null,
     };
+  }
+
+  async list(
+    ctx: CustomerAuthContext,
+    input: { from: string; to: string; limit: number; cursor?: string },
+  ) {
+    return this.listByCustomer(ctx.organizationId, ctx.customerId, input);
+  }
+
+  async listForStaff(
+    ctx: { organizationId: string },
+    customerId: string,
+    input: { from: string; to: string; limit: number; cursor?: string },
+  ) {
+    return this.listByCustomer(ctx.organizationId, customerId, input);
   }
 }

@@ -11,6 +11,7 @@ import {
   classEnrollmentKey,
 } from '../persistence/class-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
+import { phase3Keys } from '../persistence/phase3-keys.js';
 import { classActivity } from './customer-activities.js';
 
 type Scope = { organizationId: string };
@@ -22,6 +23,20 @@ const primary = (kind: string, id: string) => ({
   PK: `${kind}#${id}`,
   SK: 'META',
 });
+const customerChargeIndex = (charge: RecordItem) => {
+  const value = Object.fromEntries(
+    Object.entries(charge).filter(
+      ([name]) => !['PK', 'SK', 'entity'].includes(name),
+    ),
+  );
+  const index = phase3Keys.customerCharge(
+    String(charge.organizationId),
+    String(charge.customerId),
+    String(charge.serviceAt),
+    String(charge.chargeId),
+  );
+  return { ...value, ...index } as RecordItem;
+};
 const publicEnrollment = (row: RecordItem) => ({
   enrollmentId: String(row.enrollmentId),
   status: String(row.status),
@@ -280,30 +295,33 @@ export class ClassEnrollmentService {
         const chargeId = `class-${session.sessionId}-${customerId}`;
         const chargeKey = primary('CHARGE', chargeId);
         const old = chargeMap.get(chargeKey.PK);
-        if (!old || old.status === 'VOID')
+        if (!old || old.status === 'VOID') {
+          const charge = {
+            ...chargeKey,
+            entity: 'charge' as const,
+            chargeId,
+            organizationId: ctx.organizationId,
+            customerId,
+            sourceType: 'CLASS',
+            sourceId: session.sessionId,
+            classId,
+            classSessionId: session.sessionId,
+            description: String(cls.name),
+            amount: price,
+            serviceAt: session.startAt,
+            status: 'ACTIVE' as const,
+            createdBy: actorId,
+            createdAt: old?.createdAt ?? timestamp,
+          } as RecordItem;
           writes.push({
             type: 'put',
-            item: {
-              ...chargeKey,
-              entity: 'charge',
-              chargeId,
-              organizationId: ctx.organizationId,
-              customerId,
-              sourceType: 'CLASS',
-              sourceId: session.sessionId,
-              classId,
-              classSessionId: session.sessionId,
-              description: String(cls.name),
-              amount: price,
-              serviceAt: session.startAt,
-              status: 'ACTIVE',
-              createdBy: actorId,
-              createdAt: old?.createdAt ?? timestamp,
-            },
+            item: charge,
             ...(old
               ? { expected: { status: 'VOID' } }
               : { condition: 'attribute_not_exists(PK)' }),
           });
+          writes.push({ type: 'put', item: customerChargeIndex(charge) });
+        }
       }
       effects.push(...writes.slice(1));
     }
@@ -434,17 +452,19 @@ export class ClassEnrollmentService {
       (row) =>
         row.status === 'ACTIVE' && row.organizationId === ctx.organizationId,
     )) {
+      const voidedCharge = {
+        ...charge,
+        status: 'VOID',
+        voidedAt: timestamp,
+        voidedBy: actorId,
+        voidReason: 'Enrollment cancelled',
+      };
       effects.push({
         type: 'put',
-        item: {
-          ...charge,
-          status: 'VOID',
-          voidedAt: timestamp,
-          voidedBy: actorId,
-          voidReason: 'Enrollment cancelled',
-        },
+        item: voidedCharge,
         expected: { status: 'ACTIVE' },
       });
+      effects.push({ type: 'put', item: customerChargeIndex(voidedCharge) });
     }
     if (enrollment.status === 'ACTIVE' || enrollment.status === 'CANCELLED') {
       const activities = sessions.map((session) =>

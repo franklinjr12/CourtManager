@@ -34,12 +34,34 @@ export async function shell(
     ['/staff', t('nav.staff'), ['OWNER']],
     ['/settings', t('nav.settings'), ['OWNER']],
   ] as const;
+  const commercialNavigation = [
+    ['/commercial', t('commercial.overview'), 'commercial-overview'],
+    ['/commercial/plans', t('plans.title'), 'commercial-plans'],
+    [
+      '/commercial/memberships',
+      t('memberships.title'),
+      'commercial-memberships',
+    ],
+    ['/commercial/packages', t('packages.title'), 'commercial-packages'],
+    [
+      '/commercial/fixed-courts',
+      t('fixedCourtAgreements.title'),
+      'commercial-fixed-courts',
+    ],
+  ] as const;
+  const currentPath = location.pathname;
+  const commercialLinks = commercialNavigation
+    .map(
+      ([path, label]) =>
+        `<a class="${currentPath === path ? 'active' : ''}" href="${path}">${label}</a>`,
+    )
+    .join('');
   app.innerHTML = `<div class="shell"><aside><h1>Court Manager</h1><nav>${navigation
     .filter((item) => item[2].includes(role as never))
     .map((item) => `<a href="${item[0]}">${item[1]}</a>`)
     .join(
       '',
-    )}</nav><button id="logout" class="link-button">${t('nav.logOut')}</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? t('nav.sportsCenter'))}</span><span>${languageSelector()} ${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">${t('common.loading')}</div></section></main></div>`;
+    )}<div class="nav-group"><span class="nav-group-title">${t('nav.commercial')}</span>${commercialLinks}</div></nav><button id="logout" class="link-button">${t('nav.logOut')}</button></aside><main class="content"><header><span>${escapeText(current.organization?.name ?? t('nav.sportsCenter'))}</span><span>${languageSelector()} ${escapeText(current.user.name)}</span></header><section id="screen"><div class="loading">${t('common.loading')}</div></section></main></div>`;
   wireLanguageSelector();
   const queuedToast = sessionStorage.getItem('court-manager-toast');
   if (queuedToast) {

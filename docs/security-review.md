@@ -20,3 +20,19 @@ deferred because Phase 2 has no outbound delivery, retry, bounce, or audit
 workflow.
 
 Authentication and public request endpoints should be placed behind an edge rate limit before a public launch. Request logs contain request ID, route, method, status, duration, and authenticated IDs, never passwords or authorization headers. Ordinary lists are limited and customer search is an organization-scoped in-memory filter accepted for the initial small dataset. Schedule reads use court/date partitions; reports are the only place where low-volume scans are accepted.
+
+Phase 3 commercial records are organization-scoped at every repository and
+service boundary. Customer portal commercial routes derive the customer from
+the authenticated customer session and return not-found for another
+customer's membership or package. Commercial sources validate their customer,
+organization, and current membership-period relationships before usage is
+recorded. Only authenticated owners and staff can make manual credit
+adjustments; the actor and a non-empty reason are persisted in the immutable
+credit transaction.
+
+Finite credit consumption and balance changes use conditional transactions,
+with an activity/source guard making retries idempotent. Membership renewal,
+package issuance, and cancellation restoration use stable logical identities;
+renewal period advancement is transactional. Historical balances are rejected
+if their durable ledger would become negative, and restoration is bounded by
+the original allocation quantity.

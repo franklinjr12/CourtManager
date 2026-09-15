@@ -71,8 +71,33 @@ a {
   background: #203554;
   color: #fff;
 }
+.shell nav a.active {
+  background: #2d5b95;
+  color: #fff;
+}
+.nav-group {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0;
+  padding: 8px 0 4px;
+  border-top: 1px solid #ffffff1c;
+}
+.nav-group-title {
+  padding: 0 12px 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .link-button {
   margin-top: auto;
+}
+.inline-link {
+  margin-top: 0;
+  padding: 0;
+  color: var(--primary);
+  font-weight: 700;
 }
 .content {
   flex: 1;
@@ -158,11 +183,115 @@ a {
   padding: 24px;
   box-shadow: 0 3px 12px #13213a0a;
 }
+.plan-benefits {
+  margin: 0;
+  padding-left: 18px;
+  min-width: 190px;
+}
+.plan-benefits li + li {
+  margin-top: 4px;
+}
+.benefit-row + .benefit-row {
+  margin-top: 14px;
+}
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.filters label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.filters input,
+.filters select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px;
+  background: #fff;
+  color: var(--navy);
+}
+.metric.attention {
+  border-color: #f3bbb3;
+  background: #fff8f5;
+}
+.metric.attention strong {
+  color: var(--danger);
+}
+.commercial-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -8px 0 24px;
+}
+.commercial-nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.commercial-nav a:hover,
+.commercial-nav a:focus {
+  border-color: #9bb4dd;
+  color: var(--navy);
+}
+.commercial-nav a.active {
+  border-color: var(--primary);
+  background: #e7efff;
+  color: #174ea6;
+}
+.commercial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.commercial-grid .card {
+  min-width: 0;
+}
+.progress {
+  height: 8px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1f7;
+}
+.progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+.commercial-summary {
+  margin: 28px 0;
+}
+.commercial-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.commercial-columns h4,
+.commercial-summary > article h4 {
+  margin-top: 0;
+}
+.commercial-summary table {
+  min-width: 520px;
+}
+.commercial-summary .card {
+  min-width: 0;
 }
 .metric {
   display: grid;
@@ -442,6 +571,22 @@ textarea:focus {
   padding-top: 16px;
   margin-top: 10px;
 }
+.detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.detail-list li {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.detail-list li span {
+  color: var(--muted);
+}
 .toast {
   position: fixed;
   right: 22px;
@@ -562,7 +707,7 @@ textarea:focus {
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: 5;
@@ -652,6 +797,27 @@ textarea:focus {
   padding: 3px 8px;
   font-weight: 700;
 }
+.portal-commercial-card {
+  margin-top: 12px;
+}
+.portal-commercial-card .portal-card-heading {
+  margin-bottom: 16px;
+}
+.portal-commercial-card .detail-grid {
+  margin-bottom: 16px;
+}
+.portal-commercial-card dt,
+.portal-commercial-card small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.portal-commercial-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+.portal-commercial-card .detail-list {
+  margin-bottom: 18px;
+}
 @media (max-width: 800px) {
   .shell {
     display: block;
@@ -696,6 +862,9 @@ textarea:focus {
   }
   .metrics {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .commercial-columns {
+    grid-template-columns: 1fr;
   }
   .card {
     padding: 18px;
@@ -1393,5 +1562,17 @@ textarea:focus {
   }
   .portal-participant-list .row-actions {
     width: 100%;
+  }
+}
+@media (max-width: 800px) {
+  .filters,
+  .commercial-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .filters,
+  .commercial-grid {
+    grid-template-columns: 1fr;
   }
 }

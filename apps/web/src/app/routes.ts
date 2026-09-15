@@ -2,6 +2,7 @@ import { errorMessage } from '../core/presentation.js';
 import { t } from '../i18n.js';
 import { classDetail, classSession } from '../screens/class-operations.js';
 import { classes } from '../screens/classes.js';
+import { commercialOverview } from '../screens/commercial-overview.js';
 import {
   customerLogin,
   customerPortal,
@@ -11,7 +12,11 @@ import { customerProfile } from '../screens/customer-profile.js';
 import { customers } from '../screens/customers.js';
 import { dashboard } from '../screens/dashboard.js';
 import { finance } from '../screens/finance.js';
+import { fixedCourtAgreements } from '../screens/fixed-court-agreements.js';
 import { login } from '../screens/login.js';
+import { memberships } from '../screens/memberships.js';
+import { packages } from '../screens/packages.js';
+import { plans } from '../screens/plans.js';
 import { publicBooking } from '../screens/public-booking.js';
 import { reports } from '../screens/reports.js';
 import { requests } from '../screens/requests.js';
@@ -38,6 +43,12 @@ export const registerRoutes = (context: AppContext) => {
     .add('/requests', () => requests())
     .add('/waitlists', () => waitlists())
     .add('/finance', () => finance())
+    .add('/commercial', () => commercialOverview())
+    .add('/commercial/plans', () => plans())
+    .add('/commercial/packages', () => packages())
+    .add('/commercial/memberships', () => memberships())
+    .add('/commercial/fixed-courts', () => fixedCourtAgreements())
+    .add('/plans', () => plans())
     .add('/classes', () => classes())
     .add('/classes/:id', (params) => classDetail(params.id ?? ''))
     .add('/class-sessions/:id', (params) => classSession(params.id ?? ''))
@@ -71,6 +82,22 @@ export const registerRoutes = (context: AppContext) => {
     )
     .add('/portal/:slug/waitlists', (params) =>
       customerPortalPage(params.slug ?? '', 'waitlists'),
+    )
+    .add('/portal/:slug/memberships/:id', (params) =>
+      customerPortalPage(
+        params.slug ?? '',
+        'membership-detail',
+        params.id ?? '',
+      ),
+    )
+    .add('/portal/:slug/memberships', (params) =>
+      customerPortalPage(params.slug ?? '', 'memberships'),
+    )
+    .add('/portal/:slug/packages/:id', (params) =>
+      customerPortalPage(params.slug ?? '', 'package-detail', params.id ?? ''),
+    )
+    .add('/portal/:slug/credits', (params) =>
+      customerPortalPage(params.slug ?? '', 'credits'),
     )
     .add('/portal/:slug/profile', (params) =>
       customerPortalPage(params.slug ?? '', 'profile'),
