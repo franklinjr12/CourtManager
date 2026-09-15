@@ -8,7 +8,17 @@ import {
   CustomerPortalRegistrationInputSchema,
   DateSchema,
   ExpenseInputSchema,
+  FixedCourtAgreementActionInputSchema,
+  FixedCourtAgreementBillingInputSchema,
+  FixedCourtAgreementInputSchema,
+  FixedCourtAgreementSlotChangeInputSchema,
+  FixedCourtAgreementStatusSchema,
   LoginInputSchema,
+  MembershipCancelInputSchema,
+  MembershipInputSchema,
+  MembershipRenewInputSchema,
+  MembershipStatusSchema,
+  MembershipUpdateInputSchema,
   ok,
   PaginationSchema,
   PaymentInputSchema,
@@ -18,6 +28,15 @@ import {
   SportInputSchema,
   ClassInputSchema,
   OrganizationUpdateInputSchema,
+  CustomerPackageInputSchema,
+  CustomerPackageStatusSchema,
+  CreditAdjustmentInputSchema,
+  MakeupCreditInputSchema,
+  PackageDefinitionInputSchema,
+  PackageDefinitionStatusSchema,
+  PlanInputSchema,
+  PlanStatusSchema,
+  PlanUpdateInputSchema,
   StaffCreateInputSchema,
   StaffUpdateInputSchema,
   StaffPasswordResetInputSchema,
@@ -268,6 +287,15 @@ export const createApp = (repo: Repository) => {
   app.use('/dashboard', protectedRoute);
   app.use('/reports/*', protectedRoute);
   app.use('/exports/*', protectedRoute);
+  app.use('/plans/*', protectedRoute);
+  app.use('/memberships/*', protectedRoute);
+  app.use('/fixed-court-agreements/*', protectedRoute);
+  app.use('/package-definitions/*', protectedRoute);
+  app.use('/customer-packages/*', protectedRoute);
+  app.use('/customer-packages', protectedRoute);
+  app.use('/makeup-credits/*', protectedRoute);
+  app.use('/credit-adjustments/*', protectedRoute);
+  app.use('/credit-adjustments', protectedRoute);
   app.get('/organization', async (c) =>
     c.json(ok(await services.organizations.get(ctx(c)))),
   );
@@ -280,6 +308,505 @@ export const createApp = (repo: Repository) => {
         ),
       ),
     ),
+  );
+  app.get('/plans', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const limit = pagination.limit ?? 50;
+    const status = query.status
+      ? queryValue(query.status, PlanStatusSchema)
+      : undefined;
+    return c.json(
+      collection(
+        await services.plans.list(
+          ctx(c),
+          status === undefined ? { limit } : { status, limit },
+        ),
+      ),
+    );
+  });
+  app.post('/plans', async (c) =>
+    c.json(
+      ok(await services.plans.create(ctx(c), await body(c, PlanInputSchema))),
+      201,
+    ),
+  );
+  app.get('/plans/:id', async (c) =>
+    c.json(ok(await services.plans.get(ctx(c), c.req.param('id')))),
+  );
+  app.patch('/plans/:id', async (c) =>
+    c.json(
+      ok(
+        await services.plans.update(
+          ctx(c),
+          c.req.param('id')!,
+          await body(c, PlanUpdateInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/plans/:id/archive', async (c) =>
+    c.json(ok(await services.plans.archive(ctx(c), c.req.param('id')))),
+  );
+  app.get('/memberships', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const windowDays = query.windowDays
+      ? queryValue(query.windowDays, z.coerce.number().int().min(0).max(365))
+      : 30;
+    const flag = (name: string) => query[name] === 'true';
+    const status = query.status
+      ? queryValue(query.status, MembershipStatusSchema)
+      : undefined;
+    const identifier = z.string().min(1).max(128);
+    const renewalFrom = query.renewalFrom
+      ? queryValue(query.renewalFrom, DateSchema)
+      : undefined;
+    const renewalTo = query.renewalTo
+      ? queryValue(query.renewalTo, DateSchema)
+      : undefined;
+    return c.json(
+      collection(
+        await services.memberships.list(ctx(c), {
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+          ...(status ? { status } : {}),
+          ...(query.planId
+            ? { planId: queryValue(query.planId, identifier) }
+            : {}),
+          ...(query.customerId
+            ? { customerId: queryValue(query.customerId, identifier) }
+            : {}),
+          ...(renewalFrom ? { renewalFrom } : {}),
+          ...(renewalTo ? { renewalTo } : {}),
+          ...(flag('renewalDue') ? { renewalDue: true } : {}),
+          ...(flag('overdue') ? { overdue: true } : {}),
+          ...(flag('expiringSoon') ? { expiringSoon: true } : {}),
+          ...(query.windowDays ? { windowDays } : {}),
+        }),
+      ),
+    );
+  });
+  app.get('/memberships/renewals-due', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const windowDays = query.windowDays
+      ? queryValue(query.windowDays, z.coerce.number().int().min(0).max(365))
+      : 30;
+    return c.json(
+      collection(
+        await services.memberships.list(ctx(c), {
+          renewalDue: true,
+          windowDays,
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.get('/memberships/overdue', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    return c.json(
+      collection(
+        await services.memberships.list(ctx(c), {
+          overdue: true,
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.get('/memberships/expiring-soon', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const windowDays = query.windowDays
+      ? queryValue(query.windowDays, z.coerce.number().int().min(0).max(365))
+      : 30;
+    return c.json(
+      collection(
+        await services.memberships.list(ctx(c), {
+          expiringSoon: true,
+          windowDays,
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.post('/memberships', async (c) =>
+    c.json(
+      ok(
+        await services.memberships.create(
+          ctx(c),
+          await body(c, MembershipInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.get('/memberships/:id', async (c) =>
+    c.json(ok(await services.memberships.get(ctx(c), c.req.param('id')))),
+  );
+  app.get('/memberships/:id/periods', async (c) =>
+    c.json(
+      collection(await services.memberships.periods(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.patch('/memberships/:id', async (c) =>
+    c.json(
+      ok(
+        await services.memberships.update(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, MembershipUpdateInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/memberships/:id/activate', async (c) =>
+    c.json(ok(await services.memberships.activate(ctx(c), c.req.param('id')))),
+  );
+  app.post('/memberships/:id/pause', async (c) =>
+    c.json(ok(await services.memberships.pause(ctx(c), c.req.param('id')))),
+  );
+  app.post('/memberships/:id/resume', async (c) =>
+    c.json(ok(await services.memberships.resume(ctx(c), c.req.param('id')))),
+  );
+  app.post('/memberships/:id/cancel', async (c) =>
+    c.json(
+      ok(
+        await services.memberships.cancel(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, MembershipCancelInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/memberships/:id/renew', async (c) =>
+    c.json(
+      ok(
+        await services.memberships.renew(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, MembershipRenewInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.get('/fixed-court-agreements', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const identifier = z.string().min(1).max(128);
+    const status = query.status
+      ? queryValue(query.status, FixedCourtAgreementStatusSchema)
+      : undefined;
+    return c.json(
+      collection(
+        await services.fixedCourtAgreements.list(ctx(c), {
+          ...(status ? { status } : {}),
+          ...(query.customerId
+            ? { customerId: queryValue(query.customerId, identifier) }
+            : {}),
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.post('/fixed-court-agreements', async (c) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.create(
+          ctx(c),
+          await body(c, FixedCourtAgreementInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.get('/fixed-court-agreements/:id', async (c) =>
+    c.json(
+      ok(await services.fixedCourtAgreements.get(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.get('/fixed-court-agreements/:id/occurrences', async (c) =>
+    c.json(
+      collection(
+        await services.fixedCourtAgreements.occurrences(
+          ctx(c),
+          c.req.param('id')!,
+        ),
+      ),
+    ),
+  );
+  app.post('/fixed-court-agreements/:id/pause', async (c) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.pause(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, FixedCourtAgreementActionInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/fixed-court-agreements/:id/resume', async (c) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.resume(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, FixedCourtAgreementActionInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.post('/fixed-court-agreements/:id/cancel', async (c) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.cancel(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, FixedCourtAgreementActionInputSchema),
+        ),
+      ),
+    ),
+  );
+  const changeFixedCourtSlot = async (c: AppContext) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.changeSlot(
+          ctx(c),
+          c.req.param('id')!,
+          await body(c, FixedCourtAgreementSlotChangeInputSchema),
+        ),
+      ),
+    );
+  app.post('/fixed-court-agreements/:id/change-slot', changeFixedCourtSlot);
+  app.patch('/fixed-court-agreements/:id/slot', changeFixedCourtSlot);
+  app.post('/fixed-court-agreements/:id/bill', async (c) =>
+    c.json(
+      ok(
+        await services.fixedCourtAgreements.bill(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, FixedCourtAgreementBillingInputSchema),
+        ),
+      ),
+    ),
+  );
+  app.get('/package-definitions', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const status = query.status
+      ? queryValue(query.status, PackageDefinitionStatusSchema)
+      : undefined;
+    return c.json(
+      collection(
+        await services.packages.listDefinitions(ctx(c), {
+          ...(status ? { status } : {}),
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.post('/package-definitions', async (c) =>
+    c.json(
+      ok(
+        await services.packages.createDefinition(
+          ctx(c),
+          await body(c, PackageDefinitionInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.get('/package-definitions/:id', async (c) =>
+    c.json(
+      ok(await services.packages.getDefinition(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.patch('/package-definitions/:id', async (c) =>
+    c.json(
+      ok(
+        await services.packages.updateDefinition(
+          ctx(c),
+          c.req.param('id'),
+          await body(c, PackageDefinitionInputSchema.partial()),
+        ),
+      ),
+    ),
+  );
+  app.post('/package-definitions/:id/archive', async (c) =>
+    c.json(
+      ok(await services.packages.archiveDefinition(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.get('/customers/:customerId/packages', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    return c.json(
+      collection(
+        await services.packages.listCustomerPackages(
+          ctx(c),
+          c.req.param('customerId'),
+          {
+            ...(pagination.limit === undefined
+              ? {}
+              : { limit: pagination.limit }),
+            ...(query.activeOnly === 'true' ? { activeOnly: true } : {}),
+          },
+        ),
+      ),
+    );
+  });
+  app.get('/customer-packages', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const windowDays = query.windowDays
+      ? queryValue(query.windowDays, z.coerce.number().int().min(0).max(365))
+      : 30;
+    const identifier = z.string().min(1).max(128);
+    const date = (value: string | undefined) =>
+      value ? queryValue(value, DateSchema) : undefined;
+    const number = (value: string | undefined) =>
+      value === undefined
+        ? undefined
+        : queryValue(value, z.coerce.number().nonnegative());
+    const expirationFrom = date(query.expirationFrom);
+    const expirationTo = date(query.expirationTo);
+    const remainingMin = number(query.remainingMin);
+    const remainingMax = number(query.remainingMax);
+    const status = query.status
+      ? queryValue(query.status, CustomerPackageStatusSchema)
+      : undefined;
+    return c.json(
+      collection(
+        await services.packages.list(ctx(c), {
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+          ...(status ? { status } : {}),
+          ...(query.packageDefinitionId
+            ? {
+                packageDefinitionId: queryValue(
+                  query.packageDefinitionId,
+                  identifier,
+                ),
+              }
+            : {}),
+          ...(query.customerId
+            ? { customerId: queryValue(query.customerId, identifier) }
+            : {}),
+          ...(expirationFrom ? { expirationFrom } : {}),
+          ...(expirationTo ? { expirationTo } : {}),
+          ...(remainingMin !== undefined ? { remainingMin } : {}),
+          ...(remainingMax !== undefined ? { remainingMax } : {}),
+          ...(query.expiringSoon === 'true' ? { expiringSoon: true } : {}),
+          ...(query.windowDays ? { windowDays } : {}),
+        }),
+      ),
+    );
+  });
+  app.get('/customer-packages/expiring-soon', async (c) => {
+    const query = c.req.query();
+    const pagination = queryValue(query, PaginationSchema);
+    const windowDays = query.windowDays
+      ? queryValue(query.windowDays, z.coerce.number().int().min(0).max(365))
+      : 30;
+    return c.json(
+      collection(
+        await services.packages.list(ctx(c), {
+          expiringSoon: true,
+          windowDays,
+          ...(pagination.limit === undefined
+            ? {}
+            : { limit: pagination.limit }),
+        }),
+      ),
+    );
+  });
+  app.post('/customers/:customerId/packages', async (c) =>
+    c.json(
+      ok(
+        await services.packages.issue(
+          ctx(c),
+          c.req.param('customerId'),
+          await body(c, CustomerPackageInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.get('/customer-packages/:id', async (c) =>
+    c.json(
+      ok(await services.packages.getCustomerPackage(ctx(c), c.req.param('id'))),
+    ),
+  );
+  app.get('/customer-packages/:id/transactions', async (c) =>
+    c.json(
+      collection(
+        await services.packages.transactions(ctx(c), c.req.param('id')),
+      ),
+    ),
+  );
+  app.post('/customer-packages/:id/cancel', async (c) =>
+    c.json(ok(await services.packages.cancel(ctx(c), c.req.param('id')))),
+  );
+  app.post('/credit-adjustments', async (c) =>
+    c.json(
+      ok(
+        await (async () => {
+          const input = await body(c, CreditAdjustmentInputSchema);
+          const {
+            membershipPeriodId,
+            benefitId,
+            benefitPeriodKey,
+            occurredAt,
+            ...required
+          } = input;
+          return services.entitlements.adjust(ctx(c), {
+            ...required,
+            ...(membershipPeriodId ? { membershipPeriodId } : {}),
+            ...(benefitId ? { benefitId } : {}),
+            ...(benefitPeriodKey ? { benefitPeriodKey } : {}),
+            ...(occurredAt ? { occurredAt } : {}),
+          });
+        })(),
+      ),
+      201,
+    ),
+  );
+  app.get('/customers/:customerId/makeup-credits', async (c) =>
+    c.json(
+      collection(
+        await services.makeupCredits.list(ctx(c), c.req.param('customerId')),
+      ),
+    ),
+  );
+  app.post('/customers/:customerId/makeup-credits', async (c) =>
+    c.json(
+      ok(
+        await services.makeupCredits.issue(
+          ctx(c),
+          c.req.param('customerId'),
+          await body(c, MakeupCreditInputSchema),
+        ),
+      ),
+      201,
+    ),
+  );
+  app.post('/makeup-credits/:id/expire', async (c) =>
+    c.json(ok(await services.makeupCredits.expire(ctx(c), c.req.param('id')))),
   );
   app.get('/courts', async (c) =>
     c.json(
@@ -377,6 +904,38 @@ export const createApp = (repo: Repository) => {
   );
   app.get('/customers/:id/profile', async (c) =>
     c.json(ok(await services.customerProfiles.get(ctx(c), c.req.param('id')))),
+  );
+  app.get('/customers/:id/activities', async (c) => {
+    const query = c.req.query();
+    const to = queryValue(
+      query.to ?? new Date().toISOString(),
+      z.string().datetime({ offset: true }),
+    );
+    const from = queryValue(
+      query.from ?? new Date(Date.now() - 365 * 86400000).toISOString(),
+      z.string().datetime({ offset: true }),
+    );
+    const activities = await services.customerActivities.listForStaff(
+      ctx(c),
+      c.req.param('id'),
+      {
+        from,
+        to,
+        limit: queryValue(
+          query.limit ?? '50',
+          z.coerce.number().int().min(1).max(100),
+        ),
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+      },
+    );
+    return c.json(collection(activities.data, activities.nextCursor));
+  });
+  app.get('/customers/:id/commercial-summary', async (c) =>
+    c.json(
+      ok(
+        await services.customerCommercialBalance.get(ctx(c), c.req.param('id')),
+      ),
+    ),
   );
   app.patch('/customers/:id', async (c) =>
     c.json(
@@ -601,7 +1160,7 @@ export const createApp = (repo: Repository) => {
     );
   });
   app.get('/payments', async (c) =>
-    c.json(collection(await services.payments.list(ctx(c)))),
+    c.json(collection(await services.payments.list(ctx(c), c.req.query()))),
   );
   app.post('/payments', async (c) =>
     c.json(
@@ -803,17 +1362,42 @@ export const createApp = (repo: Repository) => {
       ok(await services.classes.completeSession(ctx(c), c.req.param('id'))),
     ),
   );
-  app.post('/class-sessions/:id/cancel', async (c) =>
-    c.json(
+  app.post('/class-sessions/:id/makeup-credits', async (c) => {
+    const input = await body(c, MakeupCreditInputSchema);
+    if (!input.customerId)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'A customer is required for a makeup credit.',
+      );
+    return c.json(
+      ok(
+        await services.makeupCredits.issue(ctx(c), input.customerId, {
+          ...input,
+          originSessionId: c.req.param('id'),
+        }),
+      ),
+      201,
+    );
+  });
+  app.post('/class-sessions/:id/cancel', async (c) => {
+    const input = await body(
+      c,
+      z.object({
+        reason: z.string().optional(),
+        issueMakeupCredits: z.boolean().optional(),
+      }),
+    );
+    return c.json(
       ok(
         await services.classes.cancelSession(
           ctx(c),
           c.req.param('id'),
-          (await body(c, z.object({ reason: z.string().optional() }))).reason,
+          input.reason,
+          input.issueMakeupCredits === true,
         ),
       ),
-    ),
-  );
+    );
+  });
   app.get('/today', async (c) =>
     c.json(
       ok(

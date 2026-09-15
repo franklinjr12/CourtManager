@@ -39,6 +39,21 @@ test('owner operational screens expose workflows instead of placeholders', async
   await expect(
     page.getByRole('button', { name: 'Registrar pagamento' }),
   ).toBeVisible();
+  await page.goto('/commercial');
+  await expect(
+    page.getByRole('heading', { name: /Visao geral|Visão geral/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Mensalidades', exact: true }),
+  ).toBeVisible();
+  await page.goto('/reports');
+  await expect(page.getByRole('heading', { name: 'Relatórios' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Relatório comercial' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Aplicar filtros' }),
+  ).toBeVisible();
   await page.goto('/classes');
   await expect(page.getByRole('heading', { name: 'Aulas' })).toBeVisible();
 });

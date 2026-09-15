@@ -1,6 +1,6 @@
 # Court Manager
 
-Court Manager is a sports-center operating platform for courts, availability, staff bookings, customer accounts, customer self-service, public reservation requests, classes, external payment records, expenses, and lightweight reporting. Classes are supported as a secondary feature and are disabled by default for a new organization.
+Court Manager is a sports-center operating platform for courts, availability, staff bookings, customer accounts, customer self-service, public reservation requests, classes, memberships, packages, service credits, fixed-court agreements, external payment records, expenses, and lightweight reporting. Classes are supported as a secondary feature and are disabled by default for a new organization.
 
 ## Architecture
 
@@ -40,7 +40,9 @@ corepack pnpm seed:dev
 
 `reset:dev` only accepts localhost/127.0.0.1 DynamoDB endpoints, recreates local DynamoDB data, and removes all development seed records. Keep `NODE_ENV` non-production.
 
-Court Manager now includes a timezone-aware Today front desk, staff and coach workflows, customer portal authentication, policy-aware customer booking, materialized class sessions with attendance, operational charges and customer balances. Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent. For Phase 2 production upgrades, run `corepack pnpm migrate:phase2` after deployment. Existing class data may also require the write-paused `corepack pnpm migrate:class-discovery` backfill.
+Court Manager now includes a timezone-aware Today front desk, staff and coach workflows, customer portal authentication, policy-aware customer booking, materialized class sessions with attendance, operational charges and customer balances, and Phase 3 commercial relationships. Commercial operations include reusable plans and package definitions, snapshotted memberships and customer packages, auditable entitlement ledgers, fixed-court agreements, manual renewals, and customer-safe commercial portal views. See [docs/commercial-model.md](docs/commercial-model.md) for the domain rules.
+
+Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent. For Phase 2 production upgrades, run `corepack pnpm migrate:phase2` after deployment. Existing class data may also require the write-paused `corepack pnpm migrate:class-discovery` backfill. For Phase 3, deploy the commercial code and run the additive, idempotent `corepack pnpm migrate:phase3`; use `corepack pnpm reconcile:commercial` to materialize expired memberships, packages, and remaining credit expiry in bulk. Neither command invents commercial records for existing Phase 2 customers or activities.
 
 ## Quality gates
 
@@ -61,4 +63,4 @@ The API is bundled with esbuild and deployed manually through AWS SAM. The web a
 
 ## Known limitations
 
-Payments are records of external transactions; there is no payment gateway, PIX integration, card storage, or automatic charging. There is no automated email, WhatsApp integration, push notification, or automatic waitlist notification/fulfillment; staff manually deliver activation/reset links and fulfill waitlists. Packages and credit ledgers are not implemented. Memberships and renewals are not implemented. Events, open games, rankings, referrals, loyalty, lifecycle scoring, and other community features are not implemented. Search and low-volume reports use scoped scans. Classes remain intentionally lightweight. No background job system, automated deployment, or multi-branch model is included.
+Payments are records of external transactions; there is no payment gateway, PIX integration, card storage, bank reconciliation, or automatic charging. Membership renewals, package issuance, credit restoration, and fixed-court billing are staff-managed workflows; there is no recurring billing automation. There is no automated email, WhatsApp integration, push notification, or automatic waitlist notification/fulfillment; staff manually deliver activation/reset links and fulfill waitlists. Phase 3 does not include retention scoring, campaigns, events, open games, rankings, referrals, loyalty, access-control hardware, or external commercial integrations. Search and low-volume reports use scoped scans. Classes remain intentionally lightweight. No background job system, automated deployment, or multi-branch model is included.

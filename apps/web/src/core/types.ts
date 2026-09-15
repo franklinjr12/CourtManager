@@ -68,6 +68,7 @@ export type Reservation = {
   endAt: string;
   status: string;
   source: string;
+  serviceAmount?: number;
   expectedAmount: number;
   notes?: string;
   paidAmount?: number;
@@ -76,6 +77,15 @@ export type Reservation = {
   chargeId?: string;
   customerName?: string;
   courtName?: string;
+  entitlementAllocations?: Array<{
+    allocationId: string;
+    sourceType: string;
+    sourceId: string;
+    quantity: number;
+    unit: string;
+    coveredAmount: number;
+    status: string;
+  }>;
 };
 
 export type RequestItem = {

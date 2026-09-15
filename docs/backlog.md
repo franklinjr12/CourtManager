@@ -27,6 +27,31 @@ The application should deliberately avoid becoming a large sports-management pla
 
 The first production deployments are expected to be manually operated and validated with real businesses before adding automation, integrations, or sophisticated infrastructure.
 
+## Current roadmap status: Phase 3 complete
+
+Phase 3 — Memberships, Packages & Commercial Relationships — is implemented.
+The authoritative commercial reference is
+[commercial-model.md](commercial-model.md). The delivered scope includes:
+
+- reusable plans and package definitions with structured benefits;
+- customer-specific memberships, membership periods, renewals, and snapshots;
+- customer packages with finite or unlimited credit sources;
+- append-only credit transactions and idempotent entitlement allocations;
+- reservation and class-attendance coverage without treating credit as cash;
+- fixed-court agreements backed by the existing reservation recurrence and
+  schedule-lock model;
+- manually recorded external payments and customer outstanding balances;
+- staff workflows and read-only customer portal commercial views;
+- additive, idempotent `migrate:phase3` and retry-safe commercial
+  reconciliation.
+
+Phase 3 does not include automatic billing, payment gateways, WhatsApp/email
+automation, retention scoring or campaigns, community features, access-control
+hardware, or generic external integrations. Existing Phase 2 data migrates
+without artificial memberships, packages, balances, allocations, or usage.
+Use [production-smoke-test.md](production-smoke-test.md) for the operational
+completion checklist.
+
 ---
 
 # 1. Product Principles
@@ -4243,6 +4268,32 @@ Do not leave known broken tests behind to continue implementing later tasks.
 17. Court reservation UX has higher priority than classes, reporting, or financial sophistication.
 
 18. Early deployments remain explicit, manual, and inspectable.
+
+19. Plans and package definitions are reusable offerings; memberships and
+    customer packages snapshot the commercial terms for one customer.
+
+20. An entitlement is not a payment. Credit transactions are append-only;
+    allocations are auditable activity coverage; customer balance is charges
+    minus linked payments.
+
+21. Credit consumption is idempotent and ledger-backed. A materialized balance
+    cannot be the only record of why credit changed.
+
+22. Membership periods use venue-local inclusive dates, and renewal creates a
+    new period and charge without rewriting historical usage.
+
+23. Package expiration preserves the package and ledger history while writing
+    `EXPIRED` transactions for remaining finite credit.
+
+24. Fixed-court agreements are commercial contracts whose occurrences use the
+    existing recurring reservation and authoritative schedule-lock model.
+
+25. Eligible entitlement selection is deterministic: matching fixed-court
+    agreement first, then earliest expiry and source priority (makeup,
+    membership, package, other), with stable IDs as tie-breakers.
+
+26. Phase 3 migration is additive and idempotent; it creates missing indexes
+    but never invents commercial relationships for Phase 2 data.
 
 ---
 

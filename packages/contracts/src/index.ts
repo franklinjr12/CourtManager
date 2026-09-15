@@ -8,6 +8,9 @@ export const LocalTimeSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected HH:mm');
 export const MoneySchema = z.number().finite().nonnegative().max(10_000_000);
+export const CurrencyCodeSchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, 'Expected an uppercase ISO 4217 currency code.');
 export const PaginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().optional(),
@@ -86,6 +89,943 @@ export const WeekdaySchema = z.enum([
   'SATURDAY',
   'SUNDAY',
 ]);
+
+// Phase 3 commercial contracts
+export const PlanStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']);
+export const BillingIntervalSchema = z.enum(['WEEKLY', 'MONTHLY', 'CUSTOM']);
+export const MembershipStatusSchema = z.enum([
+  'DRAFT',
+  'ACTIVE',
+  'PAUSED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+export const CustomerPackageStatusSchema = z.enum([
+  'ACTIVE',
+  'CONSUMED',
+  'EXPIRED',
+  'CANCELLED',
+]);
+export const PackageDefinitionStatusSchema = PlanStatusSchema;
+export const BenefitTypeSchema = z.enum([
+  'COURT_TIME',
+  'CLASS_ATTENDANCE',
+  'PRIVATE_LESSON',
+  'OPEN_GAME',
+  'FIXED_COURT_SLOT',
+]);
+export const BenefitPeriodSchema = z.enum([
+  'WEEK',
+  'MONTH',
+  'MEMBERSHIP_PERIOD',
+  'PACKAGE_LIFETIME',
+]);
+export const BenefitQuantityTypeSchema = z.enum(['FINITE', 'UNLIMITED']);
+export const BenefitUnitSchema = z.enum([
+  'COURT_MINUTES',
+  'SESSION',
+  'GAME',
+  'OCCURRENCE',
+]);
+
+const FiniteBenefitQuantitySchema = z.object({
+  quantityType: z.literal('FINITE'),
+  // Quantities are normalized domain units: minutes for court time and
+  // integer sessions/games/occurrences for other benefits.
+  quantity: z.number().int().positive().max(10_000_000),
+});
+const UnlimitedBenefitQuantitySchema = z.object({
+  quantityType: z.literal('UNLIMITED'),
+  quantity: z.never().optional(),
+});
+const BenefitQuantitySchema = z.union([
+  FiniteBenefitQuantitySchema,
+  UnlimitedBenefitQuantitySchema,
+]);
+const PlanBenefitBaseSchema = z.object({
+  benefitId: IdentifierSchema.optional(),
+  period: BenefitPeriodSchema,
+  label: z.string().min(1).max(160).optional(),
+  // Optional class selectors keep common commercial restrictions explicit
+  // without introducing a general-purpose rules language.
+  classType: z.enum(['GROUP', 'PRIVATE']).optional(),
+  classId: IdentifierSchema.optional(),
+  sportId: IdentifierSchema.optional(),
+});
+
+const CourtTimeBenefitSchema = PlanBenefitBaseSchema.extend({
+  type: z.literal('COURT_TIME'),
+  unit: z.literal('COURT_MINUTES'),
+}).and(BenefitQuantitySchema);
+const ClassAttendanceBenefitSchema = PlanBenefitBaseSchema.extend({
+  type: z.literal('CLASS_ATTENDANCE'),
+  unit: z.literal('SESSION'),
+}).and(BenefitQuantitySchema);
+const PrivateLessonBenefitSchema = PlanBenefitBaseSchema.extend({
+  type: z.literal('PRIVATE_LESSON'),
+  unit: z.literal('SESSION'),
+}).and(BenefitQuantitySchema);
+const OpenGameBenefitSchema = PlanBenefitBaseSchema.extend({
+  type: z.literal('OPEN_GAME'),
+  unit: z.literal('GAME'),
+}).and(BenefitQuantitySchema);
+const FixedCourtSlotBenefitSchema = PlanBenefitBaseSchema.extend({
+  type: z.literal('FIXED_COURT_SLOT'),
+  unit: z.literal('OCCURRENCE'),
+  courtId: IdentifierSchema,
+  weekday: WeekdaySchema,
+  startTime: LocalTimeSchema,
+  endTime: LocalTimeSchema,
+}).superRefine((benefit, ctx) => {
+  if (benefit.endTime <= benefit.startTime)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endTime'],
+      message: 'Fixed court slot end time must be after start time.',
+    });
+});
+
+export const PlanBenefitSchema = z.union([
+  CourtTimeBenefitSchema,
+  ClassAttendanceBenefitSchema,
+  PrivateLessonBenefitSchema,
+  OpenGameBenefitSchema,
+  FixedCourtSlotBenefitSchema,
+]);
+// Package definitions use the same structural benefit vocabulary. The
+// package workflow uses the package lifetime as the allowance boundary.
+export const PackageBenefitSchema = PlanBenefitSchema.superRefine(
+  (benefit, ctx) => {
+    if (benefit.period !== 'PACKAGE_LIFETIME')
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['period'],
+        message: 'Package benefits must use the package lifetime period.',
+      });
+  },
+);
+
+export const PlanSchema = z
+  .object({
+    planId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    name: z.string().min(1).max(160),
+    description: z.string().max(2000).optional(),
+    status: PlanStatusSchema,
+    basePrice: MoneySchema,
+    currency: CurrencyCodeSchema,
+    billingInterval: BillingIntervalSchema,
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    benefits: z.array(PlanBenefitSchema).min(1).max(50),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    archivedAt: z.string().optional(),
+  })
+  .superRefine((plan, ctx) => {
+    if (
+      plan.billingInterval === 'CUSTOM' &&
+      plan.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      plan.billingInterval !== 'CUSTOM' &&
+      plan.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a custom duration.',
+      });
+  });
+export const PlanInputSchema = z
+  .object({
+    name: z.string().min(1).max(160),
+    description: z.string().max(2000).optional(),
+    basePrice: MoneySchema,
+    currency: CurrencyCodeSchema.optional(),
+    billingInterval: BillingIntervalSchema.default('MONTHLY'),
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    benefits: z.array(PlanBenefitSchema).min(1).max(50),
+    status: PlanStatusSchema.default('ACTIVE'),
+  })
+  .superRefine((plan, ctx) => {
+    if (
+      plan.billingInterval === 'CUSTOM' &&
+      plan.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      plan.billingInterval !== 'CUSTOM' &&
+      plan.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a custom duration.',
+      });
+  });
+export const PlanCreateInputSchema = PlanInputSchema;
+export const PlanUpdateInputSchema = PlanInputSchema.innerType()
+  .partial()
+  .superRefine((plan, ctx) => {
+    if (
+      plan.billingInterval === 'CUSTOM' &&
+      plan.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      plan.billingInterval !== undefined &&
+      plan.billingInterval !== 'CUSTOM' &&
+      plan.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a custom duration.',
+      });
+  });
+
+export const MembershipPeriodStatusSchema = z.enum([
+  'UPCOMING',
+  'ACTIVE',
+  'COMPLETED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+export const MembershipPeriodSchema = z
+  .object({
+    membershipPeriodId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    membershipId: IdentifierSchema,
+    periodNumber: z.number().int().positive(),
+    startDate: DateSchema,
+    endDate: DateSchema,
+    status: MembershipPeriodStatusSchema,
+    price: MoneySchema,
+    currency: CurrencyCodeSchema,
+    chargeId: IdentifierSchema.optional(),
+    renewalIdempotencyKey: IdentifierSchema.optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    completedAt: z.string().optional(),
+  })
+  .superRefine((period, ctx) => {
+    if (period.endDate < period.startDate)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message:
+          'Membership period end date must not be before its start date.',
+      });
+  });
+
+export const MembershipSchema = z
+  .object({
+    membershipId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    customerId: IdentifierSchema,
+    planId: IdentifierSchema,
+    planNameSnapshot: z.string().min(1).max(160),
+    status: MembershipStatusSchema,
+    startDate: DateSchema,
+    currentPeriodStart: DateSchema,
+    currentPeriodEnd: DateSchema,
+    nextRenewalDate: DateSchema.optional(),
+    currentPeriodId: IdentifierSchema.optional(),
+    price: MoneySchema,
+    currency: CurrencyCodeSchema,
+    billingInterval: BillingIntervalSchema,
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    benefitSnapshot: z.array(PlanBenefitSchema).min(1).max(50),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    pausedAt: z.string().optional(),
+    cancelledAt: z.string().optional(),
+    cancelledBy: IdentifierSchema.optional(),
+    cancellationReason: z.string().max(1000).optional(),
+    cancellationEffectiveDate: DateSchema.optional(),
+    expiredAt: z.string().optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((membership, ctx) => {
+    if (membership.currentPeriodEnd < membership.currentPeriodStart)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['currentPeriodEnd'],
+        message: 'Current membership period end must not be before its start.',
+      });
+    if (
+      membership.billingInterval === 'CUSTOM' &&
+      membership.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      membership.billingInterval !== 'CUSTOM' &&
+      membership.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a custom duration.',
+      });
+  });
+export const MembershipInputSchema = z
+  .object({
+    customerId: IdentifierSchema,
+    planId: IdentifierSchema,
+    startDate: DateSchema,
+    price: MoneySchema.optional(),
+    currency: CurrencyCodeSchema.optional(),
+    billingInterval: BillingIntervalSchema.optional(),
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((membership, ctx) => {
+    if (
+      membership.billingInterval === 'CUSTOM' &&
+      membership.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+  });
+export const MembershipCreateInputSchema = MembershipInputSchema;
+export const MembershipUpdateInputSchema = z
+  .object({
+    price: MoneySchema.optional(),
+    billingInterval: BillingIntervalSchema.optional(),
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((membership, ctx) => {
+    if (
+      membership.billingInterval === 'CUSTOM' &&
+      membership.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      membership.billingInterval !== undefined &&
+      membership.billingInterval !== 'CUSTOM' &&
+      membership.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a custom duration.',
+      });
+  });
+export const MembershipCancelInputSchema = z.object({
+  effectiveDate: DateSchema.optional(),
+  reason: z.string().max(1000).optional(),
+});
+export const MembershipRenewInputSchema = z.object({
+  price: MoneySchema.optional(),
+  /** Stable key supplied by the staff client so a retried renewal converges. */
+  idempotencyKey: IdentifierSchema.optional(),
+});
+
+export const PackageDefinitionSchema = z.object({
+  packageDefinitionId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  name: z.string().min(1).max(160),
+  description: z.string().max(2000).optional(),
+  status: PackageDefinitionStatusSchema,
+  price: MoneySchema,
+  currency: CurrencyCodeSchema,
+  validityDays: z.number().int().positive().max(3650).nullable(),
+  benefits: z.array(PackageBenefitSchema).min(1).max(50),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  archivedAt: z.string().optional(),
+});
+export const PackageDefinitionInputSchema = z.object({
+  name: z.string().min(1).max(160),
+  description: z.string().max(2000).optional(),
+  price: MoneySchema,
+  currency: CurrencyCodeSchema.optional(),
+  validityDays: z.number().int().positive().max(3650).nullable(),
+  benefits: z.array(PackageBenefitSchema).min(1).max(50),
+  status: PackageDefinitionStatusSchema.default('ACTIVE'),
+});
+export const PackageCreateInputSchema = PackageDefinitionInputSchema;
+
+export const CustomerPackageSchema = z
+  .object({
+    customerPackageId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    customerId: IdentifierSchema,
+    packageDefinitionId: IdentifierSchema,
+    packageNameSnapshot: z.string().min(1).max(160),
+    status: CustomerPackageStatusSchema,
+    issuedAt: z.string().datetime({ offset: true }),
+    startsAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }).optional(),
+    price: MoneySchema,
+    currency: CurrencyCodeSchema,
+    benefitSnapshot: z.array(PackageBenefitSchema).min(1).max(50),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    consumedAt: z.string().optional(),
+    cancelledAt: z.string().optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((customerPackage, ctx) => {
+    if (
+      customerPackage.expiresAt &&
+      Date.parse(customerPackage.expiresAt) <
+        Date.parse(customerPackage.startsAt)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Package expiration must not be before its start.',
+      });
+  });
+export const CustomerPackageInputSchema = z.object({
+  // The API derives the customer from /customers/:customerId.
+  customerId: IdentifierSchema.optional(),
+  packageDefinitionId: IdentifierSchema,
+  idempotencyKey: IdentifierSchema.optional(),
+  issuedAt: z.string().datetime({ offset: true }).optional(),
+  startsAt: z.string().datetime({ offset: true }).optional(),
+  price: MoneySchema.optional(),
+  currency: CurrencyCodeSchema.optional(),
+  notes: z.string().max(2000).optional(),
+});
+export const CustomerPackageCreateInputSchema = CustomerPackageInputSchema;
+
+export const CreditTransactionTypeSchema = z.enum([
+  'ISSUED',
+  'CONSUMED',
+  'RESTORED',
+  'EXPIRED',
+  'ADJUSTED',
+]);
+export const CreditSourceTypeSchema = z.enum([
+  'MEMBERSHIP',
+  'PACKAGE',
+  'MANUAL',
+  'FIXED_AGREEMENT',
+  'MAKEUP',
+]);
+export const CreditActivityTypeSchema = z.enum([
+  'RESERVATION',
+  'CLASS_ATTENDANCE',
+  'PRIVATE_LESSON',
+  'OPEN_GAME',
+  'FIXED_COURT_OCCURRENCE',
+]);
+const CreditTransactionBaseSchema = z.object({
+  creditTransactionId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  sourceType: CreditSourceTypeSchema,
+  sourceId: IdentifierSchema,
+  membershipPeriodId: IdentifierSchema.optional(),
+  benefitId: IdentifierSchema.optional(),
+  benefitPeriodKey: z.string().min(1).max(80).optional(),
+  transactionType: CreditTransactionTypeSchema,
+  unit: BenefitUnitSchema,
+  // This is a signed ledger delta. It is always an integer; no floating
+  // point credit arithmetic is represented by this contract.
+  quantity: z
+    .number()
+    .int()
+    .min(-10_000_000)
+    .max(10_000_000)
+    .refine(
+      (quantity) => quantity !== 0,
+      'Credit transaction quantity cannot be zero.',
+    ),
+  activityType: CreditActivityTypeSchema.optional(),
+  activityId: IdentifierSchema.optional(),
+  relatedTransactionId: IdentifierSchema.optional(),
+  reason: z.string().max(1000).optional(),
+  occurredAt: z.string().datetime({ offset: true }),
+  createdBy: IdentifierSchema,
+  createdAt: z.string(),
+});
+const validateCreditTransaction = (
+  transaction: z.infer<typeof CreditTransactionBaseSchema>,
+  ctx: z.RefinementCtx,
+) => {
+  if (
+    transaction.transactionType === 'CONSUMED' &&
+    (!transaction.activityType || !transaction.activityId)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['activityId'],
+      message: 'Consumed credits require an activity reference.',
+    });
+  }
+  if (
+    transaction.transactionType === 'ADJUSTED' &&
+    !transaction.reason?.trim()
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reason'],
+      message: 'Adjusted credits require a reason.',
+    });
+  }
+};
+export const CreditTransactionSchema = CreditTransactionBaseSchema.superRefine(
+  validateCreditTransaction,
+);
+export const CreditTransactionInputSchema = CreditTransactionBaseSchema.omit({
+  creditTransactionId: true,
+  organizationId: true,
+  createdAt: true,
+}).superRefine((transaction, ctx) => {
+  validateCreditTransaction(
+    {
+      ...transaction,
+      creditTransactionId: 'input',
+      organizationId: 'input',
+      createdAt: 'input',
+    },
+    ctx,
+  );
+});
+
+/** Staff-authenticated request for an auditable balance adjustment. */
+export const CreditAdjustmentInputSchema = z.object({
+  customerId: IdentifierSchema,
+  sourceType: CreditSourceTypeSchema,
+  sourceId: IdentifierSchema,
+  membershipPeriodId: IdentifierSchema.optional(),
+  benefitId: IdentifierSchema.optional(),
+  benefitPeriodKey: z.string().min(1).max(80).optional(),
+  unit: BenefitUnitSchema,
+  quantity: z
+    .number()
+    .int()
+    .min(-10_000_000)
+    .max(10_000_000)
+    .refine(
+      (quantity) => quantity !== 0,
+      'Adjustment quantity cannot be zero.',
+    ),
+  reason: z.string().trim().min(1).max(1000),
+  occurredAt: z.string().datetime({ offset: true }).optional(),
+});
+
+export const EntitlementAllocationStatusSchema = z.enum(['ACTIVE', 'VOID']);
+export const EntitlementAllocationSchema = z.object({
+  allocationId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  sourceType: CreditSourceTypeSchema,
+  sourceId: IdentifierSchema,
+  sourceName: z.string().min(1).max(160).optional(),
+  membershipPeriodId: IdentifierSchema.optional(),
+  benefitId: IdentifierSchema.optional(),
+  benefitPeriodKey: z.string().min(1).max(80).optional(),
+  activityType: CreditActivityTypeSchema,
+  activityId: IdentifierSchema,
+  unit: BenefitUnitSchema,
+  quantity: z.number().int().positive().max(10_000_000),
+  coveredAmount: MoneySchema,
+  currency: CurrencyCodeSchema,
+  status: EntitlementAllocationStatusSchema,
+  createdAt: z.string(),
+  voidedAt: z.string().optional(),
+  voidedBy: IdentifierSchema.optional(),
+});
+export const EntitlementAllocationInputSchema =
+  EntitlementAllocationSchema.omit({
+    allocationId: true,
+    organizationId: true,
+    createdAt: true,
+    voidedAt: true,
+    voidedBy: true,
+    status: true,
+  });
+
+export const FixedCourtAgreementStatusSchema = z.enum([
+  'DRAFT',
+  'ACTIVE',
+  'PAUSED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+export const FixedCourtAgreementSchema = z
+  .object({
+    agreementId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    customerId: IdentifierSchema,
+    courtId: IdentifierSchema,
+    membershipId: IdentifierSchema.optional(),
+    reservationSeriesId: IdentifierSchema.optional(),
+    status: FixedCourtAgreementStatusSchema,
+    weekday: WeekdaySchema,
+    startTime: LocalTimeSchema,
+    durationMinutes: z.number().int().positive().max(1440),
+    startDate: DateSchema,
+    endDate: DateSchema.optional(),
+    intervalWeeks: z.number().int().positive().max(52),
+    monthlyPrice: MoneySchema,
+    currency: CurrencyCodeSchema,
+    billingInterval: BillingIntervalSchema,
+    customIntervalDays: z.number().int().positive().max(365).optional(),
+    timezone: z.string().min(1),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    cancelledAt: z.string().optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((agreement, ctx) => {
+    if (agreement.endDate && agreement.endDate < agreement.startDate)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message:
+          'Fixed court agreement end date must not be before its start date.',
+      });
+    if (
+      agreement.billingInterval === 'CUSTOM' &&
+      agreement.customIntervalDays === undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Custom billing intervals require a duration in days.',
+      });
+    if (
+      agreement.billingInterval !== 'CUSTOM' &&
+      agreement.customIntervalDays !== undefined
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customIntervalDays'],
+        message: 'Only custom billing intervals may define a duration in days.',
+      });
+  });
+export const FixedCourtAgreementInputSchema = z.object({
+  customerId: IdentifierSchema,
+  courtId: IdentifierSchema,
+  membershipId: IdentifierSchema.optional(),
+  reservationSeriesId: IdentifierSchema.optional(),
+  weekday: WeekdaySchema,
+  startTime: LocalTimeSchema,
+  durationMinutes: z.number().int().positive().max(1440),
+  startDate: DateSchema,
+  endDate: DateSchema.optional(),
+  intervalWeeks: z.number().int().positive().max(52).default(1),
+  monthlyPrice: MoneySchema,
+  currency: CurrencyCodeSchema.optional(),
+  billingInterval: BillingIntervalSchema.default('MONTHLY'),
+  customIntervalDays: z.number().int().positive().max(365).optional(),
+  timezone: z.string().min(1).optional(),
+  notes: z.string().max(2000).optional(),
+  preview: z.boolean().default(false),
+  skipConflicts: z.boolean().default(false),
+});
+export const FixedCourtAgreementActionInputSchema = z.object({
+  effectiveDate: DateSchema.optional(),
+  skipConflicts: z.boolean().default(false),
+});
+export const FixedCourtAgreementSlotChangeInputSchema = z
+  .object({
+    effectiveDate: DateSchema,
+    courtId: IdentifierSchema.optional(),
+    weekday: WeekdaySchema.optional(),
+    startTime: LocalTimeSchema.optional(),
+    durationMinutes: z.number().int().positive().max(240).optional(),
+    intervalWeeks: z.number().int().positive().max(52).optional(),
+    monthlyPrice: MoneySchema.optional(),
+    notes: z.string().max(2000).optional(),
+    skipConflicts: z.boolean().default(false),
+  })
+  .refine(
+    (value) =>
+      value.courtId !== undefined ||
+      value.weekday !== undefined ||
+      value.startTime !== undefined ||
+      value.durationMinutes !== undefined ||
+      value.intervalWeeks !== undefined ||
+      value.monthlyPrice !== undefined ||
+      value.notes !== undefined,
+    'At least one future agreement term must change.',
+  );
+export const FixedCourtAgreementBillingInputSchema = z.object({
+  periodStartDate: DateSchema.optional(),
+});
+
+export const FixedCourtOccurrenceStatusSchema = z.enum([
+  'SCHEDULED',
+  'BOOKED',
+  'COMPLETED',
+  'CANCELLED',
+  'MISSED',
+]);
+export const FixedCourtOccurrenceSchema = z.object({
+  occurrenceId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  agreementId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  courtId: IdentifierSchema,
+  reservationId: IdentifierSchema.optional(),
+  date: DateSchema,
+  startAt: z.string().datetime({ offset: true }),
+  endAt: z.string().datetime({ offset: true }),
+  status: FixedCourtOccurrenceStatusSchema,
+  price: MoneySchema,
+  currency: CurrencyCodeSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  cancelledAt: z.string().optional(),
+});
+
+export const CommercialReportQuantitySchema = z.object({
+  unit: BenefitUnitSchema,
+  issuedQuantity: z.number().int().nonnegative(),
+  consumedQuantity: z.number().int().nonnegative(),
+  expiredQuantity: z.number().int().nonnegative(),
+  utilizationPercent: z.number().finite().nonnegative(),
+});
+export const CommercialReportQuantityTotalSchema = z.object({
+  unit: BenefitUnitSchema,
+  quantity: z.number().int().nonnegative(),
+});
+export const CommercialReportMembershipPlanSchema = z.object({
+  planId: IdentifierSchema,
+  planName: z.string().min(1).max(160),
+  count: z.number().int().nonnegative(),
+});
+export const CommercialReportSchema = z.object({
+  timezone: z.string().min(1),
+  from: DateSchema,
+  to: DateSchema,
+  activeMemberships: z.number().int().nonnegative(),
+  membershipsByPlan: z.array(CommercialReportMembershipPlanSchema),
+  newMemberships: z.number().int().nonnegative(),
+  cancelledMemberships: z.number().int().nonnegative(),
+  membershipExpectedRevenue: MoneySchema,
+  membershipRecordedPayments: MoneySchema,
+  membershipOutstandingAmount: MoneySchema,
+  packagesIssued: z.number().int().nonnegative(),
+  packageSalesValue: MoneySchema,
+  packageCreditsIssued: z.array(CommercialReportQuantityTotalSchema),
+  packageCreditsConsumed: z.array(CommercialReportQuantityTotalSchema),
+  packageCreditsExpired: z.array(CommercialReportQuantityTotalSchema),
+  packageUtilization: z.array(CommercialReportQuantitySchema),
+  fixedCourtAgreements: z.number().int().nonnegative(),
+  fixedCourtExpectedRevenue: MoneySchema,
+});
+
+export const CreditBalanceSummarySchema = z.object({
+  sourceType: CreditSourceTypeSchema,
+  sourceId: IdentifierSchema,
+  membershipPeriodId: IdentifierSchema.optional(),
+  benefitId: IdentifierSchema.optional(),
+  benefitPeriodKey: z.string().min(1).max(80).optional(),
+  unit: BenefitUnitSchema,
+  quantityType: BenefitQuantityTypeSchema,
+  issuedQuantity: z.number().int().nonnegative(),
+  consumedQuantity: z.number().int().nonnegative(),
+  restoredQuantity: z.number().int().nonnegative(),
+  expiredQuantity: z.number().int().nonnegative(),
+  adjustedQuantity: z.number().int().default(0),
+  remainingQuantity: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+});
+export const MakeupCreditReasonSchema = z.enum([
+  'VENUE_CANCELLED',
+  'EXCUSED_ABSENCE',
+  'STAFF_GRANTED',
+  'OTHER',
+]);
+export const MakeupCreditStatusSchema = z.enum([
+  'ACTIVE',
+  'CONSUMED',
+  'EXPIRED',
+  'CANCELLED',
+]);
+export const MakeupCreditSchema = z
+  .object({
+    makeupCreditId: IdentifierSchema,
+    organizationId: IdentifierSchema,
+    customerId: IdentifierSchema,
+    originClassId: IdentifierSchema,
+    originSessionId: IdentifierSchema,
+    reason: MakeupCreditReasonSchema,
+    issuedAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }).optional(),
+    status: MakeupCreditStatusSchema,
+    createdBy: IdentifierSchema,
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    consumedAt: z.string().datetime({ offset: true }).optional(),
+    cancelledAt: z.string().datetime({ offset: true }).optional(),
+    notes: z.string().max(1000).optional(),
+    idempotencyKey: IdentifierSchema.optional(),
+  })
+  .superRefine((credit, ctx) => {
+    if (
+      credit.expiresAt &&
+      Date.parse(credit.expiresAt) <= Date.parse(credit.issuedAt)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Makeup credit expiration must be after it is issued.',
+      });
+  });
+export const MakeupCreditInputSchema = z
+  .object({
+    customerId: IdentifierSchema.optional(),
+    originClassId: IdentifierSchema,
+    originSessionId: IdentifierSchema,
+    reason: MakeupCreditReasonSchema,
+    issuedAt: z.string().datetime({ offset: true }).optional(),
+    expiresAt: z.string().datetime({ offset: true }).optional(),
+    notes: z.string().max(1000).optional(),
+    idempotencyKey: IdentifierSchema.optional(),
+  })
+  .superRefine((credit, ctx) => {
+    if (
+      credit.expiresAt &&
+      credit.issuedAt &&
+      Date.parse(credit.expiresAt) <= Date.parse(credit.issuedAt)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: 'Makeup credit expiration must be after it is issued.',
+      });
+  });
+export const CustomerBalanceSummarySchema = z.object({
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  currency: CurrencyCodeSchema,
+  totalCharges: MoneySchema,
+  totalPayments: MoneySchema,
+  totalCovered: MoneySchema,
+  financialCreditAmount: MoneySchema,
+  outstandingAmount: MoneySchema,
+  overdueAmount: MoneySchema,
+  credits: z.array(CreditBalanceSummarySchema),
+  asOf: z.string().datetime({ offset: true }),
+});
+export const CommercialActivitySummarySchema = z.object({
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  activeMembershipCount: z.number().int().nonnegative(),
+  activePackageCount: z.number().int().nonnegative(),
+  nextMembershipRenewalDate: DateSchema.optional(),
+  nextPackageExpirationDate: DateSchema.optional(),
+  balance: CustomerBalanceSummarySchema,
+  generatedAt: z.string().datetime({ offset: true }),
+});
+export const CustomerCommercialSummarySchema = z.object({
+  balance: CustomerBalanceSummarySchema,
+  activity: CommercialActivitySummarySchema,
+  memberships: z.array(MembershipSchema),
+  packages: z.array(CustomerPackageSchema),
+  fixedCourtAgreements: z.array(FixedCourtAgreementSchema),
+  upcomingRenewals: z.array(MembershipSchema),
+  expiringBenefits: z.array(CreditBalanceSummarySchema),
+});
+/** Customer-safe commercial views intentionally omit organization and staff-only fields. */
+export const CustomerEntitlementUsageSchema = z.object({
+  benefitId: IdentifierSchema.optional(),
+  label: z.string().min(1).max(160).optional(),
+  type: BenefitTypeSchema,
+  unit: BenefitUnitSchema,
+  quantityType: BenefitQuantityTypeSchema,
+  issuedQuantity: z.number().int().nonnegative(),
+  consumedQuantity: z.number().int().nonnegative(),
+  restoredQuantity: z.number().int().nonnegative(),
+  expiredQuantity: z.number().int().nonnegative(),
+  adjustedQuantity: z.number().int(),
+  remainingQuantity: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+});
+export const CustomerPortalMembershipSchema = z.object({
+  membershipId: IdentifierSchema,
+  planId: IdentifierSchema,
+  planNameSnapshot: z.string().min(1).max(160),
+  status: MembershipStatusSchema,
+  startDate: DateSchema,
+  currentPeriodStart: DateSchema,
+  currentPeriodEnd: DateSchema,
+  nextRenewalDate: DateSchema.optional(),
+  currentPeriodId: IdentifierSchema.optional(),
+  price: MoneySchema,
+  currency: CurrencyCodeSchema,
+  billingInterval: BillingIntervalSchema,
+  customIntervalDays: z.number().int().positive().max(365).optional(),
+  benefits: z.array(CustomerEntitlementUsageSchema),
+});
+export const CustomerPortalMembershipPeriodSchema = z.object({
+  membershipPeriodId: IdentifierSchema,
+  periodNumber: z.number().int().positive(),
+  startDate: DateSchema,
+  endDate: DateSchema,
+  status: MembershipPeriodStatusSchema,
+  price: MoneySchema,
+  currency: CurrencyCodeSchema,
+});
+export const CustomerPortalPackageSchema = z.object({
+  customerPackageId: IdentifierSchema,
+  packageDefinitionId: IdentifierSchema,
+  packageNameSnapshot: z.string().min(1).max(160),
+  status: CustomerPackageStatusSchema,
+  issuedAt: z.string().datetime({ offset: true }),
+  startsAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+  price: MoneySchema,
+  currency: CurrencyCodeSchema,
+  benefits: z.array(CustomerEntitlementUsageSchema),
+});
+export const CustomerPortalCreditSchema = CustomerEntitlementUsageSchema.extend(
+  {
+    sourceType: CreditSourceTypeSchema,
+    sourceId: IdentifierSchema,
+    sourceName: z.string().min(1).max(160),
+  },
+);
+export const CustomerPortalCreditHistorySchema = z.object({
+  transactionType: CreditTransactionTypeSchema,
+  unit: BenefitUnitSchema,
+  quantity: z.number().int(),
+  activityType: CreditActivityTypeSchema.optional(),
+  activityId: IdentifierSchema.optional(),
+  occurredAt: z.string().datetime({ offset: true }),
+});
+export const CustomerPortalMembershipDetailSchema = z.object({
+  membership: CustomerPortalMembershipSchema,
+  periods: z.array(CustomerPortalMembershipPeriodSchema),
+  history: z.array(CustomerPortalCreditHistorySchema),
+});
+export const CustomerPortalPackageDetailSchema = z.object({
+  package: CustomerPortalPackageSchema,
+  history: z.array(CustomerPortalCreditHistorySchema),
+});
 export const OpeningHourSchema = z.object({
   open: LocalTimeSchema,
   close: LocalTimeSchema,
@@ -246,7 +1186,12 @@ export const ReservationSchema = z.object({
   status: ReservationStatusSchema,
   source: ReservationSourceSchema,
   sport: z.string().min(1).max(80).optional(),
+  // The original service value remains stable when entitlement coverage
+  // reduces expectedAmount to the uncovered direct-charge amount.
+  serviceAmount: MoneySchema.optional(),
   expectedAmount: MoneySchema,
+  fixedCourtAgreementId: IdentifierSchema.optional(),
+  fixedCourtOccurrenceId: IdentifierSchema.optional(),
   notes: z.string().max(4000).optional(),
   seriesId: IdentifierSchema.optional(),
   createdBy: IdentifierSchema,
@@ -399,15 +1344,26 @@ export const ClassSessionSchema = z.object({
   completedAt: z.string().optional(),
   completedBy: IdentifierSchema.optional(),
 });
+export const ChargeSourceTypeSchema = z.enum([
+  'RESERVATION',
+  'CLASS',
+  'MEMBERSHIP',
+  'PACKAGE',
+  'FIXED_COURT_AGREEMENT',
+]);
 export const ChargeSchema = z.object({
   chargeId: IdentifierSchema,
   organizationId: IdentifierSchema,
   customerId: IdentifierSchema,
-  sourceType: z.enum(['RESERVATION', 'CLASS']),
+  sourceType: ChargeSourceTypeSchema,
   sourceId: IdentifierSchema,
   reservationId: IdentifierSchema.optional(),
   classId: IdentifierSchema.optional(),
   classSessionId: IdentifierSchema.optional(),
+  membershipId: IdentifierSchema.optional(),
+  membershipPeriodId: IdentifierSchema.optional(),
+  packageId: IdentifierSchema.optional(),
+  fixedCourtAgreementId: IdentifierSchema.optional(),
   description: z.string().min(1),
   amount: MoneySchema,
   serviceAt: z.string().datetime({ offset: true }),
@@ -507,6 +1463,7 @@ export const CustomerReservationSummarySchema = z.object({
   source: ReservationSourceSchema,
   expectedAmount: MoneySchema,
   paymentStatus: z.enum(['UNPAID', 'PARTIALLY_PAID', 'PAID']).optional(),
+  entitlementAllocations: z.array(EntitlementAllocationSchema).optional(),
   cancellationEligibility: ReservationCancellationEligibilitySchema,
 });
 export const CustomerAvailabilityCourtSchema = z.object({
@@ -676,7 +1633,39 @@ export const CustomerActivityTypeSchema = z.enum([
   'CLASS',
   'EVENT',
   'OPEN_GAME',
+  'COMMERCIAL',
 ]);
+export const CommercialActivityEventTypeSchema = z.enum([
+  'MEMBERSHIP_STARTED',
+  'MEMBERSHIP_RENEWED',
+  'MEMBERSHIP_PAUSED',
+  'MEMBERSHIP_RESUMED',
+  'MEMBERSHIP_CANCELLED',
+  'MEMBERSHIP_EXPIRED',
+  'PACKAGE_ISSUED',
+  'PACKAGE_CONSUMED',
+  'PACKAGE_EXPIRED',
+  'CREDIT_ISSUED',
+  'CREDIT_CONSUMED',
+  'CREDIT_RESTORED',
+  'FIXED_AGREEMENT_STARTED',
+  'FIXED_AGREEMENT_CHANGED',
+  'FIXED_AGREEMENT_CANCELLED',
+]);
+export const CustomerCommercialActivityEventSchema = z.object({
+  eventId: IdentifierSchema,
+  organizationId: IdentifierSchema,
+  customerId: IdentifierSchema,
+  eventType: CommercialActivityEventTypeSchema,
+  sourceType: CreditSourceTypeSchema,
+  sourceId: IdentifierSchema,
+  occurredAt: z.string().datetime({ offset: true }),
+  createdAt: z.string(),
+});
+export const CommercialActivityEventSchema =
+  CustomerCommercialActivityEventSchema;
+export const CustomerActivityEventSchema =
+  CustomerCommercialActivityEventSchema;
 export const CustomerActivityActionSchema = z.enum([
   'VIEW',
   'CANCEL',
@@ -693,6 +1682,8 @@ export const CustomerActivityItemSchema = z.object({
   startAt: z.string().datetime({ offset: true }),
   endAt: z.string().datetime({ offset: true }),
   status: z.string().min(1).max(40),
+  eventType: CommercialActivityEventTypeSchema.optional(),
+  sourceType: CreditSourceTypeSchema.optional(),
   court: z
     .object({ courtId: IdentifierSchema, name: z.string().min(1).max(100) })
     .optional(),
@@ -921,6 +1912,10 @@ export type StaffWaitlist = Waitlist & {
   };
 };
 export type CustomerActivityItem = z.infer<typeof CustomerActivityItemSchema>;
+export type CustomerCommercialActivityEvent = z.infer<
+  typeof CustomerCommercialActivityEventSchema
+>;
+export type CommercialActivityEvent = CustomerCommercialActivityEvent;
 export type ReservationRequest = z.infer<typeof RequestSchema>;
 export type Payment = z.infer<typeof PaymentSchema>;
 export type Expense = z.infer<typeof ExpenseSchema>;
@@ -930,6 +1925,65 @@ export type Attendance = z.infer<typeof AttendanceSchema>;
 export type Block = z.infer<typeof BlockSchema>;
 export type ClassSession = z.infer<typeof ClassSessionSchema>;
 export type Charge = z.infer<typeof ChargeSchema>;
+export type Plan = z.infer<typeof PlanSchema>;
+export type PlanBenefit = z.infer<typeof PlanBenefitSchema>;
+export type PlanInput = z.infer<typeof PlanInputSchema>;
+export type PlanUpdateInput = z.infer<typeof PlanUpdateInputSchema>;
+export type PackageBenefit = z.infer<typeof PackageBenefitSchema>;
+export type Membership = z.infer<typeof MembershipSchema>;
+export type MembershipPeriod = z.infer<typeof MembershipPeriodSchema>;
+export type MembershipUpdateInput = z.infer<typeof MembershipUpdateInputSchema>;
+export type PackageDefinition = z.infer<typeof PackageDefinitionSchema>;
+export type CustomerPackage = z.infer<typeof CustomerPackageSchema>;
+export type MakeupCredit = z.infer<typeof MakeupCreditSchema>;
+export type CreditTransaction = z.infer<typeof CreditTransactionSchema>;
+export type CreditAdjustmentInput = z.infer<typeof CreditAdjustmentInputSchema>;
+export type CreditBalanceSummary = z.infer<typeof CreditBalanceSummarySchema>;
+export type EntitlementAllocation = z.infer<typeof EntitlementAllocationSchema>;
+export type FixedCourtAgreement = z.infer<typeof FixedCourtAgreementSchema>;
+export type FixedCourtAgreementInput = z.infer<
+  typeof FixedCourtAgreementInputSchema
+>;
+export type FixedCourtOccurrence = z.infer<typeof FixedCourtOccurrenceSchema>;
+export type CustomerBalanceSummary = z.infer<
+  typeof CustomerBalanceSummarySchema
+>;
+export type CommercialActivitySummary = z.infer<
+  typeof CommercialActivitySummarySchema
+>;
+export type CommercialReportQuantity = z.infer<
+  typeof CommercialReportQuantitySchema
+>;
+export type CommercialReportQuantityTotal = z.infer<
+  typeof CommercialReportQuantityTotalSchema
+>;
+export type CommercialReportMembershipPlan = z.infer<
+  typeof CommercialReportMembershipPlanSchema
+>;
+export type CommercialReport = z.infer<typeof CommercialReportSchema>;
+export type CustomerCommercialSummary = z.infer<
+  typeof CustomerCommercialSummarySchema
+>;
+export type CustomerEntitlementUsage = z.infer<
+  typeof CustomerEntitlementUsageSchema
+>;
+export type CustomerPortalCredit = z.infer<typeof CustomerPortalCreditSchema>;
+export type CustomerPortalCreditHistory = z.infer<
+  typeof CustomerPortalCreditHistorySchema
+>;
+export type CustomerPortalMembership = z.infer<
+  typeof CustomerPortalMembershipSchema
+>;
+export type CustomerPortalMembershipDetail = z.infer<
+  typeof CustomerPortalMembershipDetailSchema
+>;
+export type CustomerPortalMembershipPeriod = z.infer<
+  typeof CustomerPortalMembershipPeriodSchema
+>;
+export type CustomerPortalPackage = z.infer<typeof CustomerPortalPackageSchema>;
+export type CustomerPortalPackageDetail = z.infer<
+  typeof CustomerPortalPackageDetailSchema
+>;
 export type AuthContext = {
   organizationId: string;
   userId: string;
@@ -968,7 +2022,18 @@ export type EntityType =
   | 'customerReservationIndex'
   | 'customerReservationHistoryIndex'
   | 'customerReservationRequestIndex'
-  | 'customerReservationPaymentIndex';
+  | 'customerReservationPaymentIndex'
+  | 'plan'
+  | 'membership'
+  | 'membershipPeriod'
+  | 'packageDefinition'
+  | 'customerPackage'
+  | 'makeupCredit'
+  | 'creditTransaction'
+  | 'entitlementAllocation'
+  | 'fixedCourtAgreement'
+  | 'fixedCourtOccurrence'
+  | 'customerActivityEvent';
 export const ok = <T>(data: T) => ({ data });
 export const collection = <T>(data: T[], nextCursor: string | null = null) => ({
   data,

@@ -218,6 +218,7 @@ it('lets customer update contact details through labeled profile form', async ()
   const fetcher = vi
     .fn()
     .mockResolvedValueOnce(new Response(JSON.stringify({ data: profile })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] })))
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -236,8 +237,11 @@ it('lets customer update contact details through labeled profile form', async ()
   await vi.waitFor(() =>
     expect(root.textContent).toContain('Perfil atualizado.'),
   );
-  expect(fetcher.mock.calls[1]?.[1].method).toBe('PATCH');
-  expect(JSON.parse(String(fetcher.mock.calls[1]?.[1].body))).toMatchObject({
+  const updateCall = fetcher.mock.calls.find(
+    ([, request]) => request?.method === 'PATCH',
+  );
+  expect(updateCall?.[1].method).toBe('PATCH');
+  expect(JSON.parse(String(updateCall?.[1].body))).toMatchObject({
     name: 'Maria Silva',
   });
 });
@@ -341,4 +345,72 @@ it('keeps a retryable localized error when portal profile request loses network'
     'Erro de conexão',
   );
   expect(root.querySelector('a.button')?.textContent).toBe('Tentar novamente');
+});
+
+it('renders membership usage from the customer-only commercial endpoint', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/memberships');
+  const profile = {
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: {
+      customerId: 'customer-1',
+      name: 'Maria',
+      email: 'maria@example.test',
+      phone: '41999991111',
+      archived: false,
+    },
+  };
+  setCustomerSession({ ...profile, token: 'customer-token' });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: profile })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                membershipId: 'membership-1',
+                planId: 'plan-1',
+                planNameSnapshot: 'Eight classes',
+                status: 'ACTIVE',
+                startDate: '2026-09-01',
+                currentPeriodStart: '2026-09-01',
+                currentPeriodEnd: '2026-09-30',
+                nextRenewalDate: '2026-10-01',
+                price: 280,
+                currency: 'BRL',
+                billingInterval: 'MONTHLY',
+                benefits: [
+                  {
+                    type: 'CLASS_ATTENDANCE',
+                    unit: 'SESSION',
+                    quantityType: 'FINITE',
+                    issuedQuantity: 8,
+                    consumedQuantity: 7,
+                    restoredQuantity: 0,
+                    expiredQuantity: 0,
+                    adjustedQuantity: 0,
+                    remainingQuantity: 1,
+                  },
+                ],
+              },
+            ],
+            nextCursor: null,
+          }),
+        ),
+      ),
+  );
+  await customerPortalPage('arena', 'memberships');
+  expect(root.textContent).toContain('Eight classes');
+  expect(root.textContent).toContain('7 / 8');
+  expect(root.textContent).toContain('Próxima renovação');
+  expect(
+    root.querySelector('a[href="/portal/arena/memberships/membership-1"]'),
+  ).toBeTruthy();
 });

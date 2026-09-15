@@ -290,6 +290,17 @@ export async function openReservationDetail(id: string) {
     'beforeend',
     `<div><span class="muted">${t('common.paymentStatus')}</span><strong>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</strong></div>`,
   );
+  const allocations = reservation.entitlementAllocations ?? [];
+  if (allocations.length)
+    detailGrid?.insertAdjacentHTML(
+      'afterend',
+      `<div class="inline-panel"><strong>${t('reservations.coveredBy')}</strong><ul>${allocations
+        .map(
+          (allocation) =>
+            `<li>${escapeText(allocation.sourceType)} · ${escapeText(allocation.sourceId)} — ${t('reservations.coveredMinutes', { count: allocation.quantity })} · ${formatMoney(allocation.coveredAmount)}</li>`,
+        )
+        .join('')}</ul></div>`,
+    );
   const detailDate = app.querySelector<HTMLInputElement>(
     '#reservation-edit-form [name="date"]',
   );

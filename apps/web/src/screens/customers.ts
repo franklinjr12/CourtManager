@@ -1,3 +1,4 @@
+import type { CustomerActivityItem } from '@court-manager/contracts';
 import { dateValue, timeValue, errorMessage } from '../core/presentation.js';
 import type { Customer, Reservation } from '../core/types.js';
 import { button } from '../dom.js';
@@ -136,14 +137,20 @@ function wireCustomerList() {
 }
 
 async function openCustomerHistory(customerId: string) {
-  const [customer, reservationsData] = await Promise.all([
+  const [customer, reservationsData, activities] = await Promise.all([
     request<Customer>(`/customers/${customerId}`),
     request<Reservation[]>(
       `/reservations?customerId=${encodeURIComponent(customerId)}&limit=100`,
     ),
+    request<CustomerActivityItem[]>(
+      `/customers/${encodeURIComponent(customerId)}/activities?limit=100`,
+    ),
   ]);
+  const commercialEvents = activities.filter(
+    (activity) => activity.activityType === 'COMMERCIAL',
+  );
   openModal(
     t('customers.historyTitle', { name: customer.name }),
-    `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.payment')}</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${reservationStatusLabel(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : `<p class="empty">${t('customers.noHistory')}</p>`}`,
+    `<p class="muted">${escapeText(customer.phone ?? '')} ${escapeText(customer.email ?? '')}</p>${reservationsData.length ? `<div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.payment')}</th></tr></thead><tbody>${reservationsData.map((reservation) => `<tr><td>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}</td><td>${reservationStatusLabel(reservation.status)}</td><td>${formatMoney(reservation.expectedAmount)}</td><td>${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}</td></tr>`).join('')}</tbody></table></div>` : ''}${commercialEvents.length ? `<section><h3>${t('customers.commercialHistory')}</h3><div class="table-wrap"><table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.description')}</th><th>${t('common.source')}</th></tr></thead><tbody>${commercialEvents.map((activity) => `<tr><td>${escapeText(dateValue(activity.startAt))} ${escapeText(timeValue(activity.startAt))}</td><td>${escapeText(activity.title)}</td><td>${escapeText(`${activity.sourceType ?? ''} · ${activity.sourceId}`)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}${reservationsData.length || commercialEvents.length ? '' : `<p class="empty">${t('customers.noHistory')}</p>`}`,
   );
 }

@@ -90,6 +90,203 @@ Owner-authorized reads query at most 51 items for a 50-item page, ordered by par
 
 Optional internal linking uses existing tenant-specific `CUSTOMER_ACCOUNT_EMAIL` and `CUSTOMER_IDENTITY_PHONE` exact-contact lookups, followed by a batch read of at most two current customers. Stale, absent, ambiguous, archived, owner-self, or foreign matches remain unresolved. Customers without these existing lookup records can remain unresolved; no directory scan or new index is introduced. Submitted contact values remain the public source of truth; linked customer fields and match status are never returned. No SAM changes required.
 
+## Phase 3 commercial records and access patterns
+
+Phase 3 keeps the single `PK/SK` table and uses materialized access records
+instead of organization-wide scans or a second availability model. Source
+records are addressed by their stable IDs. Index records copy the fields needed
+by list screens, so normal list requests do not perform an N+1 batch of source
+reads. A source update replaces its old index keys and its new index keys in
+one transaction.
+
+The source/index split is intentional:
+
+| Source entity          | Stable source key                              | Important durable facts                                                             |
+| ---------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Plan                   | `PLAN#<planId> / META`                         | reusable offering, price, billing interval, structured benefits                     |
+| Membership             | `MEMBERSHIP#<membershipId> / META`             | customer relationship, lifecycle, plan/price/benefit snapshots                      |
+| Membership period      | `MEMBERSHIP_PERIOD#<periodId> / META`          | inclusive venue-local dates, period status, price snapshot, period charge           |
+| Package definition     | `PACKAGE_DEFINITION#<definitionId> / META`     | reusable prepaid offering and validity                                              |
+| Customer package       | `CUSTOMER_PACKAGE#<packageId> / META`          | customer-specific definition snapshot, issue/start/expiry, package charge           |
+| Credit transaction     | `CREDIT_TRANSACTION#<transactionId> / META`    | append-only signed `ISSUED`, `CONSUMED`, `RESTORED`, `EXPIRED`, or `ADJUSTED` delta |
+| Entitlement allocation | `ENTITLEMENT_ALLOCATION#<allocationId> / META` | auditable service coverage and activity relationship                                |
+| Fixed-court agreement  | `FIXED_COURT_AGREEMENT#<agreementId> / META`   | recurring commercial terms and lifecycle                                            |
+| Fixed-court occurrence | `FIXED_COURT_OCCURRENCE#<occurrenceId> / META` | dated agreement occurrence and linked reservation                                   |
+
+`CreditBalance` items are materialized conditional-update state, not the
+authority for history. The ledger and allocation records are retained even
+when a package, membership, or agreement becomes inactive. A service
+entitlement/allocation is never a payment. Charges and payments remain the
+financial records used for customer outstanding balance.
+
+The key builders and repository façade live in
+`apps/api/src/persistence/phase3-keys.ts` and
+`apps/api/src/persistence/phase3-repository.ts`.
+
+| Access pattern                                | Key                                                                                           |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Plan by ID                                    | `PLAN#<planId> / META`                                                                        |
+| Plans by organization                         | `ORG#<orgId>#COMMERCIAL / PLAN#<createdAt>#<planId>`                                          |
+| Active plans by organization                  | same partition, `PLAN_STATUS#ACTIVE#<createdAt>#<planId>`                                     |
+| Plans by status                               | same partition, `PLAN_STATUS#<status>#<createdAt>#<planId>`                                   |
+| Membership by ID                              | `MEMBERSHIP#<membershipId> / META`                                                            |
+| Memberships by customer                       | `CUSTOMER#<orgId>#<customerId> / MEMBERSHIP#<startDate>#<membershipId>`                       |
+| Active membership by customer                 | same partition, `MEMBERSHIP_ACTIVE#<startDate>#<membershipId>`                                |
+| Memberships by plan                           | `PLAN#<planId> / MEMBERSHIP#<startDate>#<membershipId>`                                       |
+| Memberships by organization                   | `ORG#<orgId>#MEMBERSHIPS / MEMBERSHIP#<startDate>#<membershipId>`                             |
+| Memberships by status                         | same partition, `MEMBERSHIP_STATUS#<status>#<startDate>#<membershipId>`                       |
+| Memberships renewing in a date range          | same partition, `MEMBERSHIP_RENEWAL#<nextRenewalDate>#<membershipId>` with a sort-key range   |
+| Memberships expiring in a date range          | same partition, `MEMBERSHIP_EXPIRY#<currentPeriodEnd>#<membershipId>` with a sort-key range   |
+| Membership period by ID                       | `MEMBERSHIP_PERIOD#<periodId> / META`                                                         |
+| Membership periods by membership              | `MEMBERSHIP#<membershipId> / PERIOD#<periodId>`                                               |
+| Package definition by ID                      | `PACKAGE_DEFINITION#<definitionId> / META`                                                    |
+| Package definitions by organization           | `ORG#<orgId>#COMMERCIAL / PACKAGE_DEFINITION#<createdAt>#<definitionId>`                      |
+| Active package definitions by organization    | same partition, `PACKAGE_DEFINITION_STATUS#ACTIVE#<createdAt>#<definitionId>`                 |
+| Customer package by ID                        | `CUSTOMER_PACKAGE#<customerPackageId> / META`                                                 |
+| Packages by customer                          | `CUSTOMER#<orgId>#<customerId> / PACKAGE#<startsAt>#<customerPackageId>`                      |
+| Active packages by customer                   | same partition, `PACKAGE_ACTIVE#<startsAt>#<customerPackageId>`                               |
+| Packages expiring in a date range             | `ORG#<orgId>#PACKAGES / PACKAGE_EXPIRY#<expiresAt>#<customerPackageId>` with a sort-key range |
+| Credit transactions by package                | `PACKAGE#<customerPackageId> / CREDIT#<occurredAt>#<transactionId>`                           |
+| Credit transactions by membership period      | `MEMBERSHIP_PERIOD#<periodId> / CREDIT#<occurredAt>#<transactionId>`                          |
+| Credit balance by source/benefit              | `ENTITLEMENT_BALANCE#<sourceType>#<sourceId>#<periodId> / BENEFIT#<benefitId>`                |
+| Customer credit balances                      | `CUSTOMER#<orgId>#<customerId> / CREDIT_BALANCE#<sourceType>#...`                             |
+| Allocation by source                          | `<sourceType>#<sourceId> / ALLOCATION#<createdAt>#<allocationId>`                             |
+| Usage allocation by reservation               | `USAGE#<orgId>#RESERVATION#<reservationId> / ALLOCATION#...`                                  |
+| Usage allocation by class attendance/session  | `USAGE#<orgId>#CLASS_ATTENDANCE#<attendanceOrSessionId> / ALLOCATION#...`                     |
+| Fixed court agreement by customer             | `CUSTOMER#<orgId>#<customerId> / FIXED_AGREEMENT#<startDate>#<agreementId>`                   |
+| Fixed court agreement by organization         | `ORG#<orgId>#FIXED_AGREEMENTS / AGREEMENT#<startDate>#<agreementId>`                          |
+| Active fixed court agreements by organization | `ORG#<orgId>#FIXED_AGREEMENTS / ACTIVE#<startDate>#<agreementId>`                             |
+| Fixed court occurrences by agreement          | `FIXED_COURT_AGREEMENT#<agreementId> / OCCURRENCE#<date>#<occurrenceId>`                      |
+| Customer commercial history                   | `CUSTOMER#<orgId>#<customerId> / COMMERCIAL#<occurredAt>#<type>#<id>`                         |
+| Makeup credits by customer                    | `CUSTOMER#<orgId>#<customerId> / MAKEUP_CREDIT#<issuedAt>#<creditId>`                         |
+| Active makeup credits by customer             | same partition, `MAKEUP_CREDIT_ACTIVE#<issuedAt>#<creditId>`                                  |
+| Makeup credits by origin session              | `ORG#<orgId>#CLASS_SESSION#<sessionId> / MAKEUP_CREDIT#<issuedAt>#<creditId>`                 |
+| Charges by customer                           | `CUSTOMER#<orgId>#<customerId> / CHARGE#<serviceAt>#<chargeId>`                               |
+| Payments by customer                          | `CUSTOMER#<orgId>#<customerId> / PAYMENT#<paidAt>#<paymentId>`                                |
+
+The staff customer commercial summary reads memberships, packages, fixed
+court agreements, credit balances, customer charges, customer payments, and
+active entitlement allocations from these customer-scoped query records. An
+allocation is also written to customer commercial history so covered service
+value can be reported without treating it as a payment. Reservation and class
+charge writes maintain the customer charge index; payment writes maintain the
+customer payment index. Existing Phase 2 records should be backfilled with the
+Phase 3 migration before relying on the summary for historical data.
+
+Customer portal commercial reads use the same bounded customer partition:
+`GET /customer/memberships` and `GET /customer/credits` query the membership,
+package, and credit-balance access records for the authenticated customer.
+Detail reads query the selected membership/package source and its credit
+ledger, then verify the source organization and customer before returning a
+customer-safe projection. No customer write path exists for issuing,
+adjusting, restoring, or changing commercial terms.
+
+All list methods use bounded queries (100 records by default) and accept a
+limit. Organization and customer IDs are part of every access partition, and
+ID reads verify the organization on the source record. Existing reservation
+payment indexes remain intact; the Phase 3 financial indexes are additive.
+
+Membership source records are written at `MEMBERSHIP#<id> / META` and period
+source records at `MEMBERSHIP_PERIOD#<periodId> / META`; period access records
+are also stored under the membership partition. Lifecycle writes preserve prior
+period records. Price and benefit snapshots live on the membership and each
+period, while plan definitions remain reusable offerings. Each period stores its
+deterministic `chargeId` and has one `CHARGE#membership-<periodId> / META`
+record with `sourceType: MEMBERSHIP`, `sourceId` equal to the period ID, and a
+customer charge index. Retrying charge creation is safe because the period ID
+is the idempotency identity; payments continue to reference that charge.
+
+Customer packages snapshot the definition name, price, currency, benefits,
+issue/start timestamps, and expiry. Package issuance writes the customer
+package and its operational charge transactionally. Package charges use
+`sourceType: PACKAGE`, with `sourceId` and `packageId` equal to the customer
+package ID. Benefits create an append-only `ISSUED` credit transaction and a
+materialized balance; the ledger remains authoritative for finite and
+unlimited usage. Staff-created recovery or promotional credits use
+`sourceType: MANUAL` and retain the actor and reason on the ledger transaction.
+
+Makeup credits use a dedicated `MAKEUP_CREDIT#<id> / META` source record and
+`sourceType: MAKEUP` ledger records. The source snapshots the origin class and
+session, reason, issue/expiry timestamps, and status. Its customer and origin
+indexes are written transactionally with lifecycle updates. The corresponding
+`CLASS_ATTENDANCE` consumption uses the same usage guard, allocation, and
+conditional credit-balance update as membership and package entitlements.
+
+Fixed court agreements are the commercial source for guaranteed recurring
+court slots. Their reservations still use the shared schedule locks and are
+linked through the agreement's `reservationSeriesId`, plus each reservation's
+`seriesId`, `fixedCourtAgreementId`, and `fixedCourtOccurrenceId`. The
+agreement creates one idempotent `FIXED_COURT_AGREEMENT` charge per billing
+period; covered reservations retain their service value for history but do
+not create ordinary reservation charges.
+
+## Commercial customer activity events (TASK-016)
+
+Commercial lifecycle facts are stored as append-oriented customer activity
+events. The source event is written at
+`CUSTOMER_ACTIVITY_EVENT#<eventId> / META`; its customer history index is
+written transactionally under
+`CUSTOMER#<organizationId>#<customerId> /
+ACTIVITY#<occurredAt>#COMMERCIAL#<eventType>#<eventId>`. Events retain only
+the tenant/customer, event type, source type and source ID, occurrence time,
+and creation time. The deterministic event ID is derived from the logical
+source and optional operation key, so retries are safe and do not create
+duplicate history rows. The existing customer activity query includes these
+indexed rows, while `listCustomerActivityEvents` provides a bounded,
+source-oriented Phase 4 query without adding lifecycle classification or
+retention behavior.
+
+### Atomic credit consumption
+
+`CreditBalance` is a materialized balance used only to make ledger updates
+conditional; append-only `CreditTransaction` records remain the authoritative
+ledger. Issuance, restoration, expiration, and manual adjustment append a
+transaction and update the balance together. A consumption transaction also
+writes the logical usage guard, allocation source and activity index,
+consumption transaction and indexes, and the balance together. The balance
+write is conditional on the previous quantities, preventing concurrent
+overspending.
+
+The guard is keyed by organization, activity type/id, source, membership
+period, and benefit. A retry that encounters the guard returns the original
+allocation, even if the retry supplied a different allocation ID. Unlimited
+benefits still write usage and credit history; their materialized balance
+reports usage while remaining explicitly non-finite.
+
+Reservation allocations use the `USAGE#<orgId>#RESERVATION#<reservationId>`
+partition and are read for reservation detail and customer activity summaries.
+Reservation creation first writes the normal schedule, reservation, and direct
+charge records, then consumes eligible credits. The direct charge is
+subsequently reduced to the uncovered service value; it is not replaced by a
+payment. `serviceAmount` preserves the original reservation value for
+historical allocation calculations. Cancellation restoration is keyed by the
+reservation ID, making repeated cancellation/retry handling idempotent; no-show
+does not restore the allocation.
+
+### Phase 3 migration
+
+`corepack pnpm migrate:phase3` is an additive, idempotent backfill. It creates
+missing Phase 3 query indexes for any already-present Phase 3 source records
+and creates customer charge/payment indexes for existing financial records. It
+does not create memberships, packages, balances, or usage for Phase 0-2
+records, and it never deletes historical data. Run it after deployment with
+the deployed table configuration; take a DynamoDB backup before production
+backfills.
+
+The migration uses a deliberate full-table scan because it is an offline
+backfill over unknown legacy item shapes; normal commercial list and detail
+requests use the query-shaped access records in the table above. Run it with
+production writes paused if the deployment procedure requires a stable
+backfill window, then run it a second time. The second run should report zero
+new indexes. Existing Phase 2 customers and activities remain unchanged and
+do not receive artificial plans, memberships, packages, balances, or usage.
+
+Lifecycle materialization is separate from the index migration. Run
+`corepack pnpm reconcile:commercial` to evaluate and materialize expired
+memberships/packages and their remaining credit expiry transactions. The
+command is safe to retry; read-time evaluators remain authoritative if it has
+not been run.
+
 ## Customer class discovery (TASK-012)
 
 Class primary records remain `CLASS#<classId> / META`. They now contain
@@ -123,3 +320,32 @@ existing classes, sessions and enrollment history to rebuild references,
 counters and current customer pointers. It is idempotent; rerun under the same
 write pause if interrupted. Resume writes only after success. No new index, IAM
 permission, environment variable, or SAM resource is required.
+
+## Class entitlement consumption (TASK-009)
+
+Class attendance consumption uses the existing `CREDIT_TRANSACTION` and
+`ENTITLEMENT_ALLOCATION` records. Periodic membership benefits add an optional
+`benefitPeriodKey` to source, allocation, transaction, and balance records; the
+key is part of the usage guard and balance key. Existing records without a
+window key retain their legacy key shape. Weekly keys are venue-local ISO weeks
+(Monday start), and monthly keys are venue-local calendar months. A missing
+period balance is issued lazily for the eligible membership window, then
+consumed by the same atomic transaction used by reservation entitlements.
+
+Attendance is consumed once at `CHECKED_IN`; completion is not a second usage
+event. No-show and cancelled-session paths do not write entitlement usage.
+
+## Staff commercial operations (TASK-013)
+
+Staff package lists use the organization package partition
+`ORG#<organizationId>#PACKAGES / PACKAGE#<startsAt>#<customerPackageId>`.
+The source package, customer index, expiration index, and commercial history
+record are kept in sync transactionally. The Phase 3 migration backfills this
+organization index for existing customer package records.
+
+The staff `GET /customer-packages` endpoint queries that bounded organization
+index and supports status, definition, customer, expiration, and remaining
+balance filters. Credit balances are queried from the package entitlement
+partition, while `GET /customer-packages/:id/transactions` exposes the durable
+credit history used by the package detail screen. These records remain tenant
+scoped through the authenticated staff context.

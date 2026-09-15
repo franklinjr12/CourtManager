@@ -5,15 +5,21 @@ import type {
   CustomerRebookingDraft,
   CustomerReservationRequest,
   CustomerReservationSummary,
+  EntitlementAllocation,
   Reservation,
 } from '@court-manager/contracts';
 import type { RecordItem, Repository } from '../db.js';
 import { calculateDuration, dayKeyInTimezone, localTime } from '../domain.js';
 import { AppError } from '../errors.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
+import { phase3Keys } from '../persistence/phase3-keys.js';
 import { BookingPolicyService } from './booking-policy.js';
 import type { CustomerBookingService } from './customer-bookings.js';
 import { ReservationParticipantService } from './reservation-participants.js';
+
+type ReservationEntitlementReader = {
+  allocations(reservation: Reservation): Promise<unknown[]>;
+};
 
 type ReservationWriter = {
   cancelForCustomer(
@@ -47,6 +53,7 @@ export class CustomerReservationService {
     private readonly reservations: ReservationWriter,
     private readonly bookings: CustomerBookingService,
     private readonly participants: ReservationParticipantService,
+    private readonly reservationEntitlements: ReservationEntitlementReader,
   ) {}
 
   private async court(ctx: CustomerAuthContext, courtId: string) {
@@ -64,6 +71,30 @@ export class CustomerReservationService {
     policy: BookingPolicy,
   ): Promise<CustomerReservationSummary> {
     const court = await this.court(ctx, reservation.courtId);
+    const allocations = (await this.reservationEntitlements.allocations(
+      reservation,
+    )) as EntitlementAllocation[];
+    const labeledAllocations = await Promise.all(
+      allocations.map(async (allocation) => {
+        if (!['PACKAGE', 'MEMBERSHIP'].includes(allocation.sourceType))
+          return allocation;
+        const source = await this.repo.get<RecordItem>(
+          allocation.sourceType === 'PACKAGE'
+            ? phase3Keys.customerPackage(allocation.sourceId)
+            : phase3Keys.membership(allocation.sourceId),
+        );
+        if (
+          !source ||
+          source.organizationId !== ctx.organizationId ||
+          source.customerId !== ctx.customerId
+        )
+          return allocation;
+        const sourceName = String(
+          source.packageNameSnapshot ?? source.planNameSnapshot ?? '',
+        );
+        return sourceName ? { ...allocation, sourceName } : allocation;
+      }),
+    );
     return {
       itemType: 'RESERVATION',
       reservationId: reservation.reservationId,
@@ -77,6 +108,7 @@ export class CustomerReservationService {
       status: reservation.status,
       source: reservation.source,
       expectedAmount: reservation.expectedAmount,
+      entitlementAllocations: labeledAllocations,
       paymentStatus: await this.paymentStatus(ctx, reservation),
       cancellationEligibility: this.policy.customerCancellationEligibility(
         reservation,

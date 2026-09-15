@@ -23,7 +23,9 @@ export type RecordItem = Record<string, unknown> & {
   PK: string;
   SK: string;
   entity?: EntityType;
-  expiresAt?: number;
+  // Business records may use an ISO expiration timestamp; session/token TTL
+  // records use epoch seconds. Both are valid stored representations.
+  expiresAt?: number | string | undefined;
 };
 export type Key = { PK: string; SK: string };
 export type Write =

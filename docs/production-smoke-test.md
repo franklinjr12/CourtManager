@@ -51,3 +51,156 @@ mobile, cutoff timing, and the staff regression walk, see
 Confirm logs contain request IDs and actor/organization identifiers but no
 passwords, bearer tokens, or raw activation/reset tokens. Repeat the booking
 and cancellation checks around the venue timezone and cancellation cutoff.
+
+## Phase 3 commercial relationship checks
+
+Run these checks with a disposable staff account and disposable customers in a
+test organization first. Record the organization timezone, currency, customer
+IDs, court IDs, and the IDs of the created commercial records. Do not use a
+real customer’s credentials. Do not delete the test records after a production
+smoke test; archive or mark them according to the venue’s operating procedure
+so the audit trail remains intact.
+
+Use separate test customers where helpful:
+
+- `Carlos`: monthly membership with 8 class attendances;
+- `Maria`: finite court-time package;
+- `João`: fixed recurring court agreement.
+
+### Migration safety
+
+- [ ] Take a DynamoDB backup and confirm the command points at the intended
+      production table.
+- [ ] Deploy the Phase 3 API before running the backfill.
+- [ ] Run `corepack pnpm migrate:phase3` with the same region, credentials,
+      `DYNAMODB_TABLE`, and endpoint configuration as the deployed API.
+- [ ] Confirm the command reports only indexes created; no membership,
+      package, balance, allocation, or usage records were invented for existing
+      Phase 2 customers or activities.
+- [ ] Confirm existing reservations, class sessions, attendance, charges, and
+      payments are unchanged and existing activities still show in the portal.
+- [ ] Run the migration a second time and confirm it creates zero additional
+      indexes.
+- [ ] Use `corepack pnpm reconcile:commercial` only when lifecycle statuses
+      need bulk materialization; it is retry-safe and does not create relationships
+      for old Phase 2 data.
+
+### Membership and renewal
+
+Create an active plan from `/commercial/plans` with:
+
+```text
+Name: Smoke 8 classes
+Price: R$ 280
+Billing interval: MONTHLY
+Benefit: CLASS_ATTENDANCE / SESSION / FINITE 8 / MONTH
+```
+
+- [ ] Create the plan and confirm its structured benefit, currency, and
+      `ACTIVE` status.
+- [ ] Assign it to Carlos from `/commercial/memberships`, keeping the default
+      price or entering an agreed price such as R$ 260.
+- [ ] Confirm the membership snapshots the plan name, price, billing interval,
+      and benefit; the first membership period is active and has a renewal date.
+- [ ] Open membership details and confirm the period allowance is `0 / 8`, a
+      membership-period charge exists, and the customer summary shows the charge
+      as outstanding.
+- [ ] Record an external payment against that membership-period charge using
+      the existing staff payment workflow. When using the API directly, the body
+      must identify the commercial charge with `chargeId` (not a reservation or
+      class):
+
+  ```json
+  {
+    "chargeId": "<membership-period-charge-id>",
+    "customerId": "<carlos-id>",
+    "amount": "<charge-amount>",
+    "method": "PIX",
+    "paidAt": "<current-iso-timestamp>"
+  }
+  ```
+
+- [ ] Confirm the membership charge shows the recorded payment and zero
+      outstanding amount. A payment is an external transaction record, not a
+      membership entitlement.
+- [ ] Optionally enroll Carlos in the test class and mark seven attendances.
+      Confirm seven `CLASS_ATTENDANCE` allocations/consumptions are visible and
+      one class allowance remains. Repeating an attendance request must not
+      consume a second credit.
+- [ ] Renew the membership manually with the staff Renew action. Confirm the
+      previous period is `COMPLETED`, the next period is `ACTIVE`, the next renewal
+      date advances, a new period charge exists, and a new allowance is issued.
+- [ ] Repeat the renewal request with the same idempotency key and confirm it
+      does not create another period or charge.
+
+### Package, consumption, restoration, and expiration
+
+Create an active package definition from `/commercial/packages`:
+
+```text
+Name: Smoke 60 court minutes
+Price: R$ 120
+Validity: 90 days
+Benefit: COURT_TIME / COURT_MINUTES / FINITE 60 / PACKAGE_LIFETIME
+```
+
+- [ ] Issue the package to Maria and confirm the customer package snapshots
+      the definition, price, issue/start time, expiry, and benefit.
+- [ ] Confirm the package creates a `PACKAGE` charge and an `ISSUED` credit
+      transaction. The package is not paid until an external payment is recorded.
+- [ ] Create a 60-minute Maria reservation on a compatible court. Confirm the
+      reservation still uses the authoritative schedule lock, its allocation
+      records `60` covered court minutes, and its direct charge is reduced to the
+      uncovered amount (normally zero). Confirm no payment was created by this
+      coverage.
+- [ ] Cancel that reservation before the venue cutoff. Confirm one
+      `RESTORED` transaction, a restored balance of 60 minutes, and a `VOID`
+      allocation. Retrying cancellation must not restore twice. Confirm a no-show
+      would not restore credit.
+- [ ] Create a disposable one-day package definition and issue it with a
+      controlled past `issuedAt` in an operator-only smoke environment, or wait
+      for its expiry in production. Read the package or run
+      `corepack pnpm reconcile:commercial` after expiry.
+- [ ] Confirm the customer package is `EXPIRED`, remaining finite credit is
+      zero with an `EXPIRED` ledger transaction, and the package, charge,
+      allocations, and credit history remain readable. Expiration is not a
+      payment, refund, or deletion.
+
+### Fixed recurring court agreement
+
+- [ ] From `/commercial/fixed-courts`, create João’s agreement for a compatible
+      court, for example Wednesday 19:00–21:00, starting on a future local date,
+      weekly, at R$ 600/month. Use the organization timezone and resolve schedule
+      conflicts rather than silently skipping them.
+- [ ] Confirm the agreement is `ACTIVE`, has its price and lifecycle, and has
+      future fixed-court occurrences linked to ordinary reservations.
+- [ ] Confirm each future occurrence uses the shared schedule locks and appears
+      in the normal schedule/reservation views. The agreement is the commercial
+      right; reservation recurrence is the occupancy mechanism.
+- [ ] Open agreement details and confirm the idempotent
+      `FIXED_COURT_AGREEMENT` billing-period charge is present. Record an external
+      payment against it with `chargeId` and confirm the customer balance changes.
+- [ ] Pause/resume or cancel only if the smoke fixture permits it; verify the
+      agreement lifecycle changes without deleting historical occurrences or
+      payments.
+
+### Portal and customer balance
+
+- [ ] Log in as Carlos at `/portal/<slug>/login` and confirm memberships show
+      the snapshotted plan, current period, renewal date, and used/remaining
+      allowance.
+- [ ] Log in as Maria and confirm `/portal/<slug>/credits` shows package
+      issue/expiry, remaining balance, consumption, restoration, and expiration
+      history. Customer views must not expose staff actors or internal notes.
+- [ ] Confirm customer reservation history shows commercial coverage and the
+      reservation remains the only booking record.
+- [ ] Open the staff customer commercial summary and Finance views. Verify:
+      `outstanding = active charges - linked recorded payments`; entitlement
+      allocations and credit consumption are not included as payments.
+- [ ] Confirm each customer can see only their own portal data and that a
+      changed membership/package/reservation ID cannot cross organization or
+      customer boundaries.
+
+For the domain rules behind this checklist, see
+[commercial-model.md](commercial-model.md). The commercial model explicitly
+keeps entitlements, allocations, charges, and payments separate.

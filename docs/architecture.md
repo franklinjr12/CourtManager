@@ -14,6 +14,11 @@ DynamoDB Local or DynamoDB
 
 `MemoryRepository` is used by fast unit/service tests. It serializes transactions so tests exercise the same conditional-lock semantics as DynamoDB Local.
 
+The Phase 3 commercial vocabulary and operator workflows are documented in
+[commercial-model.md](commercial-model.md). That document is the companion
+reference for the distinctions between plans, customer relationships,
+entitlements, allocations, charges, and payments.
+
 ## Phase 2 identity and booking foundations
 
 CourtOS has two actor types with separate authorization boundaries:
@@ -146,11 +151,91 @@ Organizations carry `BookingPolicy` with `STAFF_ONLY`, `REQUEST_APPROVAL`, or `A
 
 Phase 2 customer activities, reservations, waitlists, sport preferences, and participant records use materialized customer/resource access records described in `docs/dynamodb-model.md`. Durable source records remain separate from read indexes so history survives status changes.
 
+### Membership lifecycle
+
+Memberships are customer-specific snapshots of reusable plans. Creation copies
+the plan name, agreed price, billing interval, and benefits; later plan edits do
+not change that membership. Each membership has an explicit current period and
+historical period records. Renewal completes the current period and creates the
+next one, so periodic usage boundaries remain auditable.
+
+Membership lifecycle actions are staff-only and validated by the service.
+`ACTIVE` can become `PAUSED` or `CANCELLED`, `PAUSED` can resume, and only an
+active membership can renew. A future cancellation `effectiveDate` leaves the
+current period active until that date; an immediate cancellation marks both the
+membership and current period cancelled. A period that ends without renewal is
+distinguished as `EXPIRED`. Pausing does not delete or reset historical usage;
+future entitlement consumers must check membership status before granting new
+benefits. Every membership period also has one deterministic operational charge
+(`MEMBERSHIP`, keyed by the period), using the period's price snapshot. Renewal
+is a staff workflow that creates the next period and charge; it remains allowed
+when an earlier membership charge is outstanding, so the overdue balance stays
+visible. Payments are still manually recorded external payments linked through
+the existing `chargeId` relationship.
+
+Commercial attention is evaluated at read time using the organization
+timezone. Renewal-due and expiring-soon queries use date-range access indexes;
+overdue membership evaluation additionally reads the current membership-period
+charge and its recorded payments, and therefore never treats a date alone as
+debt. Expired memberships and packages are materialized lazily on reads when
+needed, while their period, credit, and consumption history remains intact.
+The idempotent `corepack pnpm reconcile:commercial` command can materialize
+the same lifecycle changes in bulk.
+
+### Package definitions and customer packages
+
+Package definitions are reusable prepaid offerings. Staff issuance creates a
+customer package with snapshots of the definition terms and validity, plus a
+`PACKAGE` operational charge. Finite benefits receive an auditable `ISSUED`
+credit transaction and a materialized balance. The package is not considered
+paid until staff records an external payment against its charge, and changing
+the definition never changes an issued package.
+
+Reservation court-time coverage is applied after the shared schedule lock is
+created. A matching active fixed-court agreement is considered first. The
+remaining eligible candidates are ordered by earliest expiration, then by
+source priority: makeup credit, membership benefit, package credit, and other
+eligible sources; stable source and benefit IDs break ties. A reservation may
+use more than one finite source. Otherwise the full service value remains a
+direct reservation charge. A reservation stores its original `serviceAmount`,
+while `expectedAmount` and the active charge contain only uncovered value.
+`EntitlementAllocation` records store each covered quantity and amount, so
+partial coverage is auditable and is never represented as a payment. Monetary
+coverage is proportional to court minutes and rounded to two decimal places;
+the final allocation receives the residual cent to keep covered plus uncovered
+value equal to the original service amount.
+
+Customer-allowed cancellations before the venue cutoff and staff cancellations
+restore active reservation allocations exactly once. No-show transitions keep
+the allocations consumed. Reservation details and customer activity summaries
+include the allocation records and their source IDs. Existing reservations
+without allocations retain their original direct-charge behavior.
+
 Historical reservation cards expose `Book again`. `GET /customer/reservations/:id/rebook` derives a venue-local future date, preserves historical sport/time/duration, and performs fresh customer availability lookup. It omits inactive, archived, or private source courts from preferred choice while returning compatible public courts. Submission uses normal customer booking endpoint, keeping current policy, active-booking limits, and atomic schedule locking authoritative.
 
 ## Phase 1 operations
 
 `/today` is the authenticated operational landing page backed by one timezone-aware aggregation endpoint. Reservations use `BOOKED -> CHECKED_IN -> COMPLETED` with explicit cancellation and no-show transitions. Classes are definitions plus materialized `ClassSession` occurrences; both reservations and classes occupy the same `ScheduleService` locks. Finance is operational rather than accounting: activities create `Charge` records, payments reduce balances, and cancellation voids applicable future charges.
+
+Staff customer profiles expose a unified commercial summary. Financial totals
+are calculated from active charges and their associated recorded payments;
+overpayments are shown as explicit financial credit. Memberships, packages,
+fixed-court agreements, and available service-credit balances are presented in
+a separate entitlements area. Credit consumption and entitlement allocations
+never count as cash payments, while active allocation values remain available
+for audit and reporting.
+
+### Customer commercial self-service
+
+The customer portal exposes read-only membership and credit views through
+customer-session endpoints. These endpoints derive both organization and
+customer identity from the authenticated `CustomerAuthContext`; route
+parameters are used only to select a record that is checked against that
+context. Membership and package responses are customer-safe projections that
+omit notes, staff actors, and internal cancellation details while retaining
+snapshotted terms, current-period usage, balances, expiration, and relevant
+credit history. Coverage shown on customer reservation cards is the existing
+entitlement allocation, never a cash payment or a second booking record.
 
 ### Reservation participant self-service
 
@@ -214,3 +299,22 @@ not import `services/index` or duplicate reservation/class rules. The shared
 adapters. `app.ts` keeps middleware, public venue routes, and staff routes;
 customer route handlers only parse requests, select authenticated context, and
 serialize service results.
+
+## Commercial reporting (TASK-017)
+
+`GET /reports/operations` extends the operational report with a `commercial`
+section. Membership expected revenue is the sum of active `MEMBERSHIP`
+charges in the selected service-date range; recorded payments are the
+payments linked to those charges and paid in the selected range. Outstanding
+amount is calculated from the charge totals and all linked payments, so a
+payment recorded before the report range still settles the corresponding
+charge without being counted as a period payment.
+
+Package sales are based on issued customer-package snapshots. Credit
+utilization is calculated from append-only package credit transactions,
+grouped by service unit; unlimited benefits are excluded from numeric
+utilization. Fixed-court agreement counts and expected value remain
+operational metrics, with expected value sourced from active
+fixed-agreement charges. Date-time boundaries use the organization timezone.
+The report does not present charges as cash revenue or provide accounting
+statements.

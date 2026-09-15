@@ -113,6 +113,45 @@ export const registerCustomerPortalRoutes = (
   app.get('/customer/me/sports', async (c) =>
     c.json(ok(await services.customerSelfProfile.sports(customerCtx(c)))),
   );
+  app.get('/customer/memberships', async (c) =>
+    c.json(
+      collection(
+        await services.customerCommercialPortal.memberships(customerCtx(c)),
+      ),
+    ),
+  );
+  app.get('/customer/memberships/:id', async (c) =>
+    c.json(
+      ok(
+        await services.customerCommercialPortal.membership(
+          customerCtx(c),
+          c.req.param('id'),
+        ),
+      ),
+    ),
+  );
+  app.get('/customer/credits', async (c) =>
+    c.json(
+      collection(
+        await services.customerCommercialPortal.credits(customerCtx(c)),
+      ),
+    ),
+  );
+  app.get('/customer/packages/:id', async (c) =>
+    c.json(
+      ok(
+        await services.customerCommercialPortal.package(
+          customerCtx(c),
+          c.req.param('id'),
+        ),
+      ),
+    ),
+  );
+  app.get('/customer/makeup-credits', async (c) =>
+    c.json(
+      collection(await services.makeupCredits.listForCustomer(customerCtx(c))),
+    ),
+  );
   app.put('/customer/me/sports', async (c) =>
     c.json(
       ok(

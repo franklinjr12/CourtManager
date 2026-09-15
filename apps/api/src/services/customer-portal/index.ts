@@ -10,3 +10,4 @@ export { CustomerBookingService } from '../customer-bookings.js';
 export { CustomerReservationService } from '../customer-reservations.js';
 export { ReservationParticipantService } from '../reservation-participants.js';
 export { WaitlistService } from '../waitlists.js';
+export { CustomerCommercialPortalService } from './commercial.js';
