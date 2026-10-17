@@ -2,7 +2,7 @@ import {
   DEFAULT_BOOKING_POLICY,
   type AuthContext,
 } from '@court-manager/contracts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRepository } from '../db.js';
 import { buildServices } from './index.js';
 
@@ -61,6 +61,16 @@ async function setup() {
 }
 
 describe('CustomerReservationService rebooking', () => {
+  // Fixtures use fixed September 2026 dates; pin the clock so membership
+  // status and availability do not change as real time moves on.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-13T12:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('suggests next weekday, preserves court/time/duration, and returns fresh availability', async () => {
     const { services, court, customer } = await setup();
     const reservation = await services.reservations.create(owner, {
