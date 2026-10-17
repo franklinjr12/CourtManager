@@ -1,5 +1,5 @@
 import type { AuthContext } from '@court-manager/contracts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRepository } from '../db.js';
 import { Phase3Repository } from '../persistence/phase3-repository.js';
 import { ensureMembershipPeriodCharge } from './membership-charges.js';
@@ -52,6 +52,16 @@ async function setup() {
 }
 
 describe('MembershipService', () => {
+  // Fixtures use fixed September 2026 dates; pin the clock so membership
+  // status and availability do not change as real time moves on.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-13T12:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('creates one charge per period and settles membership charges through recorded payments', async () => {
     const { repo, services, customerId, plan } = await setup();
     const membership = await services.memberships.create(owner, {

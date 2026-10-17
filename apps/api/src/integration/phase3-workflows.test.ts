@@ -272,6 +272,7 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
     expect(exhausted).toEqual([]);
 
     const periodKey = benefitPeriodKey('MONTH', dateAfter(1));
+    if (!periodKey) throw new Error('Expected a monthly benefit period key');
     const beforeRenewal =
       await fixture.services.entitlements.getRemainingBalance({
         organizationId: fixture.organizationId,
@@ -322,6 +323,10 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
         fixture.token,
       ),
     );
+    const renewedPeriodKey = benefitPeriodKey('MONTH', dateAfter(31));
+    if (!renewedPeriodKey) {
+      throw new Error('Expected a renewed monthly benefit period key');
+    }
     const period1Balance =
       await fixture.services.entitlements.getRemainingBalance({
         organizationId: fixture.organizationId,
@@ -340,7 +345,7 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
         sourceId: membership.membershipId,
         membershipPeriodId: renewedMembership.currentPeriodId,
         benefitId: 'monthly-class-attendance',
-        benefitPeriodKey: benefitPeriodKey('MONTH', dateAfter(31)),
+        benefitPeriodKey: renewedPeriodKey,
       });
     expect(period1Balance).toMatchObject({
       consumedQuantity: 8,
