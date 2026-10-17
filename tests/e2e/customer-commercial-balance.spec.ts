@@ -52,7 +52,10 @@ test('staff customer profile separates commercial entitlements from financial ba
     password: venue.ownerPassword,
   });
   await page.goto(`/customers/${customerId}`);
-  const summary = await apiAs(token, `/customers/${customerId}/commercial-summary`);
+  const summary = await apiAs(
+    token,
+    `/customers/${customerId}/commercial-summary`,
+  );
   expect(summary.body.data.memberships.length).toBeGreaterThan(0);
   await expect(page.getByRole('heading', { name: 'Financial' })).toBeVisible({
     timeout: 15000,
