@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { login } from './support/auth.js';
+import { currentMonthStartUtc } from './support/commercial.js';
 import {
   apiAs,
   apiBase,
@@ -42,7 +43,7 @@ test('staff customer profile separates commercial entitlements from financial ba
     body: JSON.stringify({
       customerId,
       planId: plan.body.data.planId,
-      startDate: '2026-09-01',
+      startDate: currentMonthStartUtc(),
     }),
   });
 

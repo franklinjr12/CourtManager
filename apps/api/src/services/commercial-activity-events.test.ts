@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRepository } from '../db.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
 import { Phase3Repository } from '../persistence/phase3-repository.js';
@@ -14,6 +14,16 @@ const customerContext = {
 };
 
 describe('commercial customer activity events', () => {
+  // Fixtures use fixed September 2026 dates; pin the clock so membership
+  // status and availability do not change as real time moves on.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-15T12:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('stores source-linked events once and exposes them in customer history', async () => {
     const repo = new MemoryRepository();
     const persistence = new Phase3Repository(repo);

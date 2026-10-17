@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createCommercialVenue,
   createCourtMinutesPackage,
@@ -9,6 +9,16 @@ import {
 } from '../testing/phase3-fixture.js';
 
 describe('Phase 3 canonical business scenarios', () => {
+  // Scenarios use fixed September 2026 dates; pin the clock so membership
+  // status does not change as real time moves on.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-15T12:00:00.000Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('scenario A: Carlos monthly class membership tracks usage and renewal history', async () => {
     const venue = await createCommercialVenue({ label: 'carlos' });
     const customer = await venue.createCustomer('Carlos');
