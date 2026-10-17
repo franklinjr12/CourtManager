@@ -46,6 +46,14 @@ Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempo
 
 ## Quality gates
 
+There is no hosted CI; run the checks locally before opening or merging a PR:
+
+```bash
+corepack pnpm check
+```
+
+`check` runs lint, typecheck, `prettier --check` (no files are rewritten), and the unit tests, stopping at the first failure. Use `corepack pnpm format` to apply formatting. The individual gates, including the slower suites that need DynamoDB Local or Playwright, are:
+
 ```bash
 corepack pnpm lint
 corepack pnpm typecheck
