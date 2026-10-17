@@ -43,9 +43,9 @@ test('staff can assign and pause a customer membership', async ({ page }) => {
     password: venue.ownerPassword,
   });
   await page.goto('/commercial/memberships');
-  await expect(
-    page.getByRole('heading', { name: 'Memberships' }),
-  ).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Memberships' })).toBeVisible({
+    timeout: 15000,
+  });
   await page.getByRole('button', { name: 'Add membership' }).click();
   await page.getByLabel('Customer').selectOption(customerId);
   await page.getByLabel('Plan').selectOption(planId);
