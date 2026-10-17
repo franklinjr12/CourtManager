@@ -3,6 +3,17 @@ import type { createIsolatedVenue, seedVenue } from './venue.js';
 type Venue = Awaited<ReturnType<typeof createIsolatedVenue>>;
 type SmokeVenue = Awaited<ReturnType<typeof seedVenue>>;
 
+/**
+ * First day of the current UTC month (YYYY-MM-DD). E2E runs against a real
+ * server clock, so memberships that must be current are anchored to "now"
+ * instead of a fixed calendar date.
+ */
+export function currentMonthStartUtc(now = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
 export async function createMonthlyClassPlan(
   venue: Venue | SmokeVenue,
   input?: { price?: number; classes?: number; name?: string },
@@ -70,7 +81,7 @@ export async function seedCommercialOverviewVenue() {
     {
       customerId: String(overdueCustomer.customerId),
       planId: plan.planId,
-      startDate: '2026-09-01',
+      startDate: currentMonthStartUtc(),
     },
   );
   await venue.services.payments.create(venue.owner, {
@@ -78,7 +89,7 @@ export async function seedCommercialOverviewVenue() {
     customerId: String(overdueCustomer.customerId),
     amount: 0,
     method: 'OTHER',
-    paidAt: '2026-09-01T12:00:00.000Z',
+    paidAt: `${currentMonthStartUtc()}T12:00:00.000Z`,
   });
   const definition = await issueCourtHourPackage(venue, { validityDays: 10 });
   await venue.services.packages.issue(
