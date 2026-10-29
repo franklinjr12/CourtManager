@@ -3,6 +3,7 @@ import {
   CreateTableCommand,
   DynamoDBClient,
   DescribeTableCommand,
+  waitUntilTableExists,
 } from '@aws-sdk/client-dynamodb';
 import {
   BatchGetCommand,
@@ -220,7 +221,12 @@ export class DynamoRepository implements Repository {
           ...(ConditionExpression ? { ConditionExpression } : {}),
         }),
       );
-    } catch {
+    } catch (error) {
+      if (
+        String((error as { name?: unknown }).name) !==
+        'ConditionalCheckFailedException'
+      )
+        throw error;
       throw new AppError('CONFLICT', 'Conditional write failed.', {}, 409);
     }
   }
@@ -343,6 +349,7 @@ export class DynamoRepository implements Repository {
           'VALIDATION_ERROR',
           'A DynamoDB transaction cannot contain more than 100 actions.',
         );
+      if (name !== 'TransactionCanceledException') throw error;
       if (
         writes.some(
           (w) => w.type === 'check' || (w.type === 'put' && w.expected),
@@ -420,7 +427,14 @@ export const ensureTable = async () => {
   const table = process.env.DYNAMODB_TABLE ?? 'court-manager-dev';
   try {
     await raw.send(new DescribeTableCommand({ TableName: table }));
-  } catch {
+    return;
+  } catch (error) {
+    if (
+      String((error as { name?: unknown }).name) !== 'ResourceNotFoundException'
+    )
+      throw error;
+  }
+  try {
     await raw.send(
       new CreateTableCommand({
         TableName: table,
@@ -438,5 +452,12 @@ export const ensureTable = async () => {
         ],
       }),
     );
+  } catch (error) {
+    if (String((error as { name?: unknown }).name) !== 'ResourceInUseException')
+      throw error;
   }
+  await waitUntilTableExists(
+    { client: raw, maxWaitTime: 30 },
+    { TableName: table },
+  );
 };
