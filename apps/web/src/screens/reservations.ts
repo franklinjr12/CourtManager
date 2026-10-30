@@ -23,15 +23,28 @@ import { customerOptions } from './customers.js';
 import { openPaymentModal } from './finance.js';
 import { app, escapeText, renderRoute, request, screen } from './runtime.js';
 
-const staffDurationField = () => {
-  const options = Array.from({ length: 8 }, (_, index) => (index + 1) * 30)
-    .map(
-      (minutes) =>
-        `<option value="${minutes}">${t('common.minutes', { count: minutes })}</option>`,
-    )
-    .join('');
-  return `<label>${t('common.duration')}<select name="durationMinutes" required>${options}<option value="custom">${t('reservations.customDuration')}</option></select></label><label id="custom-duration-field" hidden>${t('reservations.customDurationMinutes')}<input name="customDurationMinutes" type="number" min="1" max="240" step="1"></label>`;
+export const STAFF_DURATION_OPTIONS = Array.from(
+  { length: 8 },
+  (_, index) => (index + 1) * 30,
+);
+export const DEFAULT_STAFF_DURATION_MINUTES = 60;
+
+export const staffDurationSelect = ({ custom }: { custom: boolean }) => {
+  const options = STAFF_DURATION_OPTIONS.map(
+    (minutes) =>
+      `<option value="${minutes}"${minutes === DEFAULT_STAFF_DURATION_MINUTES ? ' selected' : ''}>${t('common.minutes', { count: minutes })}</option>`,
+  ).join('');
+  const customOption = custom
+    ? `<option value="custom">${t('reservations.customDuration')}</option>`
+    : '';
+  const customField = custom
+    ? `<label id="custom-duration-field" hidden>${t('reservations.customDurationMinutes')}<input name="customDurationMinutes" type="number" min="1" max="240" step="1"></label>`
+    : '';
+  return `<label>${t('common.duration')}<select name="durationMinutes" required>${options}${customOption}</select></label>${customField}`;
 };
+
+export const expectedAmountFor = (hourlyPrice: number, minutes: number) =>
+  ((hourlyPrice * minutes) / 60).toFixed(2);
 
 const durationValue = (form: HTMLFormElement) => {
   const value = String(
@@ -107,14 +120,8 @@ export async function openReservationModal(
     request<Customer[]>('/customers?limit=100'),
   ]);
   const startDate = prefill?.startAt ? new Date(prefill.startAt) : new Date();
-  const body = `<form id="reservation-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" data-price="${c.defaultHourlyPrice}" ${c.courtId === prefill?.courtId ? 'selected' : ''}>${escapeText(c.name)} — ${escapeText(c.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input name="date" type="date" required value="${escapeText(prefill?.startAt ? startDate.toISOString().slice(0, 10) : date)}"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option></select></label><label>${t('common.startTime')}<select name="startTime" required><option>${t('common.loading')}</option></select></label><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select><button type="button" class="button small" id="quick-customer">${t('reservations.quickNewCustomer')}</button></label><div id="quick-customer-fields" class="inline-panel full" hidden><label>${t('common.name')}<input name="quickName" maxlength="160"></label><label>${t('common.phone')}<input name="quickPhone" maxlength="40"></label><button type="button" class="button small" id="create-quick-customer">${t('customers.create')}</button><p class="form-error" id="quick-customer-error" role="alert"></p></div><label>${t('common.expectedAmount')}<input name="expectedAmount" type="number" min="0" step="0.01" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="4000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.save')}</button></div></form>`;
-  openModal(
-    t('reservations.new'),
-    body.replace(
-      /<label>[^<]*<select name="durationMinutes">.*?<\/select><\/label>/,
-      staffDurationField(),
-    ),
-  );
+  const body = `<form id="reservation-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((c) => `<option value="${escapeText(c.courtId)}" data-price="${c.defaultHourlyPrice}" ${c.courtId === prefill?.courtId ? 'selected' : ''}>${escapeText(c.name)} — ${escapeText(c.sport)}</option>`).join('')}</select></label><label>${t('common.date')}<input name="date" type="date" required value="${escapeText(prefill?.startAt ? startDate.toISOString().slice(0, 10) : date)}"></label>${staffDurationSelect({ custom: true })}<label>${t('common.startTime')}<select name="startTime" required><option>${t('common.loading')}</option></select></label><label class="full">${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select><button type="button" class="button small" id="quick-customer">${t('reservations.quickNewCustomer')}</button></label><div id="quick-customer-fields" class="inline-panel full" hidden><label>${t('common.name')}<input name="quickName" maxlength="160"></label><label>${t('common.phone')}<input name="quickPhone" maxlength="40"></label><button type="button" class="button small" id="create-quick-customer">${t('customers.create')}</button><p class="form-error" id="quick-customer-error" role="alert"></p></div><label>${t('common.expectedAmount')}<input name="expectedAmount" type="number" min="0" step="0.01" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><label class="full">${t('common.notes')}<textarea name="notes" maxlength="4000"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.save')}</button></div></form>`;
+  openModal(t('reservations.new'), body);
   const form = app.querySelector<HTMLFormElement>('#reservation-form');
   if (!form) return;
   form.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -125,10 +132,10 @@ export async function openReservationModal(
     const duration = Number(durationValue(form) || 0);
     const price = form.elements.namedItem('expectedAmount') as HTMLInputElement;
     if (selected)
-      price.value = (
-        (Number(selected.dataset.price ?? 0) * duration) /
-        60
-      ).toFixed(2);
+      price.value = expectedAmountFor(
+        Number(selected.dataset.price ?? 0),
+        duration,
+      );
   };
   let availabilityRequest = Promise.resolve();
   const refresh = () => {
@@ -382,22 +389,8 @@ async function openRecurringReservationModal() {
   ]);
   openModal(
     t('reservations.recurring'),
-    `<form id="recurring-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><label>${t('reservations.firstDate')}<input name="date" type="date" required value="${escapeText(today())}"></label><label>${t('reservations.untilDate')}<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>${t('common.startTime')}<input name="time" type="time" required value="18:00"></label><label>${t('common.duration')}<select name="durationMinutes"><option value="30">${t('common.minutes', { count: 30 })}</option><option value="60">${t('common.minutes', { count: 60 })}</option><option value="120">${t('common.minutes', { count: 120 })}</option></select></label><label>${t('reservations.everyWeeks')}<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.createRecurring')}</button></div></form>`,
+    `<form id="recurring-form" class="form-grid"><label>${t('common.court')}<select name="courtId" required>${courts.map((court) => `<option value="${escapeText(court.courtId)}">${escapeText(court.name)}</option>`).join('')}</select></label><label>${t('common.customer')}<select name="customerId" required>${customerOptions(customers)}</select></label><label>${t('reservations.firstDate')}<input name="date" type="date" required value="${escapeText(today())}"></label><label>${t('reservations.untilDate')}<input name="untilDate" type="date" required value="${escapeText(today())}"></label><label>${t('common.startTime')}<input name="time" type="time" required value="18:00"></label>${staffDurationSelect({ custom: false })}<label>${t('reservations.everyWeeks')}<input name="intervalWeeks" type="number" min="1" max="52" value="1" required></label><label>${t('common.source')}<select name="source"><option>STAFF</option><option>PHONE</option><option>WHATSAPP</option><option>WALK_IN</option><option>OTHER</option></select></label><p class="form-error full" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('reservations.createRecurring')}</button></div></form>`,
   );
-  const recurringDuration = app.querySelector<HTMLSelectElement>(
-    '#recurring-form [name="durationMinutes"]',
-  );
-  if (recurringDuration) {
-    const input = document.createElement('input');
-    input.name = 'durationMinutes';
-    input.type = 'number';
-    input.min = '1';
-    input.max = '240';
-    input.step = '1';
-    input.required = true;
-    input.value = '60';
-    recurringDuration.replaceWith(input);
-  }
   const form = app.querySelector<HTMLFormElement>('#recurring-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
   form?.addEventListener('submit', async (event) => {
