@@ -33,4 +33,12 @@ describe('DynamoDB Local repository contract', () => {
       ]),
     ).rejects.toThrow();
   });
+  it('atomically increments counters and preserves the first expiry', async () => {
+    await ensureTable();
+    const repo = dynamo(),
+      key = { PK: `RATE#${Date.now()}`, SK: 'WINDOW#1' };
+    expect(await repo.increment(key, 'count', 1000)).toBe(1);
+    expect(await repo.increment(key, 'count', 2000)).toBe(2);
+    expect((await repo.get(key))?.expiresAt).toBe(1000);
+  });
 });
