@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'jsdom',
+    setupFiles: ['./vitest.setup.config.ts'],
     include: [
       'packages/contracts/src/phase3*.test.ts',
       'apps/api/src/**/*commercial*.test.ts',
