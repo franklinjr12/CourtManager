@@ -9,5 +9,9 @@ export default defineConfig({
     },
     include: ['apps/**/*.test.ts', 'packages/**/*.test.ts'],
     exclude: ['**/integration/**', '**/node_modules/**'],
+    // Node 25+ ships a native localStorage global that shadows jsdom's.
+    poolOptions: {
+      forks: { execArgv: ['--no-experimental-webstorage'] },
+    },
   },
 });
