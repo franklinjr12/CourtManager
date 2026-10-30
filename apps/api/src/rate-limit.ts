@@ -77,3 +77,41 @@ export const createRateLimiter = (
     },
   };
 };
+
+export type RateLimiter = ReturnType<typeof createRateLimiter>;
+
+/**
+ * Failure-only login throttling: reject when a counter is already full, count
+ * UNAUTHORIZED failures, and clear the per-account counter after a success.
+ */
+export const guardLogin = async <T>(
+  limiter: RateLimiter,
+  rules: { perIp: RateLimitRule; perAccount: RateLimitRule },
+  subjects: { ip: string; account: string },
+  attempt: () => Promise<T>,
+): Promise<T> => {
+  await limiter.check(rules.perIp, subjects.ip);
+  await limiter.check(rules.perAccount, subjects.account);
+  try {
+    const result = await attempt();
+    await limiter.reset(rules.perAccount, subjects.account);
+    return result;
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'UNAUTHORIZED') {
+      for (const [r, s] of [
+        [rules.perIp, subjects.ip],
+        [rules.perAccount, subjects.account],
+      ] as const) {
+        try {
+          await limiter.hit(r, s);
+        } catch (hitError) {
+          if (!(
+            hitError instanceof AppError && hitError.code === 'RATE_LIMITED'
+          ))
+            throw hitError;
+        }
+      }
+    }
+    throw error;
+  }
+};

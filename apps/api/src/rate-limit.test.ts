@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryRepository } from './db.js';
 import { AppError } from './errors.js';
-import { createRateLimiter, type RateLimitRule } from './rate-limit.js';
+import {
+  createRateLimiter,
+  guardLogin,
+  type RateLimitRule,
+} from './rate-limit.js';
 
 const rule: RateLimitRule = { name: 'test', limit: 3, windowSeconds: 60 };
 const setup = () => {
@@ -56,5 +60,38 @@ describe('rate limiter', () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.PK).not.toContain('person@example.com');
     expect(items[0]?.PK.startsWith('RATE#test#')).toBe(true);
+  });
+});
+
+describe('guardLogin', () => {
+  const rules = {
+    perIp: { name: 'g-ip', limit: 3, windowSeconds: 60 },
+    perAccount: { name: 'g-acct', limit: 2, windowSeconds: 60 },
+  };
+  const subjects = { ip: '1.1.1.1', account: 'a' };
+  const fail = () => Promise.reject(new AppError('UNAUTHORIZED', 'no'));
+  it('counts only UNAUTHORIZED failures and resets on success', async () => {
+    const repo = new MemoryRepository();
+    const limiter = createRateLimiter(repo, () => 0);
+    await expect(
+      guardLogin(limiter, rules, subjects, () =>
+        Promise.reject(new AppError('NOT_FOUND', 'x')),
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(
+      guardLogin(limiter, rules, subjects, fail),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(
+      guardLogin(limiter, rules, subjects, () => Promise.resolve('ok')),
+    ).resolves.toBe('ok');
+    await expect(
+      guardLogin(limiter, rules, subjects, fail),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(
+      guardLogin(limiter, rules, subjects, fail),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(
+      guardLogin(limiter, rules, subjects, () => Promise.resolve('ok')),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 });
