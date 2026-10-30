@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveAllowedOrigins } from './cors-config.js';
 import {
   BlockInputSchema,
   collection,
@@ -84,7 +85,11 @@ const queryValue = <T>(value: unknown, schema: ZodType<T>) => {
   return parsed.data;
 };
 
-export const createApp = (repo: Repository) => {
+export const createApp = (
+  repo: Repository,
+  options: { allowedOrigins?: string[] } = {},
+) => {
+  const allowedOrigins = options.allowedOrigins ?? resolveAllowedOrigins();
   const services = buildServices(repo);
   const app = new Hono<{ Variables: AppVariables }>();
   const publicRequests = new Map<string, { started: number; count: number }>();
@@ -137,7 +142,7 @@ export const createApp = (repo: Repository) => {
   app.use(
     '*',
     cors({
-      origin: '*',
+      origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowHeaders: ['Authorization', 'Content-Type'],
       allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     }),
