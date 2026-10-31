@@ -7,6 +7,7 @@ export default defineConfig({
       forks: { execArgv: ['--no-experimental-webstorage'] },
       threads: { execArgv: ['--no-experimental-webstorage'] },
     },
+    setupFiles: ['./vitest.setup.config.ts'],
     include: ['apps/**/*.test.ts', 'packages/**/*.test.ts'],
     exclude: ['**/integration/**', '**/node_modules/**'],
   },
