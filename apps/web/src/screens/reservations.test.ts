@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  STAFF_DURATION_OPTIONS,
+  expectedAmountFor,
+  staffDurationSelect,
   reservationIsEditable,
   reservationTimeChanged,
   wireReservationDetailButtons,
@@ -56,5 +59,40 @@ describe('reservation detail editing', () => {
     wireReservationDetailButtons(root);
 
     expect(bound).toBe('click');
+  });
+});
+
+describe('staff duration options', () => {
+  const select = (custom: boolean) => {
+    const box = document.createElement('div');
+    box.innerHTML = staffDurationSelect({ custom });
+    return box.querySelector<HTMLSelectElement>('select')!;
+  };
+  const steps = ['30', '60', '90', '120', '150', '180', '210', '240'];
+
+  it('lists 30 to 240 minutes in 30-minute steps', () => {
+    expect(STAFF_DURATION_OPTIONS).toEqual([
+      30, 60, 90, 120, 150, 180, 210, 240,
+    ]);
+  });
+
+  it('offers the steps with 60 minutes preselected', () => {
+    const el = select(false);
+    expect([...el.options].map((o) => o.value)).toEqual(steps);
+    expect(el.value).toBe('60');
+  });
+
+  it('adds a custom option and field when requested', () => {
+    const el = select(true);
+    expect([...el.options].map((o) => o.value)).toEqual([...steps, 'custom']);
+    expect(el.value).toBe('60');
+    const box = document.createElement('div');
+    box.innerHTML = staffDurationSelect({ custom: true });
+    expect(box.querySelector('#custom-duration-field')).not.toBeNull();
+  });
+
+  it('scales the expected amount with duration', () => {
+    expect(expectedAmountFor(100, 90)).toBe('150.00');
+    expect(expectedAmountFor(100, 60)).toBe('100.00');
   });
 });

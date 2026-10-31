@@ -1,5 +1,5 @@
 import { dateValue, timeValue } from '../core/presentation.js';
-import type { Customer, RequestItem } from '../core/types.js';
+import type { Court, Customer, RequestItem } from '../core/types.js';
 import { button } from '../dom.js';
 import { requestStatusLabel, t } from '../i18n.js';
 import { toast } from '../ui/feedback.js';
@@ -7,21 +7,31 @@ import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { shell } from '../ui/shell.js';
 import { customerOptions } from './customers.js';
+import {
+  requestContactActions,
+  requestContactContext,
+  wireRequestContactActions,
+} from './request-contact.js';
 import { app, escapeText, renderRoute, request } from './runtime.js';
 
 export async function requests() {
-  const [data, customers] = await Promise.all([
+  const [data, customers, courts] = await Promise.all([
     request<RequestItem[]>('/requests'),
     request<Customer[]>('/customers?limit=100'),
+    request<Court[]>('/courts'),
   ]);
   await shell(
     async () => {
       return `<div class="toolbar"><div><h2>${t('requests.title')}</h2><p class="muted">${t('requests.pending', { count: data.filter((item) => item.status === 'REQUESTED').length })}</p></div></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.customer')}</th><th>${t('requests.requestedTime')}</th><th>${t('common.court')}</th><th>${t('common.status')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((item) => `<tr><td>${escapeText(item.customerName)}<small>${escapeText(item.phone)}</small></td><td>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</td><td>${escapeText(item.courtId)}</td><td>${requestStatusLabel(item.status)}</td><td>${item.status === 'REQUESTED' ? `${button(t('requests.review'), `data-review-request="${escapeText(item.requestId)}"`)}${button(t('requests.confirm'), `data-confirm-request="${escapeText(item.requestId)}"`)}${button(t('requests.reject'), `data-reject-request="${escapeText(item.requestId)}"`)}` : '—'}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('requests.noRequests')}</p>`}</article>`;
     },
-    () => wireRequests(data, customers),
+    () => wireRequests(data, customers, courts),
   );
 }
-function wireRequests(data: RequestItem[], customers: Customer[]) {
+function wireRequests(
+  data: RequestItem[],
+  customers: Customer[],
+  courts: Court[],
+) {
   app
     .querySelectorAll<HTMLElement>('[data-review-request]')
     .forEach((element) =>
@@ -29,11 +39,14 @@ function wireRequests(data: RequestItem[], customers: Customer[]) {
         const item = data.find(
           (value) => value.requestId === element.dataset.reviewRequest,
         );
-        if (item)
+        if (item) {
+          const ctx = requestContactContext(courts, item);
           openModal(
             t('requests.reviewTitle'),
-            `<div class="detail-grid"><div><span class="muted">${t('common.customer')}</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">${t('requests.contact')}</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">${t('requests.requested')}</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || t('common.noNotes'))}</p>`,
+            `<div class="detail-grid"><div><span class="muted">${t('common.customer')}</span><strong>${escapeText(item.customerName)}</strong></div><div><span class="muted">${t('requests.contact')}</span><strong>${escapeText(item.phone)} ${escapeText(item.email)}</strong></div><div><span class="muted">${t('requests.requested')}</span><strong>${escapeText(dateValue(item.requestedStartAt))} ${escapeText(timeValue(item.requestedStartAt))}–${escapeText(timeValue(item.requestedEndAt))}</strong></div></div><p>${escapeText(item.notes || t('common.noNotes'))}</p>${requestContactActions(item, ctx)}`,
           );
+          wireRequestContactActions(app, item, ctx);
+        }
       }),
     );
   app
