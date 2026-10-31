@@ -49,6 +49,11 @@ export interface Repository {
     condition?: string,
   ): Promise<void>;
   delete(key: Key, condition?: string): Promise<void>;
+  increment(
+    key: Key,
+    field: string,
+    expiresAtEpochSeconds: number,
+  ): Promise<number>;
   query<T extends RecordItem = RecordItem>(
     pk: string,
     opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
@@ -96,6 +101,16 @@ export class MemoryRepository implements Repository {
     if (_condition === 'attribute_exists(PK)' && !this.items.has(this.key(key)))
       throw new AppError('CONFLICT', 'Conditional write failed.');
     this.items.delete(this.key(key));
+  }
+  async increment(key: Key, field: string, expiresAtEpochSeconds: number) {
+    const existing = this.items.get(this.key(key));
+    const item: RecordItem = existing
+      ? structuredClone(existing)
+      : { ...key, expiresAt: expiresAtEpochSeconds };
+    const next = Number(item[field] ?? 0) + 1;
+    item[field] = next;
+    this.items.set(this.key(key), item);
+    return next;
   }
   async query<T extends RecordItem>(
     pk: string,
@@ -256,6 +271,19 @@ export class DynamoRepository implements Repository {
         ConditionExpression,
       }),
     );
+  }
+  async increment(key: Key, field: string, expiresAtEpochSeconds: number) {
+    const result = await this.client.send(
+      new UpdateCommand({
+        TableName: this.table,
+        Key: key,
+        UpdateExpression: 'ADD #f :one SET #exp = if_not_exists(#exp, :exp)',
+        ExpressionAttributeNames: { '#f': field, '#exp': 'expiresAt' },
+        ExpressionAttributeValues: { ':one': 1, ':exp': expiresAtEpochSeconds },
+        ReturnValues: 'UPDATED_NEW',
+      }),
+    );
+    return Number(result.Attributes?.[field] ?? 0);
   }
   async query<T extends RecordItem>(
     pk: string,

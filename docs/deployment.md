@@ -14,6 +14,29 @@ sam build
 sam deploy --guided
 ```
 
+`sam deploy --guided` prompts for `WebAllowedOrigins`, the web origins allowed
+to call the API. Set it to the production Cloudflare Pages origin (for example
+`https://<project>.pages.dev`), plus any custom domain, comma-separated. Use
+exact scheme and host with no trailing slash and no `*`. The template stores
+the value as the Lambda environment variable `CORS_ALLOWED_ORIGINS` and also
+applies it to the Function URL CORS config. Requests from any other origin
+receive no `Access-Control-Allow-Origin` header. Local development is
+unaffected: when `CORS_ALLOWED_ORIGINS` is unset in `.env`, the API allows
+`http://localhost:5173` and `http://127.0.0.1:5173`.
+
+Non-guided deploys pass the parameter explicitly:
+
+```bash
+sam deploy --parameter-overrides WebAllowedOrigins=https://<project>.pages.dev
+```
+
+The template does not set `AWS_REGION`; Lambda provides it at runtime.
+
+The DynamoDB table has point-in-time recovery and deletion protection enabled,
+and a `Retain` deletion policy. Deleting the stack does not delete the table.
+Disabling deletion protection is a deliberate manual step in the AWS console or
+CLI. See [docs/backups.md](backups.md) for PITR restore steps.
+
 Capture the resulting Function URL. Build and upload the web app manually:
 
 ```bash
@@ -83,8 +106,8 @@ There is intentionally no CI or push-to-deploy workflow. Run `OWNER_EMAIL`, `OWN
 For early backups, use the AWS console or CLI on-demand backup:
 
 ```bash
-aws dynamodb create-backup --table-name <production-table> --backup-name court-manager-$(Get-Date -Format yyyyMMddHHmmss)
+aws dynamodb create-backup --table-name <production-table> --backup-name court-manager-$(date +%Y%m%d%H%M%S)
 aws dynamodb restore-table-from-backup --target-table-name <restored-table> --backup-arn <backup-arn>
 ```
 
-Verify the restored table before switching application configuration. Point-in-time recovery can be enabled later when operational history warrants its cost.
+Verify the restored table before switching application configuration. For point-in-time restore steps, see [docs/backups.md](backups.md#point-in-time-recovery).
