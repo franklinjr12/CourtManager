@@ -57,7 +57,7 @@ export async function openPaymentModal(
     : (reservation?.remainingAmount ?? '');
   openModal(
     t('finance.record'),
-    `<form id="payment-form" class="form-grid"><label>${t('common.customer')}<select name="customerId" required><option value=""></option>${customerOptions(customers, initialCustomer)}</select></label><label>${t('finance.payFor')}<select name="targetType"><option value="reservation"${initialType === 'reservation' ? ' selected' : ''}>${t('finance.payForReservation')}</option><option value="charge"${initialType === 'charge' ? ' selected' : ''}>${t('finance.payForCharge')}</option></select></label><label class="full">${t('finance.target')}<select name="targetId" required></select></label><p class="muted full" data-target-empty hidden></p><label>${t('common.amount')}<input name="amount" type="number" min="0" step="0.01" required value="${escapeText(initialAmount)}"></label><label>${t('common.payment')}<select name="method">${['PIX', 'CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'OTHER'].map((m) => `<option value="${m}">${paymentMethodLabel(m)}</option>`).join('')}</select></label><label>${t('finance.paidAt')}<input name="paidAt" type="datetime-local" required value="${escapeText(new Date().toISOString().slice(0, 16))}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('finance.record')}</button></div></form>`,
+    `<form id="payment-form" class="form-grid"><label>${t('common.customer')}<select name="customerId" required><option value=""></option>${customerOptions(customers, initialCustomer)}</select></label><label>${t('finance.payFor')}<select name="targetType"><option value="reservation"${initialType === 'reservation' ? ' selected' : ''}>${t('finance.payForReservation')}</option><option value="charge"${initialType === 'charge' ? ' selected' : ''}>${t('finance.payForCharge')}</option></select></label><label class="full">${t('finance.target')}<select name="targetId" required></select></label><p class="muted full" data-target-empty hidden></p><label>${t('common.amount')}<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeText(initialAmount)}"></label><label>${t('common.payment')}<select name="method">${['PIX', 'CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'OTHER'].map((m) => `<option value="${m}">${paymentMethodLabel(m)}</option>`).join('')}</select></label><label>${t('finance.paidAt')}<input name="paidAt" type="datetime-local" required value="${escapeText(new Date().toISOString().slice(0, 16))}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('finance.record')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#payment-form');
   if (!form) return;
@@ -132,6 +132,20 @@ export async function openPaymentModal(
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const currentForm = event.currentTarget as HTMLFormElement;
+    const amount = Number(formData(currentForm).amount);
+    if (!(amount > 0)) {
+      showFormError(currentForm, new Error(t('finance.amountMustBePositive')));
+      return;
+    }
+    const remaining = Number(
+      targetSelect.selectedOptions[0]?.dataset.remaining,
+    );
+    if (
+      Number.isFinite(remaining) &&
+      amount > remaining + 0.005 &&
+      !window.confirm(t('finance.overpayConfirmation'))
+    )
+      return;
     setBusy(currentForm, true);
     try {
       await request('/payments', {

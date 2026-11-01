@@ -142,6 +142,33 @@ describe('payment modal', () => {
     expect(posted()).toMatchObject({ chargeId: 'ch1', amount: 170 });
   });
 
+  it('rejects a zero amount without posting', async () => {
+    await openPaymentModal();
+    await pick('customerId', 'c1');
+    el<HTMLInputElement>('amount').value = '0';
+    await submit();
+    expect(posted()).toBeUndefined();
+    expect(document.querySelector('.form-error')?.textContent).toBe(
+      'Amount must be greater than zero.',
+    );
+  });
+
+  it('asks before recording more than the outstanding balance', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await openPaymentModal();
+    await pick('customerId', 'c1');
+    el<HTMLInputElement>('amount').value = '120';
+    await submit();
+    expect(confirm).toHaveBeenCalledWith(
+      'Amount is greater than the outstanding balance. Record anyway?',
+    );
+    expect(posted()).toBeUndefined();
+    confirm.mockReturnValue(true);
+    await submit();
+    expect(posted()).toMatchObject({ amount: 120 });
+    confirm.mockRestore();
+  });
+
   it('labels charges in pt-BR', () => {
     setLocale('pt-BR');
     expect(chargeOptionLabel(charge())).toContain('Horário fixo');

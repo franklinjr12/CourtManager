@@ -2279,6 +2279,11 @@ export class PaymentService {
   constructor(private readonly repo: Repository) {}
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
+    if (!(Number(input.amount) > 0))
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Payment amount must be greater than zero.',
+      );
     let chargeId = input.chargeId ? String(input.chargeId) : undefined;
     let reservationId = input.reservationId
       ? String(input.reservationId)

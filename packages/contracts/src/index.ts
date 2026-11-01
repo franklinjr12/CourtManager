@@ -1775,7 +1775,10 @@ export const PaymentInputSchema = z
     reservationId: IdentifierSchema.optional(),
     classId: IdentifierSchema.optional(),
     customerId: IdentifierSchema,
-    amount: MoneySchema,
+    amount: MoneySchema.refine(
+      (value) => value > 0,
+      'Payment amount must be greater than zero.',
+    ),
     method: PaymentMethodSchema,
     paidAt: z.string().datetime({ offset: true }),
     notes: z.string().max(2000).optional(),

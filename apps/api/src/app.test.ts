@@ -125,3 +125,61 @@ describe('DynamoDB error mapping', () => {
     expect(payload.error.message).not.toContain('DynamoDB');
   });
 });
+
+describe('payment amount validation', () => {
+  it('rejects a zero payment amount and accepts 0.01 past validation', async () => {
+    const repo = new MemoryRepository();
+    await repo.put({
+      PK: 'ORG#org-pay',
+      SK: 'META',
+      entity: 'organization',
+      organizationId: 'org-pay',
+      name: 'Arena',
+      currency: 'BRL',
+    });
+    await repo.put({
+      PK: 'ORG#org-pay',
+      SK: 'USER#staff-pay',
+      entity: 'user',
+      userId: 'staff-pay',
+      organizationId: 'org-pay',
+      name: 'Staff',
+      email: 'staff-pay@arena.test',
+      role: 'OWNER',
+      active: true,
+      passwordHash: await hashPassword('password'),
+    });
+    const app = createApp(repo);
+    const login = await app.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'staff-pay@arena.test',
+        password: 'password',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const token = (await login.json()) as { data: { token: string } };
+    const headers = {
+      Authorization: `Bearer ${token.data.token}`,
+      'Content-Type': 'application/json',
+    };
+    const post = (amount: number) =>
+      app.request('/payments', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          customerId: 'customer-x',
+          reservationId: 'reservation-x',
+          amount,
+          method: 'PIX',
+          paidAt: '2027-01-04T10:00:00Z',
+        }),
+      });
+    const zero = await post(0);
+    expect(zero.status).toBe(400);
+    const payload = (await zero.json()) as { error: { code: string } };
+    expect(payload.error.code).toBe('VALIDATION_ERROR');
+    // 0.01 passes validation (fails later because the reservation is unknown).
+    expect((await post(0.01)).status).toBe(404);
+  });
+});

@@ -5,7 +5,9 @@ import { t } from '../i18n.js';
 import {
   STAFF_DURATION_OPTIONS,
   expectedAmountFor,
+  openRecurringReservationModal,
   openReservationDetail,
+  openReservationModal,
   staffDurationSelect,
   reservationDetailActions,
   reservationIsEditable,
@@ -266,6 +268,55 @@ describe('reservation detail actions per status', () => {
     expect(confirm).toHaveBeenCalledWith(t('reservations.checkInConfirmation'));
     expect(confirm).not.toHaveBeenCalledWith(
       t('reservations.completeConfirmation'),
+    );
+    expect(posts()).toHaveLength(0);
+  });
+});
+
+describe('explicit customer choice in reservation forms', () => {
+  const fetchMock = vi.fn();
+  const json = (body: unknown) =>
+    new Response(JSON.stringify({ data: body }), { status: 200 });
+  const posts = () =>
+    fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    document.body.innerHTML = '<div id="app"></div>';
+    createAppContext(document.querySelector<HTMLDivElement>('#app')!);
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.includes('/courts'))
+        return json([{ courtId: 'court-1', name: 'Court 1', sport: 'Tennis' }]);
+      if (path.includes('/customers'))
+        return json([{ customerId: 'customer-1', name: 'Ana' }]);
+      return json({ slots: [] });
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ['reservation-form', () => openReservationModal()],
+    ['recurring-form', () => openRecurringReservationModal()],
+  ])('%s starts on the placeholder and blocks saving', async (id, open) => {
+    await open();
+    const form = document.querySelector<HTMLFormElement>(`#${id}`)!;
+    const select = form.querySelector<HTMLSelectElement>(
+      '[name="customerId"]',
+    )!;
+    expect(select.options[0]!.value).toBe('');
+    expect(select.options[0]!.textContent).toBe(
+      t('reservations.selectCustomer'),
+    );
+    expect(select.options[0]!.selected).toBe(true);
+    expect(select.value).toBe('');
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await vi.waitFor(() =>
+      expect(form.querySelector('.form-error')!.textContent).toBe(
+        t('reservations.selectCustomer'),
+      ),
     );
     expect(posts()).toHaveLength(0);
   });
