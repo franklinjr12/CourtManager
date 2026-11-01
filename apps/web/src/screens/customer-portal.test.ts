@@ -443,6 +443,7 @@ it('localizes cancellation reasons by reservation status instead of API English'
     'fetch',
     vi
       .fn()
+      .mockResolvedValueOnce(venueResponse())
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ data: getCustomerSession() })),
       )
