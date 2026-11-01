@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomerCharge } from '../core/types.js';
 import { setLocale } from '../i18n.js';
+import { shell } from '../ui/shell.js';
+import { finance } from './finance.js';
 import {
   chargeOptionLabel,
   openPaymentModal,
@@ -189,5 +191,62 @@ describe('payment modal', () => {
     const r = paymentRequestBody({ ...base, targetType: 'reservation' });
     expect(r).toMatchObject({ reservationId: 'x' });
     expect('chargeId' in r).toBe(false);
+  });
+});
+
+describe('finance screen names', () => {
+  it('shows customer, court and date/time instead of ids', async () => {
+    vi.mocked(shell).mockImplementation(async (render) => {
+      document.body.innerHTML = await render();
+    });
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path.startsWith('/payments'))
+        return [
+          {
+            paymentId: 'pay-uuid-1',
+            reservationId: 'res-uuid-1',
+            customerId: 'cust-uuid-1',
+            amount: 50,
+            method: 'PIX',
+            paidAt: '2026-10-05T13:00:00.000Z',
+            courtName: 'Quadra Central',
+            startAt: '2026-10-05T13:00:00.000Z',
+          },
+          {
+            paymentId: 'pay-uuid-2',
+            classId: 'class-uuid-1',
+            customerId: 'cust-uuid-1',
+            amount: 20,
+            method: 'PIX',
+            paidAt: '2026-10-05T13:00:00.000Z',
+            className: 'Tênis Iniciante',
+          },
+        ];
+      if (path.startsWith('/charges'))
+        return [
+          {
+            chargeId: 'charge-uuid-1',
+            customerId: 'cust-uuid-1',
+            customerName: 'Davi Souza',
+            amount: 80,
+            paidAmount: 50,
+            outstanding: 30,
+          },
+        ];
+      if (path === '/finance/summary')
+        return {
+          expectedRevenue: 0,
+          recordedPayments: 0,
+          outstanding: 0,
+          expenses: 0,
+        };
+      return [];
+    });
+    await finance();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Davi Souza');
+    expect(text).toContain('Quadra Central · 2026-10-05 10:00');
+    expect(text).toContain('Tênis Iniciante');
+    expect(text).not.toMatch(/uuid/);
   });
 });

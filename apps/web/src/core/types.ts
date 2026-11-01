@@ -141,6 +141,7 @@ export type CustomerCharge = {
   paidAmount: number;
   outstanding: number;
   paymentStatus: string;
+  customerName?: string;
 };
 
 export type Payment = {
@@ -153,6 +154,11 @@ export type Payment = {
   method: string;
   paidAt: string;
   notes?: string;
+  customerName?: string;
+  courtName?: string;
+  startAt?: string;
+  endAt?: string;
+  className?: string;
 };
 
 export type SportClass = {

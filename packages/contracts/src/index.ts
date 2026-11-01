@@ -1576,6 +1576,8 @@ export const WaitlistSchema = z
     linkedEnrollmentId: IdentifierSchema.optional(),
     cancelledAt: z.string().optional(),
     cancelledBy: IdentifierSchema.optional(),
+    courtName: z.string().optional(),
+    className: z.string().optional(),
   })
   .superRefine((waitlist, ctx) => {
     if (waitlist.type === 'COURT_SLOT' || waitlist.type === 'COURT') {

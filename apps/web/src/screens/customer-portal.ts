@@ -305,9 +305,11 @@ const pageContent: Record<PortalPage, (session: CustomerWebSession) => string> =
 const waitlistCard = (waitlist: Waitlist, timeZone?: string) => {
   const activity =
     waitlist.type === 'CLASS'
-      ? t('portal.waitlistClass', { classId: waitlist.classId ?? '' })
+      ? t('portal.waitlistClass', {
+          className: waitlist.className ?? t('portal.waitlistClassFallback'),
+        })
       : t('portal.waitlistCourt', {
-          court: waitlist.courtId ?? '',
+          court: waitlist.courtName ?? t('portal.waitlistCourtFallback'),
           date: waitlist.desiredDate ?? '',
           time: waitlist.desiredStartTime ?? '',
           minutes: waitlist.durationMinutes ?? 0,
