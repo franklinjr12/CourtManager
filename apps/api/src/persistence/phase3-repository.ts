@@ -566,7 +566,7 @@ export class Phase3Repository implements Phase3Persistence {
   }
 
   private membershipIndexes(membership: Membership) {
-    return [
+    const indexes = [
       phase3Keys.membershipByCustomer(
         membership.organizationId,
         membership.customerId,
@@ -618,6 +618,13 @@ export class Phase3Repository implements Phase3Persistence {
         membership.membershipId,
       ),
     ];
+    // The customer commercial record shares the plain customer membership
+    // key; DynamoDB rejects transactions that touch one item twice.
+    return indexes.filter(
+      (key, position) =>
+        indexes.findIndex((other) => keyString(other) === keyString(key)) ===
+        position,
+    );
   }
 
   private membershipWrites(
