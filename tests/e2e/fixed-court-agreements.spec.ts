@@ -34,4 +34,25 @@ test('staff can create and inspect a fixed recurring court agreement', async ({
   await page.getByRole('button', { name: 'Details' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText(/2027/)).toBeVisible();
+  const billing = page
+    .getByRole('dialog')
+    .getByText(/600\.00/)
+    .last();
+  await expect(billing).toContainText(/Unpaid/);
+  await page.getByRole('button', { name: 'Record payment' }).click();
+  const payment = page.getByRole('dialog');
+  await expect(payment.getByLabel('Price')).toHaveValue('600');
+  await payment.getByRole('button', { name: 'Record payment' }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await page.goto('/commercial/fixed-courts');
+  await page.getByRole('button', { name: 'Details' }).click();
+  await expect(
+    page.getByRole('dialog').getByText(/Paid.*600\.00.*600\.00/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: 'Record payment' }),
+  ).toBeHidden();
+  await page.goto('/finance');
+  const row = page.getByRole('row', { name: /João Fixed/ }).first();
+  await expect(row).toContainText(/0\.00\s*$/);
 });
