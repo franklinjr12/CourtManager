@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   BookingPolicySchema,
   DEFAULT_BOOKING_POLICY,
@@ -1220,6 +1221,24 @@ export class ReservationService {
       throw error;
     }
   }
+  private async syncActiveCharge(
+    reservationId: string,
+    expectedAmount: unknown,
+  ) {
+    if (expectedAmount === undefined) return;
+    const charge = await this.repo.get<RecordItem>(
+      key('charge', `reservation-${reservationId}`),
+    );
+    if (!charge || charge.status !== 'ACTIVE') return;
+    const updatedCharge = stored(
+      { ...as(charge), amount: expectedAmount },
+      charge.PK,
+      charge.SK,
+      'charge',
+    );
+    await this.repo.put(updatedCharge);
+    await this.repo.put(customerChargeIndex(updatedCharge));
+  }
   async update(ctx: AuthContext, reservationId: string, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const current = await this.get(ctx, reservationId);
@@ -1228,10 +1247,31 @@ export class ReservationService {
         'INVALID_STATE',
         'Only confirmed reservations can be edited.',
       );
+    const sameInstant = (requested: unknown, existing: unknown) =>
+      requested === undefined ||
+      new Date(String(requested)).getTime() ===
+        new Date(String(existing)).getTime();
+    const timeChanged =
+      !sameInstant(input.startAt, current.startAt) ||
+      !sameInstant(input.endAt, current.endAt);
+    const fields: Input = timeChanged
+      ? input
+      : Object.fromEntries(
+          Object.entries(input).filter(
+            ([name]) => name !== 'startAt' && name !== 'endAt',
+          ),
+        );
+    if (
+      !timeChanged &&
+      Object.entries(fields).every(([name, field]) =>
+        isDeepStrictEqual(field, (current as Record<string, unknown>)[name]),
+      )
+    )
+      return current;
     const value = stored(
       {
         ...as(current),
-        ...input,
+        ...fields,
         courtId: current.courtId,
         customerId: current.customerId,
         updatedBy: ctx.userId,
@@ -1241,67 +1281,45 @@ export class ReservationService {
       current.SK,
       'reservation',
     );
-    if (input.startAt || input.endAt) {
+    if (timeChanged) {
       const court = (await this.courts.get(
         ctx,
         String(current.courtId),
       )) as Court;
+      const sameKey = (a: RecordItem, b: RecordItem) =>
+        a.PK === b.PK && a.SK === b.SK;
+      const oldIndex = customerReservationIndex(current),
+        newIndex = customerReservationIndex(value),
+        oldActivity = reservationActivity(as<Reservation>(current), court),
+        newActivity = reservationActivity(as<Reservation>(value), court);
       await this.schedule.move(
         ctx,
         court,
         String(current.startAt),
         String(current.endAt),
-        String(input.startAt ?? current.startAt),
-        String(input.endAt ?? current.endAt),
+        String(value.startAt),
+        String(value.endAt),
         'RESERVATION',
         reservationId,
         [
           { type: 'put', item: value },
-          { type: 'put', item: customerReservationIndex(value) },
-          { type: 'delete', key: customerReservationIndex(current) },
-          {
-            type: 'put',
-            item: reservationActivity(as<Reservation>(value), court),
-          },
+          { type: 'put', item: newIndex },
+          ...(sameKey(oldIndex, newIndex)
+            ? []
+            : [{ type: 'delete' as const, key: oldIndex }]),
+          ...(sameKey(oldActivity, newActivity)
+            ? []
+            : [{ type: 'delete' as const, key: oldActivity }]),
+          { type: 'put', item: newActivity },
         ],
         true,
       );
-      if (input.expectedAmount !== undefined) {
-        const charge = await this.repo.get<RecordItem>(
-          key('charge', `reservation-${reservationId}`),
-        );
-        if (charge && charge.status === 'ACTIVE')
-          await (async () => {
-            const updatedCharge = stored(
-              { ...as(charge), amount: input.expectedAmount },
-              charge.PK,
-              charge.SK,
-              'charge',
-            );
-            await this.repo.put(updatedCharge);
-            await this.repo.put(customerChargeIndex(updatedCharge));
-          })();
-      }
+      await this.syncActiveCharge(reservationId, input.expectedAmount);
       return as(value);
     }
     await this.repo.put(value);
     await this.repo.put(customerReservationIndex(value));
-    if (input.expectedAmount !== undefined) {
-      const charge = await this.repo.get<RecordItem>(
-        key('charge', `reservation-${reservationId}`),
-      );
-      if (charge && charge.status === 'ACTIVE')
-        await (async () => {
-          const updatedCharge = stored(
-            { ...as(charge), amount: input.expectedAmount },
-            charge.PK,
-            charge.SK,
-            'charge',
-          );
-          await this.repo.put(updatedCharge);
-          await this.repo.put(customerChargeIndex(updatedCharge));
-        })();
-    }
+    await this.syncActiveCharge(reservationId, input.expectedAmount);
     return as(value);
   }
   async transition(

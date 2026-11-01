@@ -139,6 +139,15 @@ export class MemoryRepository implements Repository {
         'VALIDATION_ERROR',
         'A DynamoDB transaction cannot contain more than 100 actions.',
       );
+    const touched = new Set<string>();
+    for (const write of writes) {
+      const id = this.key(write.type === 'put' ? write.item : write.key);
+      if (touched.has(id))
+        throw new Error(
+          'Transaction request cannot include multiple operations on one item.',
+        );
+      touched.add(id);
+    }
     let release!: () => void;
     const previous = this.mutex;
     this.mutex = new Promise((r) => {
@@ -335,6 +344,11 @@ export class DynamoRepository implements Repository {
     return filter ? items.filter(filter) : items;
   }
   async transactWrite(writes: Write[]) {
+    if (writes.length > 100)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'A DynamoDB transaction cannot contain more than 100 actions.',
+      );
     try {
       await this.client.send(
         new TransactWriteCommand({
@@ -343,7 +357,7 @@ export class DynamoRepository implements Repository {
               ? {
                   ConditionCheck: {
                     TableName: this.table,
-                    Key: w.key,
+                    Key: { PK: w.key.PK, SK: w.key.SK },
                     ...expectedCondition(w.expected),
                   },
                 }
@@ -361,7 +375,7 @@ export class DynamoRepository implements Repository {
                 : {
                     Delete: {
                       TableName: this.table,
-                      Key: w.key,
+                      Key: { PK: w.key.PK, SK: w.key.SK },
                       ...(w.condition
                         ? { ConditionExpression: w.condition }
                         : {}),
@@ -372,11 +386,16 @@ export class DynamoRepository implements Repository {
       );
     } catch (error) {
       const name = String((error as { name?: unknown }).name ?? '');
-      if (name === 'ValidationException')
-        throw new AppError(
-          'VALIDATION_ERROR',
-          'A DynamoDB transaction cannot contain more than 100 actions.',
+      if (name === 'ValidationException') {
+        console.error(
+          JSON.stringify({
+            error: name,
+            message: String((error as { message?: unknown }).message ?? ''),
+            operation: 'transactWrite',
+          }),
         );
+        throw new Error('DynamoDB transaction was rejected.');
+      }
       if (name !== 'TransactionCanceledException') throw error;
       if (
         writes.some(

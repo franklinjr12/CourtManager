@@ -329,9 +329,14 @@ export async function openReservationDetail(id: string) {
       const values = formData(form);
       const startAt = isoFromInputs(String(values.date), String(values.start));
       const endAt = isoFromInputs(String(values.date), String(values.end));
+      const timeChanged = reservationTimeChanged(reservation, startAt, endAt);
+      if (!timeChanged) {
+        closeModal();
+        toast(t('reservations.updated'));
+        return;
+      }
       if (
         (reservation.paidAmount ?? 0) > 0 &&
-        reservationTimeChanged(reservation, startAt, endAt) &&
         !window.confirm(t('reservations.paidTimeChangeConfirmation'))
       ) {
         setBusy(form, false);
