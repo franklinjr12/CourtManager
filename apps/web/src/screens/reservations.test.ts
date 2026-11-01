@@ -7,6 +7,7 @@ import {
   expectedAmountFor,
   openReservationDetail,
   staffDurationSelect,
+  reservationDetailActions,
   reservationIsEditable,
   reservationTimeChanged,
   wireReservationDetailButtons,
@@ -165,5 +166,107 @@ describe('reservation time edit form', () => {
     expect(form().querySelector('[role="alert"]')!.textContent).not.toBe(
       t('errors.requestFailed'),
     );
+  });
+});
+
+describe('reservation detail actions per status', () => {
+  const fetchMock = vi.fn();
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status });
+  const posts = () =>
+    fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+  const open = async (status: string) => {
+    fetchMock.mockImplementation(async () =>
+      json(200, { data: { ...reservation, status } }),
+    );
+    await openReservationDetail(reservation.reservationId);
+  };
+  const transitions = () =>
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '.modal .detail-actions [data-transition]',
+      ),
+    ].map((element) => element.dataset.transition);
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    document.body.innerHTML = '<div id="app"></div>';
+    createAppContext(document.querySelector<HTMLDivElement>('#app')!);
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('maps statuses to API-accepted actions', () => {
+    expect(reservationDetailActions('BOOKED')).toEqual({
+      transitions: ['CHECKED_IN', 'NO_SHOW', 'CANCELLED'],
+      payment: true,
+    });
+    expect(reservationDetailActions('CHECKED_IN')).toEqual({
+      transitions: ['COMPLETED'],
+      payment: true,
+    });
+    expect(reservationDetailActions('COMPLETED')).toEqual({
+      transitions: [],
+      payment: true,
+    });
+    expect(reservationDetailActions('NO_SHOW')).toEqual({
+      transitions: [],
+      payment: false,
+    });
+    expect(reservationDetailActions('CANCELLED')).toEqual({
+      transitions: [],
+      payment: false,
+    });
+  });
+
+  it.each([
+    ['BOOKED', ['CHECKED_IN', 'NO_SHOW', 'CANCELLED'], true],
+    ['CHECKED_IN', ['COMPLETED'], true],
+    ['COMPLETED', [], true],
+    ['NO_SHOW', [], false],
+    ['CANCELLED', [], false],
+  ])('renders the buttons for %s', async (status, expected, payment) => {
+    await open(status);
+    expect(transitions()).toEqual(expected);
+    expect(!!document.querySelector('.modal [data-payment]')).toBe(payment);
+    if (status === 'BOOKED') expect(transitions()).not.toContain('COMPLETED');
+  });
+
+  it('completes a checked-in reservation from the UI', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fetchMock.mockImplementation(async (_url, init) =>
+      json(200, {
+        data: {
+          ...reservation,
+          status: init?.method ? 'COMPLETED' : 'CHECKED_IN',
+        },
+      }),
+    );
+    await openReservationDetail(reservation.reservationId);
+    document
+      .querySelector<HTMLElement>('[data-transition="COMPLETED"]')!
+      .click();
+    await vi.waitFor(() => expect(posts()).toHaveLength(1));
+    expect(String(posts()[0]![0])).toContain(
+      '/reservations/reservation-1/complete',
+    );
+  });
+
+  it('asks the check-in question, not the complete one', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await open('BOOKED');
+    document
+      .querySelector<HTMLElement>('[data-transition="CHECKED_IN"]')!
+      .click();
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(confirm).toHaveBeenCalledWith(t('reservations.checkInConfirmation'));
+    expect(confirm).not.toHaveBeenCalledWith(
+      t('reservations.completeConfirmation'),
+    );
+    expect(posts()).toHaveLength(0);
   });
 });
