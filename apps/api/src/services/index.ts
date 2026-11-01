@@ -65,6 +65,7 @@ import {
   CustomerCommercialPortalService,
 } from './customer-portal/index.js';
 import { EntitlementService } from './entitlements.js';
+import { withFinanceDisplay } from './finance-display.js';
 import { FixedCourtAgreementService } from './fixed-court-agreements.js';
 import { MakeupCreditService } from './makeup-credits.js';
 import { MembershipService } from './memberships.js';
@@ -2152,7 +2153,7 @@ export class ChargeService {
     const from = filters.from ? String(filters.from) : undefined,
       to = filters.to ? String(filters.to) : undefined;
     const payments = withOrg(ctx, 'payment', await this.repo.scan());
-    return withOrg(ctx, 'charge', await this.repo.scan())
+    const rows = withOrg(ctx, 'charge', await this.repo.scan())
       .filter(
         (charge) =>
           (!filters.customerId || charge.customerId === filters.customerId) &&
@@ -2174,6 +2175,7 @@ export class ChargeService {
           this.paidFor(charge, payments),
         ),
       }));
+    return withFinanceDisplay(this.repo, ctx.organizationId, rows);
   }
   private paidFor(charge: RecordItem, payments: RecordItem[]) {
     return paidAmountForCharge(charge, payments);
@@ -2279,6 +2281,11 @@ export class PaymentService {
   constructor(private readonly repo: Repository) {}
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
+    if (!(Number(input.amount) > 0))
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Payment amount must be greater than zero.',
+      );
     let chargeId = input.chargeId ? String(input.chargeId) : undefined;
     let reservationId = input.reservationId
       ? String(input.reservationId)
@@ -2377,12 +2384,13 @@ export class PaymentService {
     await this.repo.delete(customerFinancialPaymentIndex(p));
   }
   async list(ctx: AuthContext, filters: Input = {}) {
-    return withOrg(ctx, 'payment', await this.repo.scan())
+    const rows = withOrg(ctx, 'payment', await this.repo.scan())
       .filter(
         (payment) =>
           !filters.customerId || payment.customerId === filters.customerId,
       )
       .map(as);
+    return withFinanceDisplay(this.repo, ctx.organizationId, rows);
   }
 }
 export class ExpenseService {

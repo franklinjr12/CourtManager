@@ -1576,6 +1576,8 @@ export const WaitlistSchema = z
     linkedEnrollmentId: IdentifierSchema.optional(),
     cancelledAt: z.string().optional(),
     cancelledBy: IdentifierSchema.optional(),
+    courtName: z.string().optional(),
+    className: z.string().optional(),
   })
   .superRefine((waitlist, ctx) => {
     if (waitlist.type === 'COURT_SLOT' || waitlist.type === 'COURT') {
@@ -1775,7 +1777,10 @@ export const PaymentInputSchema = z
     reservationId: IdentifierSchema.optional(),
     classId: IdentifierSchema.optional(),
     customerId: IdentifierSchema,
-    amount: MoneySchema,
+    amount: MoneySchema.refine(
+      (value) => value > 0,
+      'Payment amount must be greater than zero.',
+    ),
     method: PaymentMethodSchema,
     paidAt: z.string().datetime({ offset: true }),
     notes: z.string().max(2000).optional(),

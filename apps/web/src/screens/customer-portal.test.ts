@@ -633,6 +633,39 @@ it('shows the waitlist joined time in the venue zone', async () => {
   expect(card).not.toContain('10:00');
 });
 
+it('shows the class and court names on waitlist cards, not ids', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/waitlists');
+  stubPortalFetch(portalSession(), {
+    '/customer/waitlists': [
+      {
+        waitlistId: 'w1',
+        type: 'CLASS',
+        classId: 'class-uuid-1',
+        className: 'Tênis Iniciante',
+        joinedAt: '2026-11-03T10:00:00.000Z',
+      },
+      {
+        waitlistId: 'w2',
+        type: 'COURT_SLOT',
+        courtId: 'court-uuid-1',
+        courtName: 'Quadra Central',
+        desiredDate: '2026-11-10',
+        desiredStartTime: '10:00',
+        durationMinutes: 60,
+        joinedAt: '2026-11-03T10:00:00.000Z',
+      },
+    ],
+  });
+  await customerPortalPage('arena', 'waitlists');
+  const text = root.textContent!;
+  expect(text).toContain('Tênis Iniciante');
+  expect(text).toContain('Quadra Central');
+  expect(text).not.toContain('uuid');
+});
+
 it('shows home activity time in the venue zone', async () => {
   vi.stubEnv('TZ', 'UTC');
   const root = document.createElement('div');

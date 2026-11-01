@@ -381,9 +381,36 @@ export class WaitlistService {
       phase2Keys.customerWaitlists(ctx.organizationId, ctx.customerId).PK,
       { beginsWith: 'WAITLIST#ACTIVE#' },
     );
-    return rows
-      .filter((row) => row.entity === 'waitlist' && row.status === 'ACTIVE')
-      .map((row) => as<Waitlist>(row));
+    const active = rows.filter(
+      (row) => row.entity === 'waitlist' && row.status === 'ACTIVE',
+    );
+    const related = await this.batchGet([
+      ...active
+        .filter((row) => row.courtId)
+        .map((row) => ({
+          PK: `ORG#${ctx.organizationId}`,
+          SK: `COURT#${String(row.courtId)}`,
+        })),
+      ...active
+        .filter((row) => row.classId)
+        .map((row) => primary('CLASS', String(row.classId))),
+    ]);
+    const names = new Map(
+      related
+        .filter((row) => row.organizationId === ctx.organizationId)
+        .map((row) => [`${row.PK}|${row.SK}`, String(row.name)]),
+    );
+    return active.map((row) => {
+      const courtName = names.get(
+        `ORG#${ctx.organizationId}|COURT#${row.courtId}`,
+      );
+      const className = names.get(`CLASS#${row.classId}|META`);
+      return {
+        ...as<Waitlist>(row),
+        ...(courtName ? { courtName } : {}),
+        ...(className ? { className } : {}),
+      };
+    });
   }
 
   async staffList(ctx: AuthContext): Promise<StaffWaitlist[]> {
