@@ -27,11 +27,14 @@ vi.mock('../ui/modal.js', () => ({
   },
   closeModal: vi.fn(),
 }));
-vi.mock('../core/presentation.js', () => ({
-  dateValue: () => '2026-10-05',
-  timeValue: () => '10:00',
-  errorMessage: String,
-}));
+vi.mock('../core/presentation.js', async () => {
+  const dates = await import('../core/dates.js');
+  return {
+    dateValue: () => '2026-10-05',
+    timeValue: (iso: string) => dates.timeValue(iso, 'America/Sao_Paulo'),
+    errorMessage: String,
+  };
+});
 vi.mock('../ui/feedback.js', () => ({ toast: vi.fn() }));
 vi.mock('../ui/shell.js', () => ({ shell: vi.fn() }));
 
@@ -137,5 +140,36 @@ describe('agreement details payment action', () => {
     );
     await openRichDetails('fa1', [], []);
     expect(document.querySelector('[data-record-charge-payment]')).toBeNull();
+  });
+});
+
+describe('agreement details linked reservations', () => {
+  it('shows venue-zone times when the browser zone is UTC', async () => {
+    process.env.TZ = 'UTC';
+    setLocale('en-US');
+    document.body.innerHTML = '';
+    mocks.request.mockReset();
+    mocks.request.mockImplementation(async (path: string) => {
+      if (path.startsWith('/fixed-court-agreements/'))
+        return {
+          ...agreement,
+          occurrences: [
+            {
+              date: '2026-11-03',
+              startAt: '2026-11-03T10:00:00.000Z',
+              endAt: '2026-11-03T11:00:00.000Z',
+              status: 'ACTIVE',
+              reservationId: 'r1',
+            },
+          ],
+        };
+      if (path.startsWith('/customers'))
+        return [{ customerId: 'c1', name: 'Davi' }];
+      return [];
+    });
+    await openRichDetails('fa1', [], []);
+    const row = document.querySelector('tbody tr')!.textContent!;
+    expect(row).toContain('07:00–08:00');
+    expect(row).not.toContain('10:00');
   });
 });
