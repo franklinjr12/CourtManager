@@ -41,14 +41,14 @@ export async function publicBooking(slug: string) {
       message.className = 'notice';
       message.textContent =
         mode === 'STAFF_ONLY'
-          ? 'Online booking is unavailable. Please contact venue staff.'
-          : 'Sign in or register to reserve an available court instantly.';
+          ? t('public.staffOnly')
+          : t('public.signInToReserve');
       publicForm.append(message);
       if (mode === 'AUTO_CONFIRM') {
         const signIn = document.createElement('a');
         signIn.className = 'button primary';
         signIn.href = `/portal/${encodeURIComponent(slug)}/login`;
-        signIn.textContent = 'Sign in to book';
+        signIn.textContent = t('public.signInToBook');
         publicForm.append(signIn);
       }
     }
@@ -88,6 +88,10 @@ export async function publicBooking(slug: string) {
           .value,
       );
       const start = publicForm.elements.namedItem('time') as HTMLSelectElement;
+      if (!date) {
+        start.innerHTML = `<option value="">${t('public.chooseDateFirst')}</option>`;
+        return;
+      }
       const selectedStart = start.value;
       start.innerHTML = `<option>${t('common.loading')}</option>`;
       try {

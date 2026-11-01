@@ -1,5 +1,5 @@
-import { timeValue } from '../core/presentation.js';
-import { t } from '../i18n.js';
+import { dateValue, timeValue } from '../core/presentation.js';
+import { reservationStatusLabel, t } from '../i18n.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { shell } from '../ui/shell.js';
@@ -20,7 +20,7 @@ export async function classDetail(id: string) {
       sessions: Array<{ sessionId: string; startAt: string; status: string }>;
       enrollments: Array<{ status: string }>;
     }>(`/classes/${id}`);
-    return `<div class="toolbar"><h2>${escapeText(data.name)}</h2><a class="button" href="/classes">${t('common.close')}</a></div><article class="card"><p>${escapeText(data.sport)} · ${data.enrollments.filter((x) => x.status === 'ACTIVE').length}/${data.capacity}</p></article><article class="card"><h3>${t('classSession.roster')}</h3><ul>${data.sessions.map((session) => `<li><a href="/class-sessions/${escapeText(session.sessionId)}">${escapeText(session.startAt)} — ${escapeText(session.status)}</a></li>`).join('')}</ul></article>`;
+    return `<div class="toolbar"><h2>${escapeText(data.name)}</h2><a class="button" href="/classes">${t('common.close')}</a></div><article class="card"><p>${escapeText(data.sport)} · ${data.enrollments.filter((x) => x.status === 'ACTIVE').length}/${data.capacity}</p></article><article class="card"><h3>${t('classSession.roster')}</h3><ul>${data.sessions.map((session) => `<li><a href="/class-sessions/${escapeText(session.sessionId)}">${escapeText(dateValue(session.startAt))} ${escapeText(timeValue(session.startAt))} — ${escapeText(reservationStatusLabel(session.status))}</a></li>`).join('')}</ul></article>`;
   });
 }
 

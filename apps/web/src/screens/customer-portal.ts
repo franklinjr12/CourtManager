@@ -241,6 +241,15 @@ type CustomerReservationRequest = {
   status: string;
 };
 
+const cancellationReason = (status: string) =>
+  status === 'CANCELLED'
+    ? t('portal.alreadyCancelled')
+    : status === 'COMPLETED'
+      ? t('portal.alreadyCompleted')
+      : status === 'BOOKED'
+        ? t('portal.cancellationPeriodEnded')
+        : t('portal.cancellationUnavailable');
+
 const reservationCard = (
   item: CustomerReservation | CustomerReservationRequest,
   historical = false,
@@ -252,7 +261,7 @@ const reservationCard = (
     ? `<p class="portal-request-note">${t('portal.requestedExplanation')}</p><button class="button small" data-cancel-customer-reservation="${escapeText(item.requestId)}">${t('portal.withdrawRequest')}</button>`
     : item.cancellationEligibility.eligible
       ? `<p class="muted">${t('portal.cancellationUntil', { date: activityTime({ startAt: item.cancellationEligibility.cutoffAt }, timeZone) })}</p><button class="button small danger" data-cancel-customer-reservation="${escapeText(item.reservationId)}">${t('portal.cancelReservation')}</button>`
-      : `<p class="muted">${escapeText(item.cancellationEligibility.reason ?? t('portal.cancellationUnavailable'))}</p>`;
+      : `<p class="muted">${escapeText(cancellationReason(item.status))}</p>`;
   const coverage =
     !requested && item.entitlementAllocations?.length
       ? `<p class="portal-covered"><strong>${t('portal.coveredBy')}</strong> ${item.entitlementAllocations.map((allocation) => `${escapeText(allocation.sourceName ?? t(`plans.type.${allocation.sourceType}` as never))} · ${allocation.quantity} ${escapeText(t(`plans.unit.${allocation.unit}` as never))}`).join(' · ')}</p>`
@@ -670,7 +679,7 @@ async function wireBooking(slug: string) {
     policyNotice.textContent =
       policy.reservationMode === 'REQUEST_APPROVAL'
         ? t('portal.requestedExplanation')
-        : t('portal.confirmedExplanation');
+        : t('portal.autoConfirmExplanation');
     confirm.textContent =
       policy.reservationMode === 'REQUEST_APPROVAL'
         ? t('portal.requestBooking')

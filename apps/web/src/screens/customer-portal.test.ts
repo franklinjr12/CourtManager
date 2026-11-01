@@ -331,6 +331,136 @@ it('shows request approval as unconfirmed and changes booking action label', asy
       ?.textContent,
   ).toBe('Enviar solicitação de reserva');
 });
+it('shows auto-confirm policy without a premature confirmation banner', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/book');
+  setCustomerSession({
+    token: 'customer-token',
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: { customerId: 'customer-1', name: 'Maria', archived: false },
+  });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            organizationId: 'org',
+            customerId: 'customer-1',
+            customerAccountId: 'account-1',
+            customer: {
+              customerId: 'customer-1',
+              name: 'Maria',
+              archived: false,
+            },
+          },
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            reservationMode: 'AUTO_CONFIRM',
+            minimumReservationMinutes: 60,
+            maximumReservationMinutes: 60,
+          },
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: { timezone: 'UTC' } })),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            allowedDurations: [60],
+            onlineBookingAvailable: true,
+            courts: [
+              {
+                courtId: 'court-1',
+                name: 'Court 1',
+                sport: 'Tennis',
+                available: ['10:00'],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+  vi.stubGlobal('fetch', fetcher);
+  await customerPortalPage('arena', 'book');
+  await vi.waitFor(() =>
+    expect(root.querySelector('#portal-booking-policy')?.textContent).toContain(
+      'confirmadas na hora',
+    ),
+  );
+  expect(
+    root.querySelector('#portal-booking-policy')?.textContent,
+  ).not.toContain('Reserva confirmada');
+});
+it('localizes cancellation reasons by reservation status instead of API English', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/reservations');
+  setCustomerSession({
+    token: 'customer-token',
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: { customerId: 'customer-1', name: 'Maria', archived: false },
+  });
+  const card = (id: string, status: string, reason: string) => ({
+    itemType: 'RESERVATION',
+    reservationId: id,
+    court: { courtId: 'court-1', name: 'Court 1', sport: 'Tennis' },
+    startAt: '2099-09-12T10:00:00.000Z',
+    endAt: '2099-09-12T11:00:00.000Z',
+    durationMinutes: 60,
+    status,
+    source: 'STAFF',
+    expectedAmount: 120,
+    cancellationEligibility: {
+      reservationId: id,
+      eligible: false,
+      status,
+      cutoffAt: '2099-09-12T04:00:00.000Z',
+      evaluatedAt: '2099-09-13T12:00:00.000Z',
+      reason,
+    },
+  });
+  const upcoming = [
+    card('r1', 'CANCELLED', 'Reservation is already cancelled.'),
+    card('r2', 'BOOKED', 'Cancellation period has ended.'),
+  ];
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(venueResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: getCustomerSession() })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: { reservations: upcoming, requests: [] } }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [], nextCursor: null })),
+      ),
+  );
+  await customerPortalPage('arena', 'reservations');
+  expect(root.textContent).toContain('A reserva já foi cancelada.');
+  expect(root.textContent).toContain('O prazo de cancelamento terminou.');
+  expect(root.textContent).not.toContain('Cancellation period has ended.');
+});
 it('keeps a retryable localized error when portal profile request loses network', async () => {
   const root = document.createElement('div');
   document.body.replaceChildren(root);
