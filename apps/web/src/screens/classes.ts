@@ -64,7 +64,7 @@ function openClassModal(
   if (form) {
     form.insertAdjacentHTML(
       'afterbegin',
-      `<label>${t('staff.role')}<select name="coachId" required>${coaches.map((coach) => `<option value="${escapeText(coach.userId)}">${escapeText(coach.name)}</option>`).join('')}</select></label>`,
+      `<label>${t('classes.coach')}<select name="coachId" required>${coaches.map((coach) => `<option value="${escapeText(coach.userId)}">${escapeText(coach.name)}</option>`).join('')}</select></label>`,
     );
     const price = form.elements.namedItem('price');
     if (price instanceof HTMLElement)

@@ -271,7 +271,7 @@ export async function openBlockModal(date = today(), courtId?: string) {
         }),
       });
       closeModal();
-      toast(t('schedule.blockCourt'));
+      toast(t('schedule.blockCreated'));
       await renderRoute();
     } catch (error) {
       showFormError(form, error);
