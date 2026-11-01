@@ -14,6 +14,7 @@ import {
   paymentStatusLabel,
   reservationStatusLabel,
   t,
+  type TranslationKey,
 } from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
@@ -278,20 +279,66 @@ export async function openBlockModal(date = today(), courtId?: string) {
     }
   });
 }
+type ReservationTransition =
+  'CHECKED_IN' | 'COMPLETED' | 'NO_SHOW' | 'CANCELLED';
+
+// Mirrors `allowedTransition` in apps/api/src/domain.ts: only offer actions
+// the API accepts for each status.
+export function reservationDetailActions(status: string): {
+  transitions: ReservationTransition[];
+  payment: boolean;
+} {
+  if (status === 'BOOKED' || status === 'CONFIRMED')
+    return {
+      transitions: ['CHECKED_IN', 'NO_SHOW', 'CANCELLED'],
+      payment: true,
+    };
+  if (status === 'CHECKED_IN')
+    return { transitions: ['COMPLETED'], payment: true };
+  if (status === 'COMPLETED') return { transitions: [], payment: true };
+  return { transitions: [], payment: false };
+}
+
+const TRANSITION_LABEL = {
+  CHECKED_IN: 'classSession.checkIn',
+  COMPLETED: 'reservations.complete',
+  NO_SHOW: 'reservations.noShow',
+  CANCELLED: 'reservations.cancel',
+} as const;
+
+const TRANSITION_CONFIRMATION: Record<string, TranslationKey> = {
+  CANCELLED: 'reservations.cancelConfirmation',
+  NO_SHOW: 'reservations.noShowConfirmation',
+  CHECKED_IN: 'reservations.checkInConfirmation',
+  COMPLETED: 'reservations.completeConfirmation',
+};
+
+function detailActionButtons(reservation: Reservation) {
+  const actions = reservationDetailActions(reservation.status);
+  return (
+    actions.transitions
+      .map((transition) =>
+        button(
+          t(TRANSITION_LABEL[transition]),
+          `data-transition="${transition}"`,
+        ),
+      )
+      .join('') +
+    (actions.payment
+      ? button(
+          t('reservations.recordPayment'),
+          `data-payment="${escapeText(reservation.reservationId)}"`,
+        )
+      : '')
+  );
+}
 export async function openReservationDetail(id: string) {
   const reservation = await request<Reservation>(`/reservations/${id}`);
   const editable = reservationIsEditable(reservation.status);
   openModal(
     t('reservations.details'),
-    `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${editable ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${editable ? `${button(t('reservations.complete'), 'data-transition="COMPLETED"')}${button(t('reservations.noShow'), 'data-transition="NO_SHOW"')}${button(t('reservations.cancel'), 'data-transition="CANCELLED"')}${button(t('reservations.recordPayment'), `data-payment="${escapeText(reservation.reservationId)}"`)}` : ''}</div>`,
+    `<div class="detail-grid"><div><span class="muted">${t('common.status')}</span><strong>${reservationStatusLabel(reservation.status)}</strong></div><div><span class="muted">${t('common.time')}</span><strong>${escapeText(dateValue(reservation.startAt))} ${escapeText(timeValue(reservation.startAt))}–${escapeText(timeValue(reservation.endAt))}</strong></div><div><span class="muted">${t('common.expected')}</span><strong>${formatMoney(reservation.expectedAmount)}</strong></div><div><span class="muted">${t('common.paid')}</span><strong>${formatMoney(reservation.paidAmount ?? 0)}</strong></div></div><form id="reservation-edit-form" class="form-grid"><label>${t('common.date')}<input name="date" type="date" value="${escapeText(reservation.startAt.slice(0, 10))}" required></label><label>${t('common.start')}<input name="start" type="time" value="${escapeText(reservation.startAt.slice(11, 16))}" required></label><label>${t('common.end')}<input name="end" type="time" value="${escapeText(reservation.endAt.slice(11, 16))}" required></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.close')}</button>${editable ? `<button class="button primary">${t('reservations.saveTime')}</button>` : ''}</div></form><div class="row-actions detail-actions">${detailActionButtons(reservation)}</div>`,
   );
-  if (reservation.status === 'BOOKED')
-    app
-      .querySelector<HTMLElement>('.modal .detail-actions')
-      ?.insertAdjacentHTML(
-        'afterbegin',
-        button(t('classSession.checkIn'), 'data-transition="CHECKED_IN"'),
-      );
   const detailGrid = app.querySelector<HTMLElement>('.modal .detail-grid');
   detailGrid?.insertAdjacentHTML(
     'beforeend',
@@ -362,11 +409,10 @@ export async function openReservationDetail(id: string) {
       const status = String(element.dataset.transition);
       if (
         !window.confirm(
-          status === 'CANCELLED'
-            ? t('reservations.cancelConfirmation')
-            : status === 'NO_SHOW'
-              ? t('reservations.noShowConfirmation')
-              : t('reservations.completeConfirmation'),
+          t(
+            TRANSITION_CONFIRMATION[status] ??
+              'reservations.completeConfirmation',
+          ),
         )
       )
         return;
