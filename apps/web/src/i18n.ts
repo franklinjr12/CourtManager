@@ -414,6 +414,17 @@ const enUS = {
   'finance.title': 'Payments',
   'finance.description': 'External payment records.',
   'finance.record': 'Record payment',
+  'finance.payFor': 'Pay for',
+  'finance.payForReservation': 'Reservation',
+  'finance.payForCharge': 'Open charge',
+  'finance.target': 'Item',
+  'finance.noOpenCharges': 'No open charges for this customer.',
+  'finance.noCustomerReservations': 'No reservations for this customer.',
+  'chargeSource.RESERVATION': 'Reservation',
+  'chargeSource.CLASS': 'Class',
+  'chargeSource.MEMBERSHIP': 'Membership',
+  'chargeSource.PACKAGE': 'Package',
+  'chargeSource.FIXED_COURT_AGREEMENT': 'Fixed court',
   'finance.deleteConfirmation': 'Delete this payment record?',
   'finance.deleted': 'Payment deleted.',
   'finance.recorded': 'Recorded payments',
@@ -1224,6 +1235,17 @@ const ptBR: Record<keyof typeof enUS, string> = {
   'finance.title': 'Pagamentos',
   'finance.description': 'Registros de pagamentos externos.',
   'finance.record': 'Registrar pagamento',
+  'finance.payFor': 'Pagar',
+  'finance.payForReservation': 'Reserva',
+  'finance.payForCharge': 'Cobrança em aberto',
+  'finance.target': 'Item',
+  'finance.noOpenCharges': 'Nenhuma cobrança em aberto para este cliente.',
+  'finance.noCustomerReservations': 'Nenhuma reserva para este cliente.',
+  'chargeSource.RESERVATION': 'Reserva',
+  'chargeSource.CLASS': 'Aula',
+  'chargeSource.MEMBERSHIP': 'Plano',
+  'chargeSource.PACKAGE': 'Pacote',
+  'chargeSource.FIXED_COURT_AGREEMENT': 'Horário fixo',
   'finance.deleteConfirmation': 'Excluir este registro de pagamento?',
   'finance.deleted': 'Pagamento excluído.',
   'finance.recorded': 'Pagamentos registrados',
@@ -1719,6 +1741,8 @@ export const reservationStatusLabel = (value: string) => label('status', value);
 export const requestStatusLabel = (value: string) => label('status', value);
 export const paymentStatusLabel = (value: string) =>
   label('paymentStatus', value);
+export const chargeSourceLabel = (value: string) =>
+  label('chargeSource', value);
 export const reservationSourceLabel = (value: string) => label('source', value);
 export const blockReasonLabel = (value: string) => label('blockReason', value);
 export const paymentMethodLabel = (value: string) =>
