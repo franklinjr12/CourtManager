@@ -132,6 +132,43 @@ describe('agreement details payment action', () => {
     expect(body.reservationId).toBeUndefined();
   });
 
+  it('shows court name and translated status for linked reservations', async () => {
+    setLocale('pt-BR');
+    mocks.request.mockImplementation(async (path: string) =>
+      path.startsWith('/fixed-court-agreements/')
+        ? {
+            ...agreement,
+            occurrences: [
+              {
+                occurrenceId: 'o1',
+                date: '2026-10-07',
+                startAt: '2026-10-07T22:00:00.000Z',
+                endAt: '2026-10-08T00:00:00.000Z',
+                status: 'MISSED',
+                reservationId: 'res-uuid-999',
+              },
+              {
+                occurrenceId: 'o2',
+                date: '2026-10-14',
+                startAt: '2026-10-14T22:00:00.000Z',
+                endAt: '2026-10-15T00:00:00.000Z',
+                status: 'SCHEDULED',
+              },
+            ],
+          }
+        : [],
+    );
+    await openRichDetails('fa1', [], [
+      { courtId: 'ct1', name: 'Quadra 7' },
+    ] as never);
+    const rows = [...document.querySelectorAll('.table-wrap tbody tr')];
+    expect(rows[0]?.textContent).toContain('Quadra 7');
+    expect(rows[0]?.textContent).toContain('Não realizada');
+    expect(rows[1]?.textContent).toContain('Programada');
+    expect(document.body.textContent).not.toContain('res-uuid-999');
+    expect(document.body.textContent).not.toContain('MISSED');
+  });
+
   it('hides the action when nothing is outstanding', async () => {
     mocks.request.mockImplementation(async (path: string) =>
       path.startsWith('/fixed-court-agreements/')
