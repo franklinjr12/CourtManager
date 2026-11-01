@@ -4,6 +4,7 @@ import {
   LOCALE_STORAGE_KEY,
   SUPPORTED_LOCALES,
   blockReasonLabel,
+  formatCalendarDate,
   formatDate,
   formatMoney,
   getLocale,
@@ -88,6 +89,13 @@ describe('localization', () => {
     setLocale('en-US');
     expect(formatMoney(1234.56)).toContain('1,234.56');
     expect(formatDate('2024-05-06T12:00:00Z')).toBe('05/06/2024');
+  });
+
+  it('formats venue-local calendar dates without timezone shift', () => {
+    expect(formatCalendarDate('2026-11-10')).toBe('10/11/2026');
+    expect(formatCalendarDate('not-a-date')).toBe('not-a-date');
+    setLocale('en-US');
+    expect(formatCalendarDate('2026-11-10')).toBe('11/10/2026');
   });
 
   it('keeps pt-BR accents and translated labels in pilot screens', () => {

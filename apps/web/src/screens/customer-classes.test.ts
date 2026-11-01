@@ -36,6 +36,7 @@ it('renders safe class details and enrolls/leaves using only the class ID', asyn
   expect(root.querySelector('script')).toBeNull();
   expect(root.textContent).toContain('1 / 2 matriculados');
   expect(root.textContent).toContain('America/Sao_Paulo');
+  expect(root.textContent).toContain('01/01/2099 – 01/02/2099');
   expect(root.textContent).toContain('Maria');
   request.mockResolvedValueOnce({}).mockResolvedValueOnce({
     data: [{ ...cls, enrollment: { enrollmentId: 'one', status: 'ACTIVE' } }],

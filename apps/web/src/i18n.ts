@@ -732,6 +732,17 @@ const enUS = {
   'portal.withdrawRequest': 'Withdraw request',
   'portal.cancelBookingPrompt': 'Cancel this booking?',
   'portal.cancellationUntil': 'Cancellation available until {date}.',
+  'public.staffOnly':
+    'Online booking is unavailable. Please contact venue staff.',
+  'public.signInToReserve':
+    'Sign in or register to reserve an available court instantly.',
+  'public.signInToBook': 'Sign in to book',
+  'public.chooseDateFirst': 'Choose a date first',
+  'portal.alreadyCancelled': 'Reservation is already cancelled.',
+  'portal.alreadyCompleted': 'Reservation is already completed.',
+  'portal.cancellationPeriodEnded': 'Cancellation period has ended.',
+  'portal.autoConfirmExplanation':
+    'Bookings made here are confirmed immediately.',
   'portal.cancellationUnavailable': 'Cancellation unavailable.',
   'portal.requestedNotConfirmed': 'Requested · not confirmed',
   'portal.requestedExplanation':
@@ -1567,6 +1578,17 @@ const ptBR: Record<keyof typeof enUS, string> = {
   'portal.withdrawRequest': 'Retirar solicitação',
   'portal.cancelBookingPrompt': 'Cancelar esta reserva?',
   'portal.cancellationUntil': 'Cancelamento disponível até {date}.',
+  'public.staffOnly':
+    'A reserva online não está disponível. Fale com a equipe do local.',
+  'public.signInToReserve':
+    'Entre ou cadastre-se para reservar uma quadra disponível na hora.',
+  'public.signInToBook': 'Entrar para reservar',
+  'public.chooseDateFirst': 'Escolha uma data primeiro',
+  'portal.alreadyCancelled': 'A reserva já foi cancelada.',
+  'portal.alreadyCompleted': 'A reserva já foi concluída.',
+  'portal.cancellationPeriodEnded': 'O prazo de cancelamento terminou.',
+  'portal.autoConfirmExplanation':
+    'As reservas feitas aqui são confirmadas na hora.',
   'portal.cancellationUnavailable': 'Cancelamento indisponível.',
   'portal.requestedNotConfirmed': 'Solicitada · não confirmada',
   'portal.requestedExplanation':
@@ -1737,6 +1759,16 @@ export function formatDate(value: string | Date, timeZone?: string): string {
     year: 'numeric',
     ...(timeZone ? { timeZone } : {}),
   }).format(new Date(value));
+}
+
+export function formatCalendarDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return new Intl.DateTimeFormat(getLocale(), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${value}T12:00:00Z`));
 }
 
 export function formatTime(value: string | Date, timeZone?: string): string {
