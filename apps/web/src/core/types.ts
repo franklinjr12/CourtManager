@@ -128,8 +128,24 @@ export type StaffWaitlist = {
   };
 };
 
+export type CustomerCharge = {
+  chargeId: string;
+  customerId: string;
+  sourceType: string;
+  sourceId: string;
+  fixedCourtAgreementId?: string;
+  description: string;
+  amount: number;
+  serviceAt: string;
+  status: string;
+  paidAmount: number;
+  outstanding: number;
+  paymentStatus: string;
+};
+
 export type Payment = {
   paymentId: string;
+  chargeId?: string;
   reservationId?: string;
   classId?: string;
   customerId: string;
