@@ -27,7 +27,7 @@ The application should deliberately avoid becoming a large sports-management pla
 
 The first production deployments are expected to be manually operated and validated with real businesses before adding automation, integrations, or sophisticated infrastructure.
 
-## Current roadmap status: Phase 3 complete
+## Current roadmap status: Phase 3 complete; Phase 4 - Pilot Readiness in progress (see [epics/epic4.md](epics/epic4.md))
 
 Phase 3 — Memberships, Packages & Commercial Relationships — is implemented.
 The authoritative commercial reference is

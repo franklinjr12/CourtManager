@@ -1533,13 +1533,17 @@ textarea:focus {
     width: 100%;
   }
   .portal-nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .portal-nav a {
+    flex: 0 0 auto;
     min-width: 0;
-    padding: 11px 2px;
+    padding: 11px 10px;
     font-size: 11px;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
   .portal-card-heading {
     display: grid;

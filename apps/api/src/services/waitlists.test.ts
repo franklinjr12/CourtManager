@@ -48,6 +48,12 @@ it('joins, lists, and leaves court/class waitlists without scans or fulfillment'
   });
   expect(await services.waitlists.list(ctx)).toEqual([]);
   expect(await services.waitlists.list(ctx2)).toHaveLength(2);
+  expect(await services.waitlists.list(ctx2)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ className: 'Customer Tennis' }),
+      expect.objectContaining({ courtName: 'Discovery Court' }),
+    ]),
+  );
   await expect(
     services.waitlists.joinClass(ctx2, { classId }),
   ).rejects.toMatchObject({ code: 'DUPLICATE' });

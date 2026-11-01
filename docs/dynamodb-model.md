@@ -27,14 +27,15 @@ Customer auth is separate from staff auth. `CustomerAccount` is stored at `ORG#<
 
 Auth item/access patterns:
 
-| Item/access pattern        | Key                                                        | Purpose                                                      |
-| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
-| Customer account           | `ORG#<orgId> / CUSTOMER_ACCOUNT#<accountId>`               | Credential status and reference to existing customer         |
-| Account by email           | `CUSTOMER_ACCOUNT_EMAIL#<orgId>#<normalizedEmail> / META`  | Venue-scoped login lookup and email uniqueness               |
-| Customer identity by phone | `CUSTOMER_IDENTITY_PHONE#<orgId>#<normalizedPhone> / META` | Registration and participant identity-conflict lookup        |
-| Account by customer        | `ORG#<orgId> / CUSTOMER_ACCOUNT_CUSTOMER#<customerId>`     | Account-to-customer lookup record when materialized          |
-| Customer session           | `CUSTOMER_SESSION#<sha256(token)> / META`                  | Tenant/account/customer session context; TTL is cleanup only |
-| Activation/reset token     | `ORG#<orgId> / CUSTOMER_ACCOUNT_TOKEN#<sha256(token)>`     | Single-use scoped token; raw token is never persisted        |
+| Item/access pattern        | Key                                                        | Purpose                                                            |
+| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| Customer account           | `ORG#<orgId> / CUSTOMER_ACCOUNT#<accountId>`               | Credential status and reference to existing customer               |
+| Account by email           | `CUSTOMER_ACCOUNT_EMAIL#<orgId>#<normalizedEmail> / META`  | Venue-scoped login lookup and email uniqueness                     |
+| Customer identity by phone | `CUSTOMER_IDENTITY_PHONE#<orgId>#<normalizedPhone> / META` | Registration and participant identity-conflict lookup              |
+| Account by customer        | `ORG#<orgId> / CUSTOMER_ACCOUNT_CUSTOMER#<customerId>`     | Account-to-customer lookup record when materialized                |
+| Rate-limit window          | `RATE#<rule>#<sha256(subject)> / WINDOW#<start>`           | Atomic `count`; `expiresAt` TTL; ephemeral, never business history |
+| Customer session           | `CUSTOMER_SESSION#<sha256(token)> / META`                  | Tenant/account/customer session context; TTL is cleanup only       |
+| Activation/reset token     | `ORG#<orgId> / CUSTOMER_ACCOUNT_TOKEN#<sha256(token)>`     | Single-use scoped token; raw token is never persisted              |
 
 Registration writes customer, account, and uniqueness lookups transactionally.
 Existing-customer activation may create the account first, then writes one

@@ -1,5 +1,5 @@
 import { getAppContext } from '../app/context.js';
-import { formatDate, translateError } from '../i18n.js';
+import { formatDate, formatDateTime, translateError } from '../i18n.js';
 import {
   endIsoFromInputs as endIso,
   isoFromInputs as iso,
@@ -26,4 +26,6 @@ export const localDateKey = (date: string) =>
   dateKey(date, getAppContext().timezone());
 export const dateValue = (date: string) =>
   formatDate(new Date(date), getAppContext().timezone());
+export const dateTimeValue = (date: string) =>
+  formatDateTime(date, getAppContext().timezone());
 export const errorMessage = (error: unknown) => translateError(error);

@@ -89,4 +89,87 @@ describe('commercial reporting API', () => {
     expect(body.data.membershipRecordedPayments).toBe(100);
     expect(body.data.membershipOutstandingAmount).toBe(200);
   });
+
+  it('nets all linked payments from outstanding, matching finance (J-4)', async () => {
+    const repo = new MemoryRepository();
+    await repo.put({
+      PK: 'ORG#org-j4',
+      SK: 'META',
+      entity: 'organization',
+      organizationId: 'org-j4',
+      name: 'Arena',
+      currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
+    });
+    await repo.put({
+      PK: 'ORG#org-j4',
+      SK: 'USER#owner-j4',
+      entity: 'user',
+      organizationId: 'org-j4',
+      userId: 'owner-j4',
+      name: 'Owner',
+      email: 'owner@j4.test',
+      role: 'OWNER',
+      active: true,
+      passwordHash: await hashPassword('password'),
+    });
+    const charge = (id: string, amount: number, serviceAt: string) =>
+      repo.put({
+        PK: `CHARGE#${id}`,
+        SK: 'META',
+        entity: 'charge',
+        organizationId: 'org-j4',
+        customerId: 'customer-j4',
+        chargeId: id,
+        sourceType: 'RESERVATION',
+        reservationId: `res-${id}`,
+        status: 'ACTIVE',
+        amount,
+        serviceAt,
+      });
+    const payment = (
+      id: string,
+      chargeId: string,
+      amount: number,
+      paidAt: string,
+    ) =>
+      repo.put({
+        PK: `PAYMENT#${id}`,
+        SK: 'META',
+        entity: 'payment',
+        organizationId: 'org-j4',
+        customerId: 'customer-j4',
+        paymentId: id,
+        chargeId,
+        amount,
+        paidAt,
+      });
+    await charge('j4', 160, '2026-10-15T13:00:00.000Z');
+    await payment('pay-before', 'j4', 80, '2026-09-20T12:00:00.000Z');
+    await charge('other', 100, '2026-09-10T13:00:00.000Z');
+    await payment('pay-in-range', 'other', 30, '2026-10-05T12:00:00.000Z');
+    const app = createApp(repo);
+    const login = await app.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner@j4.test', password: 'password' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const token = (await login.json()) as { data: { token: string } };
+    const headers = { Authorization: `Bearer ${token.data.token}` };
+    const report = (await (
+      await app.request('/reports/operations?from=2026-10-01&to=2026-10-31', {
+        headers,
+      })
+    ).json()) as { data: Record<string, number> };
+    const finance = (await (
+      await app.request('/finance/summary?from=2026-10-01&to=2026-10-31', {
+        headers,
+      })
+    ).json()) as { data: Record<string, number> };
+    expect(report.data.expectedRevenue).toBe(160);
+    expect(report.data.outstanding).toBe(80);
+    expect(report.data.paymentsRecordedInPeriod).toBe(30);
+    expect(report.data.recordedPayments).toBe(30);
+    expect(finance.data.outstanding).toBe(report.data.outstanding);
+  });
 });

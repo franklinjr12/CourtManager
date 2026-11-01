@@ -4,11 +4,11 @@ import type {
 } from '@court-manager/contracts';
 import { errorMessage } from '../core/presentation.js';
 import { customerRequest } from '../customer-auth.js';
-import { formatMoney, t, weekdayLabel } from '../i18n.js';
+import { formatCalendarDate, formatMoney, t, weekdayLabel } from '../i18n.js';
 import { escapeText } from './runtime.js';
 
 const schedule = (cls: CustomerClass) =>
-  `${cls.startDate}${cls.endDate ? ` – ${cls.endDate}` : ''}, ${
+  `${formatCalendarDate(cls.startDate)}${cls.endDate ? ` – ${formatCalendarDate(cls.endDate)}` : ''}, ${
     cls.scheduleType === 'WEEKLY'
       ? `${t('portal.everyWeeks', { count: cls.intervalWeeks })}, ${weekdayLabel(cls.weekday)}, `
       : ''

@@ -49,6 +49,11 @@ export interface Repository {
     condition?: string,
   ): Promise<void>;
   delete(key: Key, condition?: string): Promise<void>;
+  increment(
+    key: Key,
+    field: string,
+    expiresAtEpochSeconds: number,
+  ): Promise<number>;
   query<T extends RecordItem = RecordItem>(
     pk: string,
     opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
@@ -97,6 +102,16 @@ export class MemoryRepository implements Repository {
       throw new AppError('CONFLICT', 'Conditional write failed.');
     this.items.delete(this.key(key));
   }
+  async increment(key: Key, field: string, expiresAtEpochSeconds: number) {
+    const existing = this.items.get(this.key(key));
+    const item: RecordItem = existing
+      ? structuredClone(existing)
+      : { ...key, expiresAt: expiresAtEpochSeconds };
+    const next = Number(item[field] ?? 0) + 1;
+    item[field] = next;
+    this.items.set(this.key(key), item);
+    return next;
+  }
   async query<T extends RecordItem>(
     pk: string,
     opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
@@ -124,6 +139,15 @@ export class MemoryRepository implements Repository {
         'VALIDATION_ERROR',
         'A DynamoDB transaction cannot contain more than 100 actions.',
       );
+    const touched = new Set<string>();
+    for (const write of writes) {
+      const id = this.key(write.type === 'put' ? write.item : write.key);
+      if (touched.has(id))
+        throw new Error(
+          'Transaction request cannot include multiple operations on one item.',
+        );
+      touched.add(id);
+    }
     let release!: () => void;
     const previous = this.mutex;
     this.mutex = new Promise((r) => {
@@ -257,6 +281,19 @@ export class DynamoRepository implements Repository {
       }),
     );
   }
+  async increment(key: Key, field: string, expiresAtEpochSeconds: number) {
+    const result = await this.client.send(
+      new UpdateCommand({
+        TableName: this.table,
+        Key: key,
+        UpdateExpression: 'ADD #f :one SET #exp = if_not_exists(#exp, :exp)',
+        ExpressionAttributeNames: { '#f': field, '#exp': 'expiresAt' },
+        ExpressionAttributeValues: { ':one': 1, ':exp': expiresAtEpochSeconds },
+        ReturnValues: 'UPDATED_NEW',
+      }),
+    );
+    return Number(result.Attributes?.[field] ?? 0);
+  }
   async query<T extends RecordItem>(
     pk: string,
     opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
@@ -307,6 +344,11 @@ export class DynamoRepository implements Repository {
     return filter ? items.filter(filter) : items;
   }
   async transactWrite(writes: Write[]) {
+    if (writes.length > 100)
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'A DynamoDB transaction cannot contain more than 100 actions.',
+      );
     try {
       await this.client.send(
         new TransactWriteCommand({
@@ -315,7 +357,7 @@ export class DynamoRepository implements Repository {
               ? {
                   ConditionCheck: {
                     TableName: this.table,
-                    Key: w.key,
+                    Key: { PK: w.key.PK, SK: w.key.SK },
                     ...expectedCondition(w.expected),
                   },
                 }
@@ -333,7 +375,7 @@ export class DynamoRepository implements Repository {
                 : {
                     Delete: {
                       TableName: this.table,
-                      Key: w.key,
+                      Key: { PK: w.key.PK, SK: w.key.SK },
                       ...(w.condition
                         ? { ConditionExpression: w.condition }
                         : {}),
@@ -344,11 +386,16 @@ export class DynamoRepository implements Repository {
       );
     } catch (error) {
       const name = String((error as { name?: unknown }).name ?? '');
-      if (name === 'ValidationException')
-        throw new AppError(
-          'VALIDATION_ERROR',
-          'A DynamoDB transaction cannot contain more than 100 actions.',
+      if (name === 'ValidationException') {
+        console.error(
+          JSON.stringify({
+            error: name,
+            message: String((error as { message?: unknown }).message ?? ''),
+            operation: 'transactWrite',
+          }),
         );
+        throw new Error('DynamoDB transaction was rejected.');
+      }
       if (name !== 'TransactionCanceledException') throw error;
       if (
         writes.some(

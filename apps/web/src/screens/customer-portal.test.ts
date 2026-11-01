@@ -3,6 +3,9 @@ import { createAppContext } from '../app/context.js';
 import { getCustomerSession, setCustomerSession } from '../customer-auth.js';
 import { customerPortal, customerPortalPage } from './customer-portal.js';
 
+const venueResponse = () =>
+  new Response(JSON.stringify({ data: { timezone: 'America/Sao_Paulo' } }));
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -46,6 +49,7 @@ it('retains the login token when refreshing the customer profile before loading 
   setCustomerSession({ ...profile, token: 'customer-token' });
   const fetcher = vi
     .fn()
+    .mockResolvedValueOnce(venueResponse())
     .mockResolvedValueOnce(new Response(JSON.stringify({ data: profile })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] })));
   vi.stubGlobal('fetch', fetcher);
@@ -90,6 +94,7 @@ it('shows Book again only for historical reservations and opens a prefilled draf
   };
   const fetcher = vi
     .fn()
+    .mockResolvedValueOnce(venueResponse())
     .mockResolvedValueOnce(
       new Response(JSON.stringify({ data: getCustomerSession() })),
     )
@@ -217,6 +222,7 @@ it('lets customer update contact details through labeled profile form', async ()
   setCustomerSession({ ...profile, token: 'customer-token' });
   const fetcher = vi
     .fn()
+    .mockResolvedValueOnce(venueResponse())
     .mockResolvedValueOnce(new Response(JSON.stringify({ data: profile })))
     .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] })))
     .mockResolvedValueOnce(
@@ -325,6 +331,136 @@ it('shows request approval as unconfirmed and changes booking action label', asy
       ?.textContent,
   ).toBe('Enviar solicitação de reserva');
 });
+it('shows auto-confirm policy without a premature confirmation banner', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/book');
+  setCustomerSession({
+    token: 'customer-token',
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: { customerId: 'customer-1', name: 'Maria', archived: false },
+  });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            organizationId: 'org',
+            customerId: 'customer-1',
+            customerAccountId: 'account-1',
+            customer: {
+              customerId: 'customer-1',
+              name: 'Maria',
+              archived: false,
+            },
+          },
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            reservationMode: 'AUTO_CONFIRM',
+            minimumReservationMinutes: 60,
+            maximumReservationMinutes: 60,
+          },
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: { timezone: 'UTC' } })),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            allowedDurations: [60],
+            onlineBookingAvailable: true,
+            courts: [
+              {
+                courtId: 'court-1',
+                name: 'Court 1',
+                sport: 'Tennis',
+                available: ['10:00'],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+  vi.stubGlobal('fetch', fetcher);
+  await customerPortalPage('arena', 'book');
+  await vi.waitFor(() =>
+    expect(root.querySelector('#portal-booking-policy')?.textContent).toContain(
+      'confirmadas na hora',
+    ),
+  );
+  expect(
+    root.querySelector('#portal-booking-policy')?.textContent,
+  ).not.toContain('Reserva confirmada');
+});
+it('localizes cancellation reasons by reservation status instead of API English', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/reservations');
+  setCustomerSession({
+    token: 'customer-token',
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: { customerId: 'customer-1', name: 'Maria', archived: false },
+  });
+  const card = (id: string, status: string, reason: string) => ({
+    itemType: 'RESERVATION',
+    reservationId: id,
+    court: { courtId: 'court-1', name: 'Court 1', sport: 'Tennis' },
+    startAt: '2099-09-12T10:00:00.000Z',
+    endAt: '2099-09-12T11:00:00.000Z',
+    durationMinutes: 60,
+    status,
+    source: 'STAFF',
+    expectedAmount: 120,
+    cancellationEligibility: {
+      reservationId: id,
+      eligible: false,
+      status,
+      cutoffAt: '2099-09-12T04:00:00.000Z',
+      evaluatedAt: '2099-09-13T12:00:00.000Z',
+      reason,
+    },
+  });
+  const upcoming = [
+    card('r1', 'CANCELLED', 'Reservation is already cancelled.'),
+    card('r2', 'BOOKED', 'Cancellation period has ended.'),
+  ];
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(venueResponse())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: getCustomerSession() })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: { reservations: upcoming, requests: [] } }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [], nextCursor: null })),
+      ),
+  );
+  await customerPortalPage('arena', 'reservations');
+  expect(root.textContent).toContain('A reserva já foi cancelada.');
+  expect(root.textContent).toContain('O prazo de cancelamento terminou.');
+  expect(root.textContent).not.toContain('Cancellation period has ended.');
+});
 it('keeps a retryable localized error when portal profile request loses network', async () => {
   const root = document.createElement('div');
   document.body.replaceChildren(root);
@@ -413,4 +549,143 @@ it('renders membership usage from the customer-only commercial endpoint', async 
   expect(
     root.querySelector('a[href="/portal/arena/memberships/membership-1"]'),
   ).toBeTruthy();
+});
+
+const portalSession = () => {
+  const profile = {
+    organizationId: 'org',
+    customerId: 'customer-1',
+    customerAccountId: 'account-1',
+    customer: { customerId: 'customer-1', name: 'Maria', archived: false },
+  };
+  setCustomerSession({ ...profile, token: 'customer-token' });
+  return profile;
+};
+
+const stubPortalFetch = (profile: object, routes: Record<string, unknown>) =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const path = String(url).replace(/^https?:\/\/[^/]+/, '');
+      if (path.includes('/public/venues/')) return venueResponse();
+      if (path.endsWith('/customer/me'))
+        return new Response(JSON.stringify({ data: profile }));
+      const key = Object.keys(routes).find((route) => path.includes(route));
+      return new Response(JSON.stringify({ data: routes[key ?? ''] ?? [] }));
+    }),
+  );
+
+const reservation = {
+  itemType: 'RESERVATION',
+  reservationId: 'reservation-1',
+  court: { courtId: 'court-1', name: 'Court 1', sport: 'Tennis' },
+  startAt: '2026-11-03T10:00:00.000Z',
+  endAt: '2026-11-03T11:00:00.000Z',
+  durationMinutes: 60,
+  status: 'CONFIRMED',
+  source: 'STAFF',
+  expectedAmount: 100,
+  cancellationEligibility: {
+    reservationId: 'reservation-1',
+    eligible: true,
+    status: 'CONFIRMED',
+    cutoffAt: '2026-11-03T08:00:00.000Z',
+    evaluatedAt: '2026-11-01T12:00:00.000Z',
+  },
+};
+
+it('shows reservation time and cancellation cutoff in the venue zone', async () => {
+  vi.stubEnv('TZ', 'UTC');
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/reservations');
+  stubPortalFetch(portalSession(), {
+    '/reservations/upcoming': { reservations: [reservation], requests: [] },
+  });
+  await customerPortalPage('arena', 'reservations');
+  const time = root.querySelector('.portal-activity-time')!.textContent!;
+  expect(time).toContain('07:00');
+  expect(time).not.toContain('10:00');
+  expect(root.textContent).toContain('05:00');
+  expect(root.textContent).not.toContain('08:00');
+});
+
+it('shows the waitlist joined time in the venue zone', async () => {
+  vi.stubEnv('TZ', 'UTC');
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/waitlists');
+  stubPortalFetch(portalSession(), {
+    '/customer/waitlists': [
+      {
+        waitlistId: 'w1',
+        type: 'CLASS',
+        classId: 'class-1',
+        joinedAt: '2026-11-03T10:00:00.000Z',
+      },
+    ],
+  });
+  await customerPortalPage('arena', 'waitlists');
+  const card = root.querySelector('.portal-waitlist-card')!.textContent!;
+  expect(card).toContain('07:00');
+  expect(card).not.toContain('10:00');
+});
+
+it('shows the class and court names on waitlist cards, not ids', async () => {
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena/waitlists');
+  stubPortalFetch(portalSession(), {
+    '/customer/waitlists': [
+      {
+        waitlistId: 'w1',
+        type: 'CLASS',
+        classId: 'class-uuid-1',
+        className: 'Tênis Iniciante',
+        joinedAt: '2026-11-03T10:00:00.000Z',
+      },
+      {
+        waitlistId: 'w2',
+        type: 'COURT_SLOT',
+        courtId: 'court-uuid-1',
+        courtName: 'Quadra Central',
+        desiredDate: '2026-11-10',
+        desiredStartTime: '10:00',
+        durationMinutes: 60,
+        joinedAt: '2026-11-03T10:00:00.000Z',
+      },
+    ],
+  });
+  await customerPortalPage('arena', 'waitlists');
+  const text = root.textContent!;
+  expect(text).toContain('Tênis Iniciante');
+  expect(text).toContain('Quadra Central');
+  expect(text).not.toContain('uuid');
+});
+
+it('shows home activity time in the venue zone', async () => {
+  vi.stubEnv('TZ', 'UTC');
+  const root = document.createElement('div');
+  document.body.replaceChildren(root);
+  createAppContext(root);
+  window.history.pushState({}, '', '/portal/arena');
+  stubPortalFetch(portalSession(), {
+    '/customer/activities': [
+      {
+        activityType: 'RESERVATION',
+        activityId: 'a1',
+        title: 'Court 1',
+        startAt: '2026-11-03T10:00:00.000Z',
+        status: 'CONFIRMED',
+        actions: [],
+      },
+    ],
+  });
+  await customerPortalPage('arena', 'home');
+  const time = root.querySelector('.portal-activity-time')!.textContent!;
+  expect(time).toContain('07:00');
+  expect(time).not.toContain('10:00');
 });

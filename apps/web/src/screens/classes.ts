@@ -6,7 +6,12 @@ import type {
   SportClass,
 } from '../core/types.js';
 import { button } from '../dom.js';
-import { attendanceStatusLabel, t, weekdayLabel } from '../i18n.js';
+import {
+  attendanceStatusLabel,
+  formatCalendarDate,
+  t,
+  weekdayLabel,
+} from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
@@ -34,7 +39,7 @@ export async function classes() {
       : await request<Array<{ userId: string; name: string }>>('/coaches');
   await shell(async () => {
     setTimeout(() => wireClasses(data, customers), 0);
-    return `<div class="toolbar"><div><h2>${t('classes.title')}</h2><p class="muted">${t('classes.description')}</p></div>${org.features.classes ? `<button class="button primary" id="add-class">${t('classes.add')}</button>` : ''}</div>${org.features.classes ? `<article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.name')}</th><th>${t('common.sport')}</th><th>${t('common.schedule' as never)}</th><th>${t('classes.capacity' as never)}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.sport)}</td><td>${escapeText(c.startDate)} ${escapeText(c.startTime)}</td><td>${c.capacity}</td><td>${button(t('classes.enroll'), `data-enroll-class="${escapeText(c.classId)}"`)} ${button(t('classes.attendance'), `data-attendance-class="${escapeText(c.classId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('classes.noClasses' as never)}</p>`}</article>` : `<article class="card"><h3>${t('classes.disabled')}</h3><p class="empty">${t('classes.enableHint')}</p><a class="button" href="/settings">${t('classes.openSettings')}</a></article>`}`;
+    return `<div class="toolbar"><div><h2>${t('classes.title')}</h2><p class="muted">${t('classes.description')}</p></div>${org.features.classes ? `<button class="button primary" id="add-class">${t('classes.add')}</button>` : ''}</div>${org.features.classes ? `<article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.name')}</th><th>${t('common.sport')}</th><th>${t('common.schedule' as never)}</th><th>${t('classes.capacity' as never)}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((c) => `<tr><td>${escapeText(c.name)}</td><td>${escapeText(c.sport)}</td><td>${escapeText(formatCalendarDate(c.startDate))} ${escapeText(c.startTime)}</td><td>${c.capacity}</td><td>${button(t('classes.enroll'), `data-enroll-class="${escapeText(c.classId)}"`)} ${button(t('classes.attendance'), `data-attendance-class="${escapeText(c.classId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('classes.noClasses' as never)}</p>`}</article>` : `<article class="card"><h3>${t('classes.disabled')}</h3><p class="empty">${t('classes.enableHint')}</p><a class="button" href="/settings">${t('classes.openSettings')}</a></article>`}`;
   });
   if (org.features.classes)
     setTimeout(() => {
@@ -64,7 +69,7 @@ function openClassModal(
   if (form) {
     form.insertAdjacentHTML(
       'afterbegin',
-      `<label>${t('staff.role')}<select name="coachId" required>${coaches.map((coach) => `<option value="${escapeText(coach.userId)}">${escapeText(coach.name)}</option>`).join('')}</select></label>`,
+      `<label>${t('classes.coach')}<select name="coachId" required>${coaches.map((coach) => `<option value="${escapeText(coach.userId)}">${escapeText(coach.name)}</option>`).join('')}</select></label>`,
     );
     const price = form.elements.namedItem('price');
     if (price instanceof HTMLElement)

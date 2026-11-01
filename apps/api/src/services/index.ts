@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   BookingPolicySchema,
   DEFAULT_BOOKING_POLICY,
@@ -12,6 +13,7 @@ import {
   type User,
 } from '@court-manager/contracts';
 import type { Key, RecordItem, Repository, Write } from '../db.js';
+import { paidAmountForCharge } from './charge-payments.js';
 import {
   assertTransition,
   assertTimeZone,
@@ -63,6 +65,7 @@ import {
   CustomerCommercialPortalService,
 } from './customer-portal/index.js';
 import { EntitlementService } from './entitlements.js';
+import { withFinanceDisplay } from './finance-display.js';
 import { FixedCourtAgreementService } from './fixed-court-agreements.js';
 import { MakeupCreditService } from './makeup-credits.js';
 import { MembershipService } from './memberships.js';
@@ -1220,6 +1223,24 @@ export class ReservationService {
       throw error;
     }
   }
+  private async syncActiveCharge(
+    reservationId: string,
+    expectedAmount: unknown,
+  ) {
+    if (expectedAmount === undefined) return;
+    const charge = await this.repo.get<RecordItem>(
+      key('charge', `reservation-${reservationId}`),
+    );
+    if (!charge || charge.status !== 'ACTIVE') return;
+    const updatedCharge = stored(
+      { ...as(charge), amount: expectedAmount },
+      charge.PK,
+      charge.SK,
+      'charge',
+    );
+    await this.repo.put(updatedCharge);
+    await this.repo.put(customerChargeIndex(updatedCharge));
+  }
   async update(ctx: AuthContext, reservationId: string, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const current = await this.get(ctx, reservationId);
@@ -1228,10 +1249,31 @@ export class ReservationService {
         'INVALID_STATE',
         'Only confirmed reservations can be edited.',
       );
+    const sameInstant = (requested: unknown, existing: unknown) =>
+      requested === undefined ||
+      new Date(String(requested)).getTime() ===
+        new Date(String(existing)).getTime();
+    const timeChanged =
+      !sameInstant(input.startAt, current.startAt) ||
+      !sameInstant(input.endAt, current.endAt);
+    const fields: Input = timeChanged
+      ? input
+      : Object.fromEntries(
+          Object.entries(input).filter(
+            ([name]) => name !== 'startAt' && name !== 'endAt',
+          ),
+        );
+    if (
+      !timeChanged &&
+      Object.entries(fields).every(([name, field]) =>
+        isDeepStrictEqual(field, (current as Record<string, unknown>)[name]),
+      )
+    )
+      return current;
     const value = stored(
       {
         ...as(current),
-        ...input,
+        ...fields,
         courtId: current.courtId,
         customerId: current.customerId,
         updatedBy: ctx.userId,
@@ -1241,67 +1283,45 @@ export class ReservationService {
       current.SK,
       'reservation',
     );
-    if (input.startAt || input.endAt) {
+    if (timeChanged) {
       const court = (await this.courts.get(
         ctx,
         String(current.courtId),
       )) as Court;
+      const sameKey = (a: RecordItem, b: RecordItem) =>
+        a.PK === b.PK && a.SK === b.SK;
+      const oldIndex = customerReservationIndex(current),
+        newIndex = customerReservationIndex(value),
+        oldActivity = reservationActivity(as<Reservation>(current), court),
+        newActivity = reservationActivity(as<Reservation>(value), court);
       await this.schedule.move(
         ctx,
         court,
         String(current.startAt),
         String(current.endAt),
-        String(input.startAt ?? current.startAt),
-        String(input.endAt ?? current.endAt),
+        String(value.startAt),
+        String(value.endAt),
         'RESERVATION',
         reservationId,
         [
           { type: 'put', item: value },
-          { type: 'put', item: customerReservationIndex(value) },
-          { type: 'delete', key: customerReservationIndex(current) },
-          {
-            type: 'put',
-            item: reservationActivity(as<Reservation>(value), court),
-          },
+          { type: 'put', item: newIndex },
+          ...(sameKey(oldIndex, newIndex)
+            ? []
+            : [{ type: 'delete' as const, key: oldIndex }]),
+          ...(sameKey(oldActivity, newActivity)
+            ? []
+            : [{ type: 'delete' as const, key: oldActivity }]),
+          { type: 'put', item: newActivity },
         ],
         true,
       );
-      if (input.expectedAmount !== undefined) {
-        const charge = await this.repo.get<RecordItem>(
-          key('charge', `reservation-${reservationId}`),
-        );
-        if (charge && charge.status === 'ACTIVE')
-          await (async () => {
-            const updatedCharge = stored(
-              { ...as(charge), amount: input.expectedAmount },
-              charge.PK,
-              charge.SK,
-              'charge',
-            );
-            await this.repo.put(updatedCharge);
-            await this.repo.put(customerChargeIndex(updatedCharge));
-          })();
-      }
+      await this.syncActiveCharge(reservationId, input.expectedAmount);
       return as(value);
     }
     await this.repo.put(value);
     await this.repo.put(customerReservationIndex(value));
-    if (input.expectedAmount !== undefined) {
-      const charge = await this.repo.get<RecordItem>(
-        key('charge', `reservation-${reservationId}`),
-      );
-      if (charge && charge.status === 'ACTIVE')
-        await (async () => {
-          const updatedCharge = stored(
-            { ...as(charge), amount: input.expectedAmount },
-            charge.PK,
-            charge.SK,
-            'charge',
-          );
-          await this.repo.put(updatedCharge);
-          await this.repo.put(customerChargeIndex(updatedCharge));
-        })();
-    }
+    await this.syncActiveCharge(reservationId, input.expectedAmount);
     return as(value);
   }
   async transition(
@@ -2133,7 +2153,7 @@ export class ChargeService {
     const from = filters.from ? String(filters.from) : undefined,
       to = filters.to ? String(filters.to) : undefined;
     const payments = withOrg(ctx, 'payment', await this.repo.scan());
-    return withOrg(ctx, 'charge', await this.repo.scan())
+    const rows = withOrg(ctx, 'charge', await this.repo.scan())
       .filter(
         (charge) =>
           (!filters.customerId || charge.customerId === filters.customerId) &&
@@ -2155,18 +2175,10 @@ export class ChargeService {
           this.paidFor(charge, payments),
         ),
       }));
+    return withFinanceDisplay(this.repo, ctx.organizationId, rows);
   }
   private paidFor(charge: RecordItem, payments: RecordItem[]) {
-    return payments
-      .filter(
-        (payment) =>
-          payment.chargeId === charge.chargeId ||
-          (!payment.chargeId &&
-            ((charge.reservationId &&
-              payment.reservationId === charge.reservationId) ||
-              (charge.classId && payment.classId === charge.classId))),
-      )
-      .reduce((sum, payment) => sum + Number(payment.amount), 0);
+    return paidAmountForCharge(charge, payments);
   }
   async get(ctx: AuthContext, chargeId: string) {
     const charge = await this.repo.get<RecordItem>(key('charge', chargeId));
@@ -2269,6 +2281,11 @@ export class PaymentService {
   constructor(private readonly repo: Repository) {}
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
+    if (!(Number(input.amount) > 0))
+      throw new AppError(
+        'VALIDATION_ERROR',
+        'Payment amount must be greater than zero.',
+      );
     let chargeId = input.chargeId ? String(input.chargeId) : undefined;
     let reservationId = input.reservationId
       ? String(input.reservationId)
@@ -2367,12 +2384,13 @@ export class PaymentService {
     await this.repo.delete(customerFinancialPaymentIndex(p));
   }
   async list(ctx: AuthContext, filters: Input = {}) {
-    return withOrg(ctx, 'payment', await this.repo.scan())
+    const rows = withOrg(ctx, 'payment', await this.repo.scan())
       .filter(
         (payment) =>
           !filters.customerId || payment.customerId === filters.customerId,
       )
       .map(as);
+    return withFinanceDisplay(this.repo, ctx.organizationId, rows);
   }
 }
 export class ExpenseService {
@@ -3439,6 +3457,11 @@ export class ReportService {
       expenses = withOrg(ctx, 'expense', allRows).filter(
         (x) => String(x.date) >= from && String(x.date) <= to,
       );
+    const allPayments = withOrg(ctx, 'payment', allRows);
+    const paymentsRecordedInPeriod = payments.reduce(
+      (n, x) => n + Number(x.amount),
+      0,
+    );
     const commercial = buildCommercialReporting({
       memberships: withOrg(ctx, 'membership', allRows),
       packages: withOrg(ctx, 'customerPackage', allRows),
@@ -3479,23 +3502,14 @@ export class ReportService {
         ]),
       ),
       expectedRevenue: charges.reduce((n, x) => n + Number(x.amount), 0),
-      recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0),
+      recordedPayments: paymentsRecordedInPeriod,
+      paymentsRecordedInPeriod,
       outstanding: charges.reduce(
         (n, charge) =>
           n +
           Math.max(
             0,
-            Number(charge.amount) -
-              payments
-                .filter(
-                  (p) =>
-                    p.chargeId === charge.chargeId ||
-                    (!p.chargeId &&
-                      ((charge.reservationId &&
-                        p.reservationId === charge.reservationId) ||
-                        (charge.classId && p.classId === charge.classId))),
-                )
-                .reduce((sum, p) => sum + Number(p.amount), 0),
+            Number(charge.amount) - paidAmountForCharge(charge, allPayments),
           ),
         0,
       ),

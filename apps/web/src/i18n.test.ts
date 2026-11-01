@@ -4,10 +4,12 @@ import {
   LOCALE_STORAGE_KEY,
   SUPPORTED_LOCALES,
   blockReasonLabel,
+  formatCalendarDate,
   formatDate,
   formatMoney,
   getLocale,
   paymentMethodLabel,
+  paymentStatusLabel,
   reservationStatusLabel,
   setLocale,
   t,
@@ -87,5 +89,30 @@ describe('localization', () => {
     setLocale('en-US');
     expect(formatMoney(1234.56)).toContain('1,234.56');
     expect(formatDate('2024-05-06T12:00:00Z')).toBe('05/06/2024');
+  });
+
+  it('formats venue-local calendar dates without timezone shift', () => {
+    expect(formatCalendarDate('2026-11-10')).toBe('10/11/2026');
+    expect(formatCalendarDate('not-a-date')).toBe('not-a-date');
+    setLocale('en-US');
+    expect(formatCalendarDate('2026-11-10')).toBe('11/10/2026');
+  });
+
+  it('keeps pt-BR accents and translated labels in pilot screens', () => {
+    expect(t('commercial.overview')).toBe('Visão geral');
+    expect(t('packages.title')).toBe('Pacotes e créditos');
+    expect(t('fixedCourtAgreements.nextOccurrence')).toBe('Próxima ocorrência');
+    expect(t('fixedCourtAgreements.billing')).toBe('Cobrança');
+    expect(t('portal.memberships')).toBe('Mensalidades');
+    expect(paymentStatusLabel('OVERPAID')).toBe('Pago a mais');
+    expect(t('common.amount')).toBe('Valor');
+    expect(t('classes.coach')).toBe('Professor');
+    expect(t('staff.roles.COACH')).toBe('Professor');
+    expect(t('schedule.blockCreated')).toBe('Bloqueio de quadra criado.');
+    setLocale('en-US');
+    expect(t('portal.memberships')).toBe('Memberships');
+    expect(t('common.price')).toBe('Price');
+    expect(paymentStatusLabel('OVERPAID')).toBe('Overpaid');
+    expect(t('staff.roles.COACH')).toBe('Coach');
   });
 });

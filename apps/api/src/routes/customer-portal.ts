@@ -14,6 +14,12 @@ import {
 } from '@court-manager/contracts';
 import { Hono } from 'hono';
 import { z, type ZodType } from 'zod';
+import {
+  clientAddress,
+  guardLogin,
+  RATE_LIMIT_RULES,
+  type RateLimiter,
+} from '../rate-limit.js';
 import type { Services } from '../services/index.js';
 import type { AppContext, AppVariables } from './types.js';
 
@@ -26,6 +32,7 @@ type CustomerAuthMiddleware = (
 
 type Dependencies = {
   services: Services;
+  limiter: RateLimiter;
   body: BodyParser;
   queryValue: QueryParser;
   customerAuth: (c: AppContext) => Promise<void>;
@@ -38,6 +45,7 @@ export const registerCustomerPortalRoutes = (
   app: Hono<{ Variables: AppVariables }>,
   {
     services,
+    limiter,
     body,
     queryValue,
     customerAuth,
@@ -47,12 +55,22 @@ export const registerCustomerPortalRoutes = (
 ) => {
   app.post('/customer-auth/login', async (c) => {
     const input = await body(c, CustomerAuthLoginInputSchema);
+    const email = input.email.trim().toLowerCase();
     return c.json(
       ok(
-        await services.customerAuth.login(
-          input.slug,
-          input.email,
-          input.password,
+        await guardLogin(
+          limiter,
+          {
+            perIp: RATE_LIMIT_RULES.customerLoginFailuresPerIp,
+            perAccount: RATE_LIMIT_RULES.customerLoginFailuresPerAccount,
+          },
+          { ip: clientAddress(c), account: `${input.slug}|${email}` },
+          () =>
+            services.customerAuth.login(
+              input.slug,
+              input.email,
+              input.password,
+            ),
         ),
       ),
     );
@@ -65,6 +83,8 @@ export const registerCustomerPortalRoutes = (
   });
   app.post('/customer-auth/register', async (c) => {
     const input = await body(c, CustomerAuthRegistrationInputSchema);
+    await limiter.hit(RATE_LIMIT_RULES.registrationPerIp, clientAddress(c));
+    await limiter.hit(RATE_LIMIT_RULES.registrationPerVenue, input.slug);
     const { slug, ...registration } = input;
     return c.json(
       ok(await services.customerAccounts.register(slug, registration)),
@@ -73,6 +93,8 @@ export const registerCustomerPortalRoutes = (
   });
   app.post('/customer-auth/activate', async (c) => {
     const input = await body(c, CustomerAuthPasswordInputSchema);
+    await limiter.hit(RATE_LIMIT_RULES.passwordSetPerIp, clientAddress(c));
+    await limiter.hit(RATE_LIMIT_RULES.passwordSetPerVenue, input.slug);
     const { slug, ...password } = input;
     return c.json(
       ok(
@@ -86,6 +108,8 @@ export const registerCustomerPortalRoutes = (
   });
   app.post('/customer-auth/reset-password', async (c) => {
     const input = await body(c, CustomerAuthPasswordInputSchema);
+    await limiter.hit(RATE_LIMIT_RULES.passwordSetPerIp, clientAddress(c));
+    await limiter.hit(RATE_LIMIT_RULES.passwordSetPerVenue, input.slug);
     const { slug, ...password } = input;
     return c.json(
       ok(await services.customerAccounts.setPassword(slug, password, 'RESET')),

@@ -2,17 +2,56 @@ import type {
   FixedCourtAgreement,
   FixedCourtOccurrence,
 } from '@court-manager/contracts';
-import type { Court, Customer } from '../core/types.js';
-import { formatDate, formatMoney, t, weekdayLabel } from '../i18n.js';
+import type { Court, Customer, CustomerCharge } from '../core/types.js';
+import { timeValue } from '../core/presentation.js';
+import {
+  formatDate,
+  formatMoney,
+  reservationStatusLabel,
+  t,
+  weekdayLabel,
+} from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { shell } from '../ui/shell.js';
+import { openPaymentModal } from './payment-modal.js';
 import { app, escapeText, renderRoute, request, screen } from './runtime.js';
 
 type AgreementDetails = FixedCourtAgreement & {
   occurrences: FixedCourtOccurrence[];
 };
+
+const ownCharges = (
+  agreement: FixedCourtAgreement,
+  charges: CustomerCharge[],
+) =>
+  charges.filter(
+    (charge) =>
+      charge.status === 'ACTIVE' &&
+      (charge.fixedCourtAgreementId ?? charge.sourceId) ===
+        agreement.agreementId,
+  );
+
+/** Oldest active charge of this agreement that still has an outstanding amount. */
+export function agreementOpenCharge(
+  agreement: FixedCourtAgreement,
+  charges: CustomerCharge[],
+) {
+  return ownCharges(agreement, charges)
+    .filter((charge) => charge.outstanding > 0)
+    .sort((a, b) => a.serviceAt.localeCompare(b.serviceAt))[0];
+}
+
+/** Most recent active charge of this agreement, for the billing summary. */
+export function agreementLatestCharge(
+  agreement: FixedCourtAgreement,
+  charges: CustomerCharge[],
+) {
+  return ownCharges(agreement, charges).sort((a, b) =>
+    b.serviceAt.localeCompare(a.serviceAt),
+  )[0];
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -194,7 +233,7 @@ async function openChangeModal(id: string, courts: Court[]) {
   });
 }
 
-async function openRichDetails(
+export async function openRichDetails(
   id: string,
   customers: Customer[],
   courts: Court[],
@@ -202,9 +241,7 @@ async function openRichDetails(
   const agreement = await request<AgreementDetails>(
     `/fixed-court-agreements/${id}`,
   );
-  const charges = await request<
-    Array<{ amount: number; paidAmount: number; paymentStatus: string }>
-  >(
+  const charges = await request<CustomerCharge[]>(
     `/charges?customerId=${encodeURIComponent(agreement.customerId)}&sourceType=FIXED_COURT_AGREEMENT`,
   );
   const customer =
@@ -216,10 +253,18 @@ async function openRichDetails(
   const nextOccurrence = agreement.occurrences
     .filter((item) => item.status === 'BOOKED' && item.date >= today())
     .sort((a, b) => a.date.localeCompare(b.date))[0];
-  const charge = charges[0];
+  const openCharge = agreementOpenCharge(agreement, charges);
+  const charge = openCharge ?? agreementLatestCharge(agreement, charges);
   openModal(
     t('fixedCourtAgreements.details'),
-    `<div class="detail-grid"><div><small class="muted">${t('common.customer')}</small><strong>${escapeText(customer)}</strong></div><div><small class="muted">${t('common.court')}</small><strong>${escapeText(court)}</strong></div><div><small class="muted">${t('common.weekday')}</small><strong>${escapeText(weekdayLabel(agreement.weekday))}</strong></div><div><small class="muted">${t('common.time')}</small><strong>${escapeText(agreement.startTime)} · ${agreement.durationMinutes} ${t('fixedCourtAgreements.minutes')}</strong></div><div><small class="muted">${t('common.price')}</small><strong>${escapeText(formatMoney(agreement.monthlyPrice, agreement.currency))}/${t('fixedCourtAgreements.month')}</strong></div><div><small class="muted">${t('common.status')}</small><strong>${statusBadge(agreement.status)}</strong></div><div><small class="muted">${t('fixedCourtAgreements.nextOccurrence')}</small><strong>${nextOccurrence ? escapeText(formatDate(nextOccurrence.date)) : '—'}</strong></div><div><small class="muted">${t('fixedCourtAgreements.billing')}</small><strong>${charge ? `${escapeText(t(`paymentStatus.${charge.paymentStatus}` as never))} · ${escapeText(formatMoney(charge.paidAmount, agreement.currency))} / ${escapeText(formatMoney(charge.amount, agreement.currency))}` : t('fixedCourtAgreements.notBilled')}</strong></div></div><article class="section-card table-wrap"><h3>${t('fixedCourtAgreements.linkedReservations')}</h3><table><thead><tr><th>${t('common.date')}</th><th>${t('common.time')}</th><th>${t('common.status')}</th><th>${t('fixedCourtAgreements.reservation')}</th></tr></thead><tbody>${agreement.occurrences.map((occurrence) => `<tr><td>${escapeText(formatDate(occurrence.date))}</td><td>${escapeText(occurrence.startAt.slice(11, 16))}–${escapeText(occurrence.endAt.slice(11, 16))}</td><td>${escapeText(occurrence.status)}</td><td>${escapeText(occurrence.reservationId ?? '—')}</td></tr>`).join('')}</tbody></table></article><div class="form-actions"><button class="button" data-close>${t('common.close')}</button></div>`,
+    `<div class="detail-grid"><div><small class="muted">${t('common.customer')}</small><strong>${escapeText(customer)}</strong></div><div><small class="muted">${t('common.court')}</small><strong>${escapeText(court)}</strong></div><div><small class="muted">${t('common.weekday')}</small><strong>${escapeText(weekdayLabel(agreement.weekday))}</strong></div><div><small class="muted">${t('common.time')}</small><strong>${escapeText(agreement.startTime)} · ${agreement.durationMinutes} ${t('fixedCourtAgreements.minutes')}</strong></div><div><small class="muted">${t('common.price')}</small><strong>${escapeText(formatMoney(agreement.monthlyPrice, agreement.currency))}/${t('fixedCourtAgreements.month')}</strong></div><div><small class="muted">${t('common.status')}</small><strong>${statusBadge(agreement.status)}</strong></div><div><small class="muted">${t('fixedCourtAgreements.nextOccurrence')}</small><strong>${nextOccurrence ? escapeText(formatDate(`${nextOccurrence.date}T12:00:00`)) : '—'}</strong></div><div><small class="muted">${t('fixedCourtAgreements.billing')}</small><strong>${charge ? `${escapeText(t(`paymentStatus.${charge.paymentStatus}` as never))} · ${escapeText(formatMoney(charge.paidAmount, agreement.currency))} / ${escapeText(formatMoney(charge.amount, agreement.currency))}${openCharge ? ` · ${escapeText(t('profile.outstanding'))} ${escapeText(formatMoney(openCharge.outstanding, agreement.currency))}` : ''}` : t('fixedCourtAgreements.notBilled')}</strong></div></div><article class="section-card table-wrap"><h3>${t('fixedCourtAgreements.linkedReservations')}</h3><table><thead><tr><th>${t('common.date')}</th><th>${t('common.time')}</th><th>${t('common.status')}</th><th>${t('common.court')}</th></tr></thead><tbody>${agreement.occurrences.map((occurrence) => `<tr><td>${escapeText(formatDate(`${occurrence.date}T12:00:00`))}</td><td>${escapeText(timeValue(occurrence.startAt))}–${escapeText(timeValue(occurrence.endAt))}</td><td>${escapeText(reservationStatusLabel(occurrence.status))}</td><td>${escapeText(court)}</td></tr>`).join('')}</tbody></table></article><div class="form-actions"><button class="button" data-close>${t('common.close')}</button>${openCharge ? `<button class="button primary" data-record-charge-payment>${t('finance.record')}</button>` : ''}</div>`,
   );
   app.querySelector('[data-close]')?.addEventListener('click', closeModal);
+  app
+    .querySelector('[data-record-charge-payment]')
+    ?.addEventListener('click', () => {
+      if (!openCharge) return;
+      closeModal();
+      void openPaymentModal(undefined, { charge: openCharge });
+    });
 }

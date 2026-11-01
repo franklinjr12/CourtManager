@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveAllowedOrigins } from './cors-config.js';
 import {
   BlockInputSchema,
   collection,
@@ -47,6 +48,13 @@ import { z, type ZodType } from 'zod';
 import type { Repository } from './db.js';
 import { dayKeyInTimezone } from './domain.js';
 import { AppError } from './errors.js';
+import {
+  clientAddress,
+  createRateLimiter,
+  guardLogin,
+  RATE_LIMIT_RULES,
+  type RateLimitRule,
+} from './rate-limit.js';
 import { registerCustomerPortalRoutes } from './routes/customer-portal.js';
 import type { AppContext, AppVariables } from './routes/types.js';
 import { buildServices } from './services/index.js';
@@ -84,10 +92,14 @@ const queryValue = <T>(value: unknown, schema: ZodType<T>) => {
   return parsed.data;
 };
 
-export const createApp = (repo: Repository) => {
+export const createApp = (
+  repo: Repository,
+  options: { allowedOrigins?: string[]; now?: () => number } = {},
+) => {
+  const allowedOrigins = options.allowedOrigins ?? resolveAllowedOrigins();
   const services = buildServices(repo);
   const app = new Hono<{ Variables: AppVariables }>();
-  const publicRequests = new Map<string, { started: number; count: number }>();
+  const limiter = createRateLimiter(repo, options.now ?? Date.now);
   app.onError((error, c) => {
     const requestId = c.get('requestId') ?? randomUUID();
     if (error instanceof AppError)
@@ -137,7 +149,7 @@ export const createApp = (repo: Repository) => {
   app.use(
     '*',
     cors({
-      origin: '*',
+      origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowHeaders: ['Authorization', 'Content-Type'],
       allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     }),
@@ -145,18 +157,6 @@ export const createApp = (repo: Repository) => {
   app.use('/public/*', async (c, next) => {
     if (Number(c.req.header('Content-Length') ?? 0) > 65536)
       throw new AppError('VALIDATION_ERROR', 'Request body is too large.');
-    if (c.req.method === 'POST') {
-      const address = c.req.header('x-forwarded-for') ?? 'local';
-      const current = publicRequests.get(address);
-      const timestamp = Date.now();
-      if (!current || timestamp - current.started > 60000)
-        publicRequests.set(address, { started: timestamp, count: 1 });
-      else {
-        current.count += 1;
-        if (current.count > 30)
-          throw new AppError('RATE_LIMITED', 'Too many public requests.');
-      }
-    }
     await next();
   });
   const auth = async (c: AppContext) => {
@@ -188,10 +188,30 @@ export const createApp = (repo: Repository) => {
     await customerAuth(c);
     await next();
   };
+  const hitBoth = async (
+    c: AppContext,
+    perIp: RateLimitRule,
+    perVenue: RateLimitRule,
+  ) => {
+    await limiter.hit(perIp, clientAddress(c));
+    await limiter.hit(perVenue, c.req.param('slug') ?? '');
+  };
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.post('/auth/login', async (c) => {
     const input = await body(c, LoginInputSchema);
-    return c.json(ok(await services.auth.login(input.email, input.password)));
+    return c.json(
+      ok(
+        await guardLogin(
+          limiter,
+          {
+            perIp: RATE_LIMIT_RULES.staffLoginFailuresPerIp,
+            perAccount: RATE_LIMIT_RULES.staffLoginFailuresPerAccount,
+          },
+          { ip: clientAddress(c), account: input.email.trim().toLowerCase() },
+          () => services.auth.login(input.email, input.password),
+        ),
+      ),
+    );
   });
   app.post('/auth/logout', async (c) => {
     await auth(c);
@@ -201,6 +221,7 @@ export const createApp = (repo: Repository) => {
   });
   registerCustomerPortalRoutes(app, {
     services,
+    limiter,
     body,
     queryValue,
     customerAuth,
@@ -226,14 +247,24 @@ export const createApp = (repo: Repository) => {
     return c.json(ok(result));
   });
   app.post('/public/venues/:slug/requests', async (c) => {
+    await hitBoth(
+      c,
+      RATE_LIMIT_RULES.publicRequestPerIp,
+      RATE_LIMIT_RULES.publicRequestPerVenue,
+    );
     const input = await body(c, RequestInputSchema);
     return c.json(
       ok(await services.requests.createPublic(c.req.param('slug'), input)),
       201,
     );
   });
-  app.post('/public/venues/:slug/portal/register', async (c) =>
-    c.json(
+  app.post('/public/venues/:slug/portal/register', async (c) => {
+    await hitBoth(
+      c,
+      RATE_LIMIT_RULES.registrationPerIp,
+      RATE_LIMIT_RULES.registrationPerVenue,
+    );
+    return c.json(
       ok(
         await services.customerAccounts.register(
           c.req.param('slug'),
@@ -241,10 +272,15 @@ export const createApp = (repo: Repository) => {
         ),
       ),
       201,
-    ),
-  );
-  app.post('/public/venues/:slug/portal/activate', async (c) =>
-    c.json(
+    );
+  });
+  app.post('/public/venues/:slug/portal/activate', async (c) => {
+    await hitBoth(
+      c,
+      RATE_LIMIT_RULES.passwordSetPerIp,
+      RATE_LIMIT_RULES.passwordSetPerVenue,
+    );
+    return c.json(
       ok(
         await services.customerAccounts.setPassword(
           c.req.param('slug'),
@@ -252,10 +288,15 @@ export const createApp = (repo: Repository) => {
           'ACTIVATION',
         ),
       ),
-    ),
-  );
-  app.post('/public/venues/:slug/portal/reset-password', async (c) =>
-    c.json(
+    );
+  });
+  app.post('/public/venues/:slug/portal/reset-password', async (c) => {
+    await hitBoth(
+      c,
+      RATE_LIMIT_RULES.passwordSetPerIp,
+      RATE_LIMIT_RULES.passwordSetPerVenue,
+    );
+    return c.json(
       ok(
         await services.customerAccounts.setPassword(
           c.req.param('slug'),
@@ -263,8 +304,8 @@ export const createApp = (repo: Repository) => {
           'RESET',
         ),
       ),
-    ),
-  );
+    );
+  });
   app.use('/organization/*', protectedRoute);
   app.use('/courts/*', protectedRoute);
   app.use('/sports/*', protectedRoute);
