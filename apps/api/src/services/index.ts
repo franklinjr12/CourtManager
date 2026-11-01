@@ -13,6 +13,7 @@ import {
   type User,
 } from '@court-manager/contracts';
 import type { Key, RecordItem, Repository, Write } from '../db.js';
+import { paidAmountForCharge } from './charge-payments.js';
 import {
   assertTransition,
   assertTimeZone,
@@ -2175,16 +2176,7 @@ export class ChargeService {
       }));
   }
   private paidFor(charge: RecordItem, payments: RecordItem[]) {
-    return payments
-      .filter(
-        (payment) =>
-          payment.chargeId === charge.chargeId ||
-          (!payment.chargeId &&
-            ((charge.reservationId &&
-              payment.reservationId === charge.reservationId) ||
-              (charge.classId && payment.classId === charge.classId))),
-      )
-      .reduce((sum, payment) => sum + Number(payment.amount), 0);
+    return paidAmountForCharge(charge, payments);
   }
   async get(ctx: AuthContext, chargeId: string) {
     const charge = await this.repo.get<RecordItem>(key('charge', chargeId));
@@ -3457,6 +3449,11 @@ export class ReportService {
       expenses = withOrg(ctx, 'expense', allRows).filter(
         (x) => String(x.date) >= from && String(x.date) <= to,
       );
+    const allPayments = withOrg(ctx, 'payment', allRows);
+    const paymentsRecordedInPeriod = payments.reduce(
+      (n, x) => n + Number(x.amount),
+      0,
+    );
     const commercial = buildCommercialReporting({
       memberships: withOrg(ctx, 'membership', allRows),
       packages: withOrg(ctx, 'customerPackage', allRows),
@@ -3497,23 +3494,14 @@ export class ReportService {
         ]),
       ),
       expectedRevenue: charges.reduce((n, x) => n + Number(x.amount), 0),
-      recordedPayments: payments.reduce((n, x) => n + Number(x.amount), 0),
+      recordedPayments: paymentsRecordedInPeriod,
+      paymentsRecordedInPeriod,
       outstanding: charges.reduce(
         (n, charge) =>
           n +
           Math.max(
             0,
-            Number(charge.amount) -
-              payments
-                .filter(
-                  (p) =>
-                    p.chargeId === charge.chargeId ||
-                    (!p.chargeId &&
-                      ((charge.reservationId &&
-                        p.reservationId === charge.reservationId) ||
-                        (charge.classId && p.classId === charge.classId))),
-                )
-                .reduce((sum, p) => sum + Number(p.amount), 0),
+            Number(charge.amount) - paidAmountForCharge(charge, allPayments),
           ),
         0,
       ),

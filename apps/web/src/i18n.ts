@@ -570,6 +570,9 @@ const enUS = {
   'classes.noClasses': 'No classes yet.',
   'common.weekday': 'Weekday',
   'reports.recordedPayments': 'Recorded payments',
+  'reports.paymentsInPeriod': 'Payments recorded in period',
+  'reports.outstandingHint':
+    'Outstanding for charges with service date in the period, net of all linked payments.',
   'reports.scheduled': 'Scheduled',
   'reports.actual': 'Actual',
   'nav.today': 'Today',
@@ -1296,6 +1299,9 @@ const ptBR: Record<keyof typeof enUS, string> = {
   'reports.commercial': 'Relatório comercial',
   'reports.from': 'De',
   'reports.to': 'Até',
+  'reports.paymentsInPeriod': 'Pagamentos registrados no período',
+  'reports.outstandingHint':
+    'Em aberto das cobranças com data de serviço no período, descontando todos os pagamentos vinculados.',
   'reports.expectedPaymentsHint':
     'Valores esperados são cobranças; pagamentos são registros de dinheiro recebido.',
   'reports.activeMemberships': 'Mensalidades ativas',

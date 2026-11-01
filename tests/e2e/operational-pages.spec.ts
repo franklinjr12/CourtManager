@@ -49,6 +49,9 @@ test('owner operational screens expose workflows instead of placeholders', async
   await page.goto('/reports');
   await expect(page.getByRole('heading', { name: 'Relatórios' })).toBeVisible();
   await expect(
+    page.getByText('Pagamentos registrados no período'),
+  ).toBeVisible();
+  await expect(
     page.getByRole('heading', { name: 'Relatório comercial' }),
   ).toBeVisible();
   await expect(
