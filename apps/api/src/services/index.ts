@@ -35,6 +35,7 @@ import {
 } from '../domain.js';
 import { AppError } from '../errors.js';
 import { classCatalogKey } from '../persistence/class-keys.js';
+import { operationalKeys } from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
 import { Phase3Repository } from '../persistence/phase3-repository.js';
@@ -112,6 +113,19 @@ const customerReservationIndex = (reservation: RecordItem) => {
     index.PK,
     index.SK,
     'customerReservationIndex',
+  );
+};
+const organizationReservationIndex = (reservation: RecordItem) => {
+  const index = operationalKeys.organizationReservation(
+    String(reservation.organizationId),
+    String(reservation.startAt),
+    String(reservation.reservationId),
+  );
+  return stored(
+    as(reservation),
+    index.PK,
+    index.SK,
+    'organizationReservationIndex',
   );
 };
 const customerReservationHistoryIndex = (reservation: RecordItem) => {
@@ -1135,6 +1149,7 @@ export class ReservationService {
       [
         { type: 'put', item: record },
         { type: 'put', item: customerReservationIndex(record) },
+        { type: 'put', item: organizationReservationIndex(record) },
         ...(charge
           ? [
               { type: 'put' as const, item: charge },
@@ -1173,6 +1188,7 @@ export class ReservationService {
       await this.repo.transactWrite([
         { type: 'put', item: coveredRecord },
         { type: 'put', item: customerReservationIndex(coveredRecord) },
+        { type: 'put', item: organizationReservationIndex(coveredRecord) },
         ...(charge
           ? (() => {
               const coveredCharge = stored(
@@ -1210,6 +1226,7 @@ export class ReservationService {
           [
             { type: 'delete', key: record },
             { type: 'delete', key: customerReservationIndex(record) },
+            { type: 'delete', key: organizationReservationIndex(record) },
             ...(charge ? [{ type: 'delete' as const, key: charge }] : []),
             {
               type: 'delete',
@@ -1292,6 +1309,8 @@ export class ReservationService {
         a.PK === b.PK && a.SK === b.SK;
       const oldIndex = customerReservationIndex(current),
         newIndex = customerReservationIndex(value),
+        oldOrgIndex = organizationReservationIndex(current),
+        newOrgIndex = organizationReservationIndex(value),
         oldActivity = reservationActivity(as<Reservation>(current), court),
         newActivity = reservationActivity(as<Reservation>(value), court);
       await this.schedule.move(
@@ -1309,6 +1328,10 @@ export class ReservationService {
           ...(sameKey(oldIndex, newIndex)
             ? []
             : [{ type: 'delete' as const, key: oldIndex }]),
+          { type: 'put', item: newOrgIndex },
+          ...(sameKey(oldOrgIndex, newOrgIndex)
+            ? []
+            : [{ type: 'delete' as const, key: oldOrgIndex }]),
           ...(sameKey(oldActivity, newActivity)
             ? []
             : [{ type: 'delete' as const, key: oldActivity }]),
@@ -1319,8 +1342,11 @@ export class ReservationService {
       await this.syncActiveCharge(reservationId, input.expectedAmount);
       return as(value);
     }
-    await this.repo.put(value);
-    await this.repo.put(customerReservationIndex(value));
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: customerReservationIndex(value) },
+      { type: 'put', item: organizationReservationIndex(value) },
+    ]);
     await this.syncActiveCharge(reservationId, input.expectedAmount);
     return as(value);
   }
@@ -1381,6 +1407,7 @@ export class ReservationService {
         [
           { type: 'put', item: value },
           { type: 'put', item: customerReservationIndex(value) },
+          { type: 'put', item: organizationReservationIndex(value) },
           { type: 'put', item: customerReservationHistoryIndex(value) },
           {
             type: 'put',
@@ -1418,8 +1445,11 @@ export class ReservationService {
         );
       return as(value);
     }
-    await this.repo.put(value);
-    await this.repo.put(customerReservationIndex(value));
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: customerReservationIndex(value) },
+      { type: 'put', item: organizationReservationIndex(value) },
+    ]);
     if (status === 'COMPLETED')
       await this.repo.put(customerReservationHistoryIndex(value));
     const court = await this.courts.get(ctx, String(current.courtId));
@@ -1488,6 +1518,7 @@ export class ReservationService {
       [
         { type: 'put', item: value },
         { type: 'put', item: customerReservationIndex(value) },
+        { type: 'put', item: organizationReservationIndex(value) },
         { type: 'put', item: customerReservationHistoryIndex(value) },
         {
           type: 'put',
@@ -1669,6 +1700,8 @@ export class ReservationService {
                 type: 'delete',
                 key: key('reservation', String(record.reservationId)),
               },
+              { type: 'delete', key: customerReservationIndex(record) },
+              { type: 'delete', key: organizationReservationIndex(record) },
             ],
           );
         } catch {
@@ -2359,18 +2392,21 @@ export class PaymentService {
         'META',
         'payment',
       );
-    await this.repo.transactWrite([
-      { type: 'put', item: value },
-      { type: 'put', item: customerFinancialPaymentIndex(value) },
-      ...(reservationId
-        ? [
-            {
-              type: 'put' as const,
-              item: customerReservationPaymentIndex(value),
-            },
-          ]
-        : []),
-    ]);
+    await this.withSummaryRetry(async () =>
+      this.repo.transactWrite([
+        { type: 'put', item: value },
+        { type: 'put', item: customerFinancialPaymentIndex(value) },
+        ...(reservationId
+          ? [
+              {
+                type: 'put' as const,
+                item: customerReservationPaymentIndex(value),
+              },
+              await this.summaryWrite(value, 1),
+            ]
+          : []),
+      ]),
+    );
     return as(value);
   }
   async remove(ctx: AuthContext, paymentId: string) {
@@ -2378,10 +2414,103 @@ export class PaymentService {
     const p = await this.repo.get<RecordItem>(key('payment', paymentId));
     if (!p || p.organizationId !== ctx.organizationId)
       throw new AppError('NOT_FOUND', 'Payment was not found.');
-    await this.repo.delete(key('payment', paymentId));
-    if (p.reservationId)
-      await this.repo.delete(customerReservationPaymentIndex(p));
-    await this.repo.delete(customerFinancialPaymentIndex(p));
+    await this.withSummaryRetry(async () =>
+      this.repo.transactWrite([
+        {
+          type: 'delete',
+          key: key('payment', paymentId),
+          condition: 'attribute_exists(PK)',
+        },
+        { type: 'delete', key: customerFinancialPaymentIndex(p) },
+        ...(p.reservationId
+          ? [
+              {
+                type: 'delete' as const,
+                key: customerReservationPaymentIndex(p),
+              },
+              await this.summaryWrite(p, -1),
+            ]
+          : []),
+      ]),
+    );
+  }
+  /**
+   * Builds the optimistic write that adds (`direction` 1) or removes (-1) one
+   * payment from its reservation's materialized payment summary. A missing
+   * summary (data written before the summary existed) is seeded from the
+   * reservation's bounded payment index partition.
+   */
+  private async summaryWrite(payment: RecordItem, direction: 1 | -1) {
+    const reservationId = String(payment.reservationId);
+    const summaryKey = operationalKeys.reservationPaymentSummary(reservationId);
+    const current = await this.repo.get<RecordItem>(summaryKey);
+    const base = current
+      ? {
+          paidAmount: Number(current.paidAmount ?? 0),
+          paymentCount: Number(current.paymentCount ?? 0),
+        }
+      : (
+          await this.repo.query<RecordItem>(
+            phase2Keys.customerReservationPayments(
+              String(payment.organizationId),
+              String(payment.customerId),
+              reservationId,
+            ).PK,
+            { beginsWith: 'PAYMENT#' },
+          )
+        ).reduce(
+          (sum, row) => ({
+            paidAmount: sum.paidAmount + Number(row.amount),
+            paymentCount: sum.paymentCount + 1,
+          }),
+          { paidAmount: 0, paymentCount: 0 },
+        );
+    const item = stored(
+      {
+        organizationId: payment.organizationId,
+        reservationId,
+        paidAmount: Math.max(
+          0,
+          Math.round(
+            (base.paidAmount + direction * Number(payment.amount)) * 100,
+          ) / 100,
+        ),
+        paymentCount: Math.max(0, base.paymentCount + direction),
+        updatedAt: now(),
+      },
+      summaryKey.PK,
+      summaryKey.SK,
+      'reservationPaymentSummary',
+    );
+    return current
+      ? {
+          type: 'put' as const,
+          item,
+          expected: {
+            paidAmount: current.paidAmount,
+            paymentCount: current.paymentCount,
+          },
+        }
+      : {
+          type: 'put' as const,
+          item,
+          condition: 'attribute_not_exists(PK)',
+        };
+  }
+  /** Concurrent payments on one reservation race on the summary; retry. */
+  private async withSummaryRetry(write: () => Promise<void>) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await write();
+      } catch (error) {
+        if (
+          attempt >= 3 ||
+          !(error instanceof AppError) ||
+          !['CONFLICT', 'SCHEDULE_CONFLICT'].includes(error.code)
+        )
+          throw error;
+      }
+    }
   }
   async list(ctx: AuthContext, filters: Input = {}) {
     const rows = withOrg(ctx, 'payment', await this.repo.scan())

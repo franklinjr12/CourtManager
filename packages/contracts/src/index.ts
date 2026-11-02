@@ -2025,6 +2025,8 @@ export type EntityType =
   | 'waitlist'
   | 'customerActivity'
   | 'customerReservationIndex'
+  | 'organizationReservationIndex'
+  | 'reservationPaymentSummary'
   | 'customerReservationHistoryIndex'
   | 'customerReservationRequestIndex'
   | 'customerReservationPaymentIndex'
