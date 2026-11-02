@@ -368,6 +368,83 @@ describe('MembershipService', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('pauses and resumes a membership after renewal', async () => {
+    const { services, customerId, plan } = await setup();
+    const membership = await services.memberships.create(owner, {
+      customerId,
+      planId: plan.planId,
+      startDate: '2026-09-01',
+    });
+    const id = membership.membershipId;
+    await services.memberships.renew(owner, id);
+    expect((await services.memberships.pause(staff, id)).status).toBe('PAUSED');
+    expect((await services.memberships.get(staff, id)).status).toBe('PAUSED');
+    expect((await services.memberships.resume(staff, id)).status).toBe(
+      'ACTIVE',
+    );
+  });
+
+  it('cancels a renewed membership on a scheduled date and immediately', async () => {
+    const { services, customerId, plan } = await setup();
+    const membership = await services.memberships.create(owner, {
+      customerId,
+      planId: plan.planId,
+      startDate: '2026-09-01',
+    });
+    const id = membership.membershipId;
+    const renewed = await services.memberships.renew(owner, id);
+    const scheduled = await services.memberships.cancel(owner, id, {
+      effectiveDate: renewed.currentPeriodEnd,
+    });
+    expect(scheduled).toMatchObject({
+      status: 'ACTIVE',
+      cancellationEffectiveDate: renewed.currentPeriodEnd,
+    });
+    vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'));
+    const cancelled = await services.memberships.cancel(owner, id, {
+      effectiveDate: renewed.currentPeriodStart,
+    });
+    expect(cancelled.status).toBe('CANCELLED');
+    const periods = await services.memberships.periods(owner, id);
+    expect(periods).toHaveLength(2);
+    expect(periods.map((p) => p.status)).toContain('COMPLETED');
+  });
+
+  it('cancels a paused membership', async () => {
+    const { services, customerId, plan } = await setup();
+    const membership = await services.memberships.create(owner, {
+      customerId,
+      planId: plan.planId,
+      startDate: '2026-09-01',
+    });
+    const id = membership.membershipId;
+    await services.memberships.pause(staff, id);
+    const cancelled = await services.memberships.cancel(owner, id, {
+      effectiveDate: membership.currentPeriodStart,
+    });
+    expect(cancelled.status).toBe('CANCELLED');
+    expect((await services.memberships.get(owner, id)).status).toBe(
+      'CANCELLED',
+    );
+  });
+
+  it('expires a renewed membership whose period ended', async () => {
+    const { services, customerId, plan } = await setup();
+    const membership = await services.memberships.create(owner, {
+      customerId,
+      planId: plan.planId,
+      startDate: '2020-01-01',
+    });
+    const id = membership.membershipId;
+    const expired = await services.memberships.get(owner, id);
+    expect(expired.status).toBe('EXPIRED');
+    const periods = await services.memberships.periods(owner, id);
+    expect(periods.at(-1)).toMatchObject({ status: 'EXPIRED' });
+    await expect(services.memberships.pause(staff, id)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+  });
+
   it('reports overdue only when the renewal charge still has an outstanding amount', async () => {
     const { repo, services, customerId, plan } = await setup();
     const membership = await services.memberships.create(owner, {
