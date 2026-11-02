@@ -426,3 +426,97 @@ timezone). Minors: J-6 to J-12 (copy, raw IDs, accents, form defaults).
 Not run: the gates were not re-run on Node 22; `test:phase3:all` only ran
 partially (G-4); exact-boundary cancellation cutoff; account `DISABLED`; agreement
 pause/change/cancel; the en-US locale walk.
+
+## Re-run 2026-11-01 (Node 22)
+
+- Date: 2026-11-01 (gates executed on the machine date 2026-11-02, UTC).
+- Commit tested: `f7c406d2fe10bc674456b036e816f81fca21ff82`
+  (`f7c406d CM-008: test(e2e): fix remaining e2e and phase3 e2e failures (G-3, G-4)`).
+- Test-side commits under test (no app code was changed):
+  - `4f46fd9` G-2: monthly class membership integration test no longer
+    depends on the month boundary;
+  - `6b4c145` G-3: e2e dev seed and stale fixtures in the e2e setup;
+  - `f7c406d` G-3/G-4: `reservations.spec.ts` looks up its own booking with
+    `?customerId=`.
+- Scope: automated gates only, re-run on Node 22. No test was skipped,
+  disabled or changed to get a result; no app code was changed.
+
+### Environment
+
+| Item           | Value                                                                  |
+| -------------- | ---------------------------------------------------------------------- |
+| Node           | v22.23.4 (linux arm64, production target)                              |
+| pnpm           | 9.15.5 (via corepack)                                                  |
+| Docker         | 29.1.3 (`docker --version`)                                            |
+| Playwright     | 1.62.1 (chromium)                                                      |
+| DynamoDB Local | `docker compose up -d dynamodb` on :8120                               |
+| Env vars       | Values of `.env.example` exported into the shell of every gate command |
+
+### Gates
+
+Order: `reset:dev`, `check`, `test:integration`, `test:phase3:all`,
+`reset:dev` again, `test:e2e`, `build`. Gate 3b (the e2e step of gate 3, run
+separately) was run last, also after a fresh `reset:dev`. Every number below comes from a complete, uninterrupted run.
+
+| Gate | Command                                                        | Result | Summary                                                                                                                                                                                                |
+| ---- | -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | `corepack pnpm reset:dev`                                      | PASS   | exit 0; 2s                                                                                                                                                                                             |
+| 1    | `corepack pnpm check`                                          | PASS   | exit 0; lint (import/order warnings only), typecheck, format:check and `test`: 76 files / 276 tests passed; 156s                                                                                       |
+| 2    | `corepack pnpm test:integration`                               | PASS   | exit 0; 10 files / 19 tests passed; 19s                                                                                                                                                                |
+| 3    | `corepack pnpm test:phase3:all`                                | FAIL   | exit 1; `test:phase3` 31 files / 78 tests passed; `test:phase3:integration` 4 files / 12 tests passed; `test:phase3:e2e` step stopped in Playwright global setup, before any test ran (see below); 60s |
+| 3b   | `corepack pnpm reset:dev` then `corepack pnpm test:phase3:e2e` | FAIL   | exit 1; 17 passed, 1 failed (`memberships.spec.ts:10`); 90s                                                                                                                                            |
+| 4    | `corepack pnpm reset:dev` then `corepack pnpm test:e2e`        | FAIL   | exit 1; 64 passed, 1 failed (65 tests, chromium); 245s (4.1m). The failure is the same `memberships.spec.ts:10`                                                                                        |
+| 5    | `corepack pnpm build`                                          | PASS   | exit 0; API/contracts build and Vite build OK (`dist/assets/index-*.js` 247.89 kB, gzip 56.80 kB); 8s                                                                                                  |
+
+Gate 3 detail: the e2e step of the `&&` chain ran right after
+`test:integration` and `test:phase3:integration`, which leave other
+organizations in the shared local table. Playwright global setup then threw
+`e2e setup: development seed owner owner@arena.test is missing because local
+DynamoDB already holds other organizations` (`tests/e2e/support/global-setup.ts:22`)
+and no test ran. This is the local-table ordering problem described in
+"Running e2e" below, so the e2e tests of the chain were run separately as
+gate 3b from a fresh `reset:dev`.
+
+### Remaining failures
+
+| Gate | Spec:line                    | Test title                                       | Symptom                                                                                                                                                                                                                                  | Row                 |
+| ---- | ---------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 3b   | `memberships.spec.ts:10`     | staff can assign and pause a customer membership | Pause returns HTTP 400 `VALIDATION_ERROR` "A DynamoDB transaction cannot contain more than 100 actions" (`memberships.spec.ts:93`, expected 200). Same duplicate `membershipByCustomer` key as in f7c406d; hits pause, cancel and expire | CM-016              |
+| 4    | `memberships.spec.ts:10`     | staff can assign and pause a customer membership | Identical error and assertion to gate 3b (same test, same cause)                                                                                                                                                                         | CM-016              |
+| 3    | `support/global-setup.ts:22` | (global setup, no test ran)                      | `owner@arena.test` missing because earlier gates left other organizations in the shared table. Environment ordering, not an app or test defect. Avoided by `reset:dev` immediately before e2e                                            | Unmapped (ordering) |
+
+There are no CM-017 or CM-018 failures in this run: the scan-based endpoints
+(`/today`, `/schedule`, `/reservations`, `/finance/summary`, `/charges`) did not
+cause a timeout when the e2e suites started from a fresh `reset:dev`. The
+specs named in f7c406d for those rows (`operational-pages.spec.ts:10`,
+`phase2-account-lifecycle.spec.ts:224`, `reservations.spec.ts:55`,
+`responsive.spec.ts:16`, `commercial-canonical.spec.ts:125`,
+`fixed-court-agreements.spec.ts:36`) all passed here. The underlying
+whole-table scans are not fixed, so those rows (CM-017 for Hoje/Agenda/Reservas,
+CM-018 for finance summary/charges) remain open and the failures return as the
+local table grows. None of the failing tests was flaky: the one failure
+reproduced in both suites.
+
+### Status of G-1..G-4 compared with 2026-10-30
+
+| ID  | 2026-10-30 (Node 26)                             | 2026-11-01 (Node 22)                                                                                                                                         |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G-1 | `check`: 16 web tests failed on `localStorage`   | Resolved: `check` is green on Node 22 (76 files / 276 tests). The failure was Node 26 specific                                                               |
+| G-2 | monthly class membership integration test failed | Resolved by `4f46fd9`: `test:integration` 19/19 and `test:phase3:integration` 12/12 pass                                                                     |
+| G-3 | `test:e2e` 44 of 65 failed, phase3 e2e 12 of 18  | Resolved by `6b4c145` and `f7c406d` except one test: `test:e2e` 64/65, `test:phase3:e2e` 17/18. The remaining failure reduces to the app defect CM-016       |
+| G-4 | `test:phase3:all` chain incomplete               | Partly resolved: unit and integration steps pass; the e2e step of the chain still needs a fresh `reset:dev` (gate 3) and then fails only on CM-016 (gate 3b) |
+
+The remaining red is app-side: CM-016 (membership pause/cancel/expire) is the
+only failing test. CM-017 and CM-018 are latent scan defects that this run did
+not trip because it started from `reset:dev`. The final all-green run is
+CM-019.
+
+### Running e2e
+
+Always run `corepack pnpm reset:dev` immediately before
+`corepack pnpm test:e2e` and before `corepack pnpm test:phase3:e2e` (and
+`test:phase3:all`). The local DynamoDB table is shared by all gates and grows
+with every run, and the scan-based endpoints (CM-017, CM-018) get slower as it
+grows, so a run that does not start from `reset:dev` has more timeouts. Other
+organizations left by integration tests also stop Playwright global setup
+(gate 3). The 2026-10-30 run did not follow this rule.

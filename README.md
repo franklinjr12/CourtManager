@@ -75,6 +75,14 @@ corepack pnpm test:phase3:all
 
 See [docs/testing/phase3-coverage.md](docs/testing/phase3-coverage.md) for the coverage matrix, fixtures, and canonical scenarios.
 
+Playwright suites (`test:e2e`, `test:phase3:e2e`, `test:phase3:all`) must start from a fresh local table, because the local DynamoDB table is shared by all gates and later runs get slower (more timeouts) as it grows. Run `corepack pnpm reset:dev` immediately before them:
+
+```bash
+corepack pnpm reset:dev && corepack pnpm test:e2e
+```
+
+See [docs/testing/pilot-readiness-check.md](docs/testing/pilot-readiness-check.md) for the latest gate results.
+
 The first four run fast domain, service, repository, DOM, and browser-router tests. Integration tests use the same repository contract and can be run against DynamoDB Local. E2E uses Playwright Chromium and the Docker development environment.
 
 ## Production
