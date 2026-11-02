@@ -4,6 +4,8 @@ import {
   openRequestIndex,
   operationalKeys,
   organizationChargeIndex,
+  organizationExpenseIndex,
+  organizationPaymentIndex,
 } from '../persistence/operational-keys.js';
 
 export type OperationalIndexesMigrationResult = {
@@ -11,6 +13,8 @@ export type OperationalIndexesMigrationResult = {
   paymentSummariesWritten: number;
   openRequestIndexesWritten: number;
   chargeIndexesWritten: number;
+  paymentIndexesWritten: number;
+  expenseIndexesWritten: number;
 };
 
 const withoutMetadata = (item: RecordItem) =>
@@ -29,6 +33,8 @@ const cents = (value: number) => Math.round(value * 100) / 100;
  *   authoritative payment records;
  * - an `ORG#<org>#OPEN_REQUESTS` copy of every request still `REQUESTED`;
  * - an `ORG#<org>#CHARGES` copy of every charge, sorted by `serviceAt`.
+ * - `ORG#<org>#PAYMENTS` and `ORG#<org>#EXPENSES` copies of every payment
+ *   (by paid date) and expense (by date), for Financeiro.
  * Additive and idempotent: it only writes items that are missing or differ
  * from their source, never deletes, and never invents business records.
  */
@@ -41,6 +47,8 @@ export async function migrateOperationalIndexes(
   let paymentSummariesWritten = 0;
   let openRequestIndexesWritten = 0;
   let chargeIndexesWritten = 0;
+  let paymentIndexesWritten = 0;
+  let expenseIndexesWritten = 0;
 
   const payments = new Map<
     string,
@@ -125,6 +133,12 @@ export async function migrateOperationalIndexes(
     } else if (item.entity === 'charge') {
       if (await putIfChanged(organizationChargeIndex(item)))
         chargeIndexesWritten += 1;
+    } else if (item.entity === 'payment') {
+      if (await putIfChanged(organizationPaymentIndex(item)))
+        paymentIndexesWritten += 1;
+    } else if (item.entity === 'expense') {
+      if (await putIfChanged(organizationExpenseIndex(item)))
+        expenseIndexesWritten += 1;
     }
   }
   return {
@@ -132,5 +146,7 @@ export async function migrateOperationalIndexes(
     paymentSummariesWritten,
     openRequestIndexesWritten,
     chargeIndexesWritten,
+    paymentIndexesWritten,
+    expenseIndexesWritten,
   };
 }

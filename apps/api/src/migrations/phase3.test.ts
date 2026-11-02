@@ -42,6 +42,8 @@ describe('Phase 3 migration', () => {
         paymentSummariesWritten: 0,
         openRequestIndexesWritten: 0,
         chargeIndexesWritten: 1,
+        paymentIndexesWritten: 1,
+        expenseIndexesWritten: 0,
       },
     });
     expect(await migratePhase3(repo)).toEqual({
@@ -52,6 +54,8 @@ describe('Phase 3 migration', () => {
         paymentSummariesWritten: 0,
         openRequestIndexesWritten: 0,
         chargeIndexesWritten: 0,
+        paymentIndexesWritten: 0,
+        expenseIndexesWritten: 0,
       },
     });
     expect(

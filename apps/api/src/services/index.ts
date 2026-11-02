@@ -40,6 +40,10 @@ import {
   openRequestKey,
   operationalKeys,
   organizationChargeIndex,
+  organizationExpenseIndex,
+  organizationExpenseKey,
+  organizationPaymentIndex,
+  organizationPaymentKey,
 } from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
@@ -2556,6 +2560,7 @@ export class PaymentService {
       this.repo.transactWrite([
         { type: 'put', item: value },
         { type: 'put', item: customerFinancialPaymentIndex(value) },
+        { type: 'put', item: organizationPaymentIndex(value) },
         ...(reservationId
           ? [
               {
@@ -2582,6 +2587,7 @@ export class PaymentService {
           condition: 'attribute_exists(PK)',
         },
         { type: 'delete', key: customerFinancialPaymentIndex(p) },
+        { type: 'delete', key: organizationPaymentKey(p) },
         ...(p.reservationId
           ? [
               {
@@ -2703,7 +2709,10 @@ export class ExpenseService {
         'META',
         'expense',
       );
-    await this.repo.put(value);
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: organizationExpenseIndex(value) },
+    ]);
     return as(value);
   }
   async remove(ctx: AuthContext, expenseId: string) {
@@ -2713,7 +2722,10 @@ export class ExpenseService {
       throw new AppError('NOT_FOUND', 'Expense was not found.');
     if (ctx.role !== 'OWNER')
       throw new AppError('FORBIDDEN', 'Only owners can correct expenses.');
-    await this.repo.delete(key('expense', expenseId));
+    await this.repo.transactWrite([
+      { type: 'delete', key: key('expense', expenseId) },
+      { type: 'delete', key: organizationExpenseKey(expense) },
+    ]);
   }
 }
 
