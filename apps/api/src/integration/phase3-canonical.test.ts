@@ -136,9 +136,10 @@ describe('Phase 3 canonical business scenarios', () => {
       remainingQuantity: 420,
     });
 
-    const reservations = await venue.services.reservations.list(venue.owner, {
-      customerId,
-    });
+    const { data: reservations } = await venue.services.reservations.list(
+      venue.owner,
+      { customerId },
+    );
     await venue.services.reservations.transition(
       venue.owner,
       reservations[1]!.reservationId,

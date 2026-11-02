@@ -22,6 +22,7 @@ import { closeModal, openModal } from '../ui/modal.js';
 import { shell } from '../ui/shell.js';
 import { customerOptions } from './customers.js';
 import { openPaymentModal } from './finance.js';
+import { getAppContext } from '../app/context.js';
 import { app, escapeText, renderRoute, request, screen } from './runtime.js';
 
 export const STAFF_DURATION_OPTIONS = Array.from(
@@ -490,17 +491,111 @@ export async function openRecurringReservationModal() {
     }
   });
 }
+const RESERVATION_PAGE_SIZE = 50;
+
+const reservationRange = () => {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    from: params.has('from') ? (params.get('from') ?? '') : today(),
+    to: params.get('to') ?? '',
+  };
+};
+
+const reservationRow = (r: Reservation) =>
+  `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}–${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtName ?? r.courtId)}</td><td>${escapeText(r.customerName ?? r.customerId)}</td><td>${reservationStatusLabel(r.status)} · ${paymentStatusLabel(r.paymentStatus ?? 'UNPAID')}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button(t('common.open' as never), `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`;
+
+const reservationPath = (
+  range: { from: string; to: string },
+  cursor?: string | null,
+) => {
+  const query = new URLSearchParams({ limit: String(RESERVATION_PAGE_SIZE) });
+  if (range.from) query.set('from', range.from);
+  if (range.to) query.set('to', range.to);
+  if (cursor) query.set('cursor', cursor);
+  return `/reservations?${query}`;
+};
+
+function mountReservationList(root: HTMLElement) {
+  const form = root.querySelector<HTMLFormElement>('#reservation-filters')!;
+  const results = root.querySelector<HTMLElement>(
+    '[data-reservation-results]',
+  )!;
+  const status = root.querySelector<HTMLElement>('[data-reservation-status]')!;
+  const more = root.querySelector<HTMLButtonElement>('[data-next-page]')!;
+  const first = root.querySelector<HTMLButtonElement>('[data-first-page]')!;
+  let cursor: string | null = null;
+  let pages = 0;
+  let generation = 0;
+  const load = async (append: boolean) => {
+    const current = ++generation;
+    const range = reservationRange();
+    more.disabled = true;
+    status.className = 'loading';
+    status.textContent = t('common.loading');
+    try {
+      const page = await getAppContext().api.requestPage<Reservation>(
+        reservationPath(range, append ? cursor : null),
+      );
+      if (current !== generation) return;
+      if (!append) {
+        results.innerHTML = '';
+        pages = 0;
+      }
+      pages += 1;
+      let body = results.querySelector('tbody');
+      if (!body && page.data.length) {
+        results.innerHTML = `<table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.court')}</th><th>${t('common.customer')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.actions')}</th></tr></thead><tbody></tbody></table>`;
+        body = results.querySelector('tbody');
+      }
+      if (body) {
+        const fresh = document.createElement('tbody');
+        fresh.innerHTML = page.data.map(reservationRow).join('');
+        wireReservationDetailButtons(fresh);
+        body.append(...fresh.children);
+      } else {
+        results.innerHTML = `<p class="empty">${t('reservations.noReservationsInRange')}</p>`;
+      }
+      cursor = page.nextCursor;
+      more.hidden = !cursor;
+      first.hidden = pages < 2;
+      status.className = '';
+      status.textContent = '';
+    } catch (error) {
+      if (current !== generation) return;
+      status.className = 'error';
+      status.textContent =
+        error instanceof Error ? error.message : String(error);
+    } finally {
+      more.disabled = false;
+    }
+  };
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const values = formData(form);
+    const query = new URLSearchParams({
+      from: String(values.from ?? ''),
+      to: String(values.to ?? ''),
+    });
+    history.pushState({}, '', `${window.location.pathname}?${query}`);
+    void load(false);
+  });
+  more.addEventListener('click', () => void load(true));
+  first.addEventListener('click', () => void load(false));
+  void load(false);
+}
+
 export async function reservations() {
-  const data = await request<Reservation[]>('/reservations');
+  const range = reservationRange();
   await shell(
-    async () => {
-      return `<div class="toolbar"><div><h2>${t('reservations.title')}</h2><p class="muted">${t('reservations.description')}</p></div><button class="button primary" id="add-reservation">${t('reservations.new')}</button></div><article class="card table-wrap">${data.length ? `<table><thead><tr><th>${t('common.dateTime')}</th><th>${t('common.court')}</th><th>${t('common.customer')}</th><th>${t('common.status')}</th><th>${t('common.expected')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${data.map((r) => `<tr><td>${escapeText(dateValue(r.startAt))} ${escapeText(timeValue(r.startAt))}–${escapeText(timeValue(r.endAt))}</td><td>${escapeText(r.courtId)}</td><td>${escapeText(r.customerId)}</td><td>${reservationStatusLabel(r.status)} · ${paymentStatusLabel(r.paymentStatus ?? 'UNPAID')}</td><td>${formatMoney(r.expectedAmount)}</td><td>${button(t('common.open' as never), `data-reservation="${escapeText(r.reservationId)}"`)}</td></tr>`).join('')}</tbody></table>` : `<p class="empty">${t('reservations.noReservations')}</p>`}</article>`;
-    },
+    () =>
+      `<div class="toolbar"><div><h2>${t('reservations.title')}</h2><p class="muted">${t('reservations.description')}</p></div><button class="button primary" id="add-reservation">${t('reservations.new')}</button></div><form id="reservation-filters" class="form-grid"><label>${t('reservations.from')}<input name="from" type="date" value="${escapeText(range.from)}"></label><label>${t('reservations.to')}<input name="to" type="date" value="${escapeText(range.to)}"></label><div class="form-actions"><button class="button primary" type="submit">${t('common.applyFilters')}</button></div></form><article class="card table-wrap"><div data-reservation-results></div><p data-reservation-status role="status" aria-live="polite"></p><div class="form-actions"><button type="button" class="button" data-first-page hidden>${t('reservations.firstPage')}</button><button type="button" class="button" data-next-page hidden>${t('reservations.nextPage')}</button></div></article>`,
     () => {
-      screen()
-        ?.querySelector('#add-reservation')
+      const root = screen();
+      if (!root) return;
+      root
+        .querySelector('#add-reservation')
         ?.addEventListener('click', () => void openReservationModal());
-      const actions = screen()?.querySelector('.toolbar');
+      const actions = root.querySelector('.toolbar');
       if (actions && !actions.querySelector('#add-recurring-reservation')) {
         actions.insertAdjacentHTML(
           'beforeend',
@@ -513,22 +608,7 @@ export async function reservations() {
             () => void openRecurringReservationModal(),
           );
       }
-      const reservationScreen = screen();
-      if (reservationScreen) wireReservationDetailButtons(reservationScreen);
+      mountReservationList(root);
     },
   );
-  const rows = screen()?.querySelectorAll<HTMLTableRowElement>('tbody tr');
-  rows?.forEach((row, index) => {
-    const reservation = data[index];
-    if (reservation) {
-      const cells = row.querySelectorAll('td');
-      if (cells[1])
-        cells[1].textContent = reservation.courtName ?? reservation.courtId;
-      if (cells[2])
-        cells[2].textContent =
-          reservation.customerName ?? reservation.customerId;
-      if (cells[3])
-        cells[3].textContent = `${reservationStatusLabel(reservation.status)} · ${paymentStatusLabel(reservation.paymentStatus ?? 'UNPAID')}`;
-    }
-  });
 }

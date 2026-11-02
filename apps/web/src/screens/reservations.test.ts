@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAppContext } from '../app/context.js';
+import { setSession } from '../auth.js';
 import { isoFromInputs } from '../core/presentation.js';
 import { t } from '../i18n.js';
 import {
@@ -8,6 +9,7 @@ import {
   openRecurringReservationModal,
   openReservationDetail,
   openReservationModal,
+  reservations,
   staffDurationSelect,
   reservationDetailActions,
   reservationIsEditable,
@@ -319,5 +321,106 @@ describe('explicit customer choice in reservation forms', () => {
       ),
     );
     expect(posts()).toHaveLength(0);
+  });
+});
+
+describe('reservations list screen', () => {
+  const fetchMock = vi.fn();
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const row = (id: string, courtName: string) => ({
+    ...reservation,
+    reservationId: id,
+    courtName,
+    customerName: `Customer ${id}`,
+  });
+  const listCalls = () =>
+    fetchMock.mock.calls
+      .map(([url]) => new URL(String(url)))
+      .filter((url) => url.pathname === '/reservations');
+
+  beforeEach(() => {
+    localStorage.clear();
+    window.history.replaceState({}, '', '/reservations');
+    document.body.innerHTML = '<div id="app"></div>';
+    createAppContext(document.querySelector<HTMLDivElement>('#app')!);
+    setSession({
+      token: 't',
+      user: { name: 'Staff', role: 'STAFF' },
+      organization: { name: 'Org', timezone: 'America/Sao_Paulo' },
+    } as never);
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = new URL(String(url));
+      if (target.pathname !== '/reservations') return json({ data: [] });
+      return target.searchParams.get('cursor')
+        ? json({ data: [row('r3', 'Court B')], nextCursor: null })
+        : json({
+            data: [row('r1', 'Court A'), row('r2', 'Court A')],
+            nextCursor: 'cursor-1',
+          });
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const rows = () => document.querySelectorAll('#screen tbody tr');
+
+  it('requests the first page from today and renders names', async () => {
+    await reservations();
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const first = listCalls()[0]!;
+    expect(first.searchParams.get('from')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(first.searchParams.has('to')).toBe(false);
+    expect(rows()[0]!.textContent).toContain('Court A');
+    expect(rows()[0]!.textContent).toContain('Customer r1');
+  });
+
+  it('applies a range, updates the URL and reloads', async () => {
+    await reservations();
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const form = document.querySelector<HTMLFormElement>(
+      '#reservation-filters',
+    )!;
+    form.querySelector<HTMLInputElement>('[name="from"]')!.value = '2027-01-10';
+    form.querySelector<HTMLInputElement>('[name="to"]')!.value = '2027-01-20';
+    form.requestSubmit();
+    await vi.waitFor(() => expect(listCalls()).toHaveLength(2));
+    const last = listCalls()[1]!;
+    expect(last.searchParams.get('from')).toBe('2027-01-10');
+    expect(last.searchParams.get('to')).toBe('2027-01-20');
+    expect(window.location.search).toBe('?from=2027-01-10&to=2027-01-20');
+  });
+
+  it('sends the cursor for the next page, appends rows and hides the button at the end', async () => {
+    await reservations();
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const next = document.querySelector<HTMLButtonElement>('[data-next-page]')!;
+    expect(next.hidden).toBe(false);
+    next.click();
+    await vi.waitFor(() => expect(rows()).toHaveLength(3));
+    expect(listCalls()[1]!.searchParams.get('cursor')).toBe('cursor-1');
+    expect(next.hidden).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-first-page]')!.hidden,
+    ).toBe(false);
+  });
+
+  it('reads the range from the URL and shows an empty state', async () => {
+    window.history.replaceState({}, '', '/reservations?from=&to=2027-02-01');
+    fetchMock.mockImplementation(async () =>
+      json({ data: [], nextCursor: null }),
+    );
+    await reservations();
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        t('reservations.noReservationsInRange'),
+      ),
+    );
+    const call = listCalls()[0]!;
+    expect(call.searchParams.has('from')).toBe(false);
+    expect(call.searchParams.get('to')).toBe('2027-02-01');
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-next-page]')!.hidden,
+    ).toBe(true);
   });
 });

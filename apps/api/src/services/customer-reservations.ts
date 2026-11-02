@@ -11,6 +11,7 @@ import type {
 import type { RecordItem, Repository } from '../db.js';
 import { calculateDuration, dayKeyInTimezone, localTime } from '../domain.js';
 import { AppError } from '../errors.js';
+import { openRequestKey } from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
 import { BookingPolicyService } from './booking-policy.js';
@@ -398,6 +399,7 @@ export class CustomerReservationService {
           entity: 'customerReservationRequestIndex',
         },
       },
+      { type: 'delete', key: openRequestKey(request) },
     ]);
     return value;
   }

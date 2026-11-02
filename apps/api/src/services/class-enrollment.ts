@@ -10,6 +10,7 @@ import {
   classCatalogKey,
   classEnrollmentKey,
 } from '../persistence/class-keys.js';
+import { organizationChargeIndex } from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
 import { classActivity } from './customer-activities.js';
@@ -321,6 +322,7 @@ export class ClassEnrollmentService {
               : { condition: 'attribute_not_exists(PK)' }),
           });
           writes.push({ type: 'put', item: customerChargeIndex(charge) });
+          writes.push({ type: 'put', item: organizationChargeIndex(charge) });
         }
       }
       effects.push(...writes.slice(1));
@@ -465,6 +467,10 @@ export class ClassEnrollmentService {
         expected: { status: 'ACTIVE' },
       });
       effects.push({ type: 'put', item: customerChargeIndex(voidedCharge) });
+      effects.push({
+        type: 'put',
+        item: organizationChargeIndex(voidedCharge),
+      });
     }
     if (enrollment.status === 'ACTIVE' || enrollment.status === 'CANCELLED') {
       const activities = sessions.map((session) =>

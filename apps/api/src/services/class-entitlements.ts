@@ -1,6 +1,7 @@
 import type { EntitlementAllocation } from '@court-manager/contracts';
 import type { RecordItem, Repository } from '../db.js';
 import { dayKeyInTimezone } from '../domain.js';
+import { organizationChargeIndex } from '../persistence/operational-keys.js';
 import { EntitlementService } from './entitlements.js';
 
 type ClassAttendanceInput = {
@@ -95,7 +96,7 @@ export class ClassEntitlementService {
       Number(charge.amount) - allocation.coveredAmount,
     );
     const timestamp = new Date().toISOString();
-    await this.repo.put({
+    const updated = {
       ...charge,
       ...(remaining > 0
         ? { amount: Math.round(remaining * 100) / 100 }
@@ -105,6 +106,8 @@ export class ClassEntitlementService {
             voidedBy: input.createdBy,
             voidReason: 'Covered by entitlement',
           }),
-    });
+    };
+    await this.repo.put(updated);
+    await this.repo.put(organizationChargeIndex(updated));
   }
 }

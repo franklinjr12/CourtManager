@@ -38,6 +38,13 @@ export type Write =
     }
   | { type: 'check'; key: Key; expected: Record<string, unknown> }
   | { type: 'delete'; key: Key; condition?: string };
+export type QueryOptions = {
+  beginsWith?: string;
+  limit?: number;
+  between?: [string, string];
+  /** Exclusive SK cursor within the same PK: only items with SK > startAfter. */
+  startAfter?: string;
+};
 export interface Repository {
   get<T extends RecordItem = RecordItem>(key: Key): Promise<T | undefined>;
   put(item: RecordItem, condition?: string): Promise<void>;
@@ -56,7 +63,7 @@ export interface Repository {
   ): Promise<number>;
   query<T extends RecordItem = RecordItem>(
     pk: string,
-    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
+    opts?: QueryOptions,
   ): Promise<T[]>;
   scan<T extends RecordItem = RecordItem>(
     filter?: (item: T) => boolean,
@@ -112,19 +119,17 @@ export class MemoryRepository implements Repository {
     this.items.set(this.key(key), item);
     return next;
   }
-  async query<T extends RecordItem>(
-    pk: string,
-    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
-  ) {
+  async query<T extends RecordItem>(pk: string, opts?: QueryOptions) {
     const result = [...this.items.values()]
       .filter(
         (i) =>
           i.PK === pk &&
           (!opts?.beginsWith || i.SK.startsWith(opts.beginsWith)) &&
           (!opts?.between ||
-            (i.SK >= opts.between[0] && i.SK <= opts.between[1])),
+            (i.SK >= opts.between[0] && i.SK <= opts.between[1])) &&
+          (opts?.startAfter === undefined || i.SK > opts.startAfter),
       )
-      .sort((a, b) => a.SK.localeCompare(b.SK));
+      .sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
     return (
       opts?.limit === undefined ? result : result.slice(0, opts.limit)
     ) as T[];
@@ -224,6 +229,26 @@ function expectedCondition(expected: Record<string, unknown>) {
   };
 }
 
+/**
+ * DynamoDB rejects an ExclusiveStartKey outside the key condition, so clamp
+ * `startAfter` to the queried SK range: drop it when it sorts before the
+ * range, and short-circuit when every matching item sorts at or before it.
+ */
+export function queryCursor(
+  opts: QueryOptions | undefined,
+): string | undefined | 'EMPTY' {
+  const cursor = opts?.startAfter;
+  if (cursor === undefined) return undefined;
+  if (opts?.between) {
+    const [from, to] = opts.between;
+    if (cursor < from) return undefined;
+    return cursor >= to ? 'EMPTY' : cursor;
+  }
+  if (opts?.beginsWith && !cursor.startsWith(opts.beginsWith))
+    return cursor < opts.beginsWith ? undefined : 'EMPTY';
+  return cursor;
+}
+
 export class DynamoRepository implements Repository {
   constructor(
     private readonly client: DynamoDBDocumentClient,
@@ -294,12 +319,12 @@ export class DynamoRepository implements Repository {
     );
     return Number(result.Attributes?.[field] ?? 0);
   }
-  async query<T extends RecordItem>(
-    pk: string,
-    opts?: { beginsWith?: string; limit?: number; between?: [string, string] },
-  ) {
+  async query<T extends RecordItem>(pk: string, opts?: QueryOptions) {
     const items: T[] = [];
-    let ExclusiveStartKey: Key | undefined;
+    const cursor = queryCursor(opts);
+    if (cursor === 'EMPTY') return [];
+    let ExclusiveStartKey: Key | undefined =
+      cursor === undefined ? undefined : { PK: pk, SK: cursor };
     do {
       const result = await this.client.send(
         new QueryCommand({
