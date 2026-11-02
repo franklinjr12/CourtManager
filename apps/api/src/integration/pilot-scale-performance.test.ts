@@ -210,6 +210,13 @@ describe('pilot-scale front-desk performance (DynamoDB Local)', () => {
         method: 'PIX',
         paidAt: new Date().toISOString(),
       });
+    for (const [index, amount] of [120, 80, 45].entries())
+      await services.expenses.create(ctx, {
+        amount,
+        date: dateAfter(index),
+        description: `Pilot expense ${index}`,
+        category: 'MAINTENANCE',
+      });
 
     const app = createApp(pilot.repo);
     const login = await app.request('/auth/login', {
@@ -254,5 +261,32 @@ describe('pilot-scale front-desk performance (DynamoDB Local)', () => {
     ];
     for (const result of [today, schedule, list])
       for (const id of otherIds) expect(result.text).not.toContain(id);
+
+    // Finance endpoints answer from org-scoped queries, not table scans.
+    const range = `from=${dateAfter(-1)}&to=${dateAfter(DAYS)}`;
+    const charges = await get('/charges');
+    const chargeId = String(charges.body.data[0]?.chargeId);
+    expect(chargeId).not.toBe('undefined');
+    const finance = {
+      charges,
+      chargesRange: await get(`/charges?${range}`),
+      summaryRange: await get(`/finance/summary?${range}`),
+      summary: await get('/finance/summary'),
+      balances: await get('/finance/balances'),
+      payments: await get('/payments'),
+      expenses: await get('/expenses'),
+      charge: await get(`/charges/${chargeId}`),
+    };
+    console.info(
+      `pilot-scale finance timings ms: ${Object.entries(finance)
+        .map(([name, result]) => `${name}=${result.elapsed.toFixed(0)}`)
+        .join(' ')}`,
+    );
+    for (const result of Object.values(finance)) {
+      expect(result.elapsed).toBeLessThan(LIMIT_MS);
+      for (const id of otherIds) expect(result.text).not.toContain(id);
+    }
+    expect(finance.summaryRange.body.data.recordedPayments).toBe(40 * 10);
+    expect(finance.summary.body.data.recordedPayments).toBe(40 * 10);
   }, 600_000);
 });

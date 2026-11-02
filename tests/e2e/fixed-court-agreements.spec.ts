@@ -47,7 +47,7 @@ test('staff can create and inspect a fixed recurring court agreement', async ({
   await expect(billing).toContainText(/Unpaid/);
   await page.getByRole('button', { name: 'Record payment' }).click();
   const payment = page.getByRole('dialog');
-  await expect(payment.getByLabel('Price')).toHaveValue('600');
+  await expect(payment.getByLabel('Amount')).toHaveValue('600');
   await payment.getByRole('button', { name: 'Record payment' }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   await page.goto('/commercial/fixed-courts');
