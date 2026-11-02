@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AuthContext } from '@court-manager/contracts';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
-import { dynamo, ensureTable } from '../db.js';
+import { dynamo, ensureTable, type Write } from '../db.js';
 import { hashPassword } from '../security.js';
 import { buildServices } from '../services/index.js';
 
@@ -162,20 +162,21 @@ async function removeOrganizations(organizationIds: string[]) {
     const text = JSON.stringify(item);
     return organizationIds.some((id) => text.includes(id));
   });
-  for (let offset = 0; offset < rows.length; offset += 25)
+  const deletes = rows.map((row): Write => ({
+    type: 'delete',
+    key: { PK: row.PK, SK: row.SK },
+  }));
+  const chunks: Write[][] = [];
+  for (let offset = 0; offset < deletes.length; offset += 25)
+    chunks.push(deletes.slice(offset, offset + 25));
+  for (let index = 0; index < chunks.length; index += 8)
     await Promise.all(
-      rows
-        .slice(offset, offset + 25)
-        .map((row) =>
-          repo.batchWrite([
-            { type: 'delete', key: { PK: row.PK, SK: row.SK } },
-          ]),
-        ),
+      chunks.slice(index, index + 8).map((chunk) => repo.batchWrite(chunk)),
     );
 }
 
 describe('pilot-scale front-desk performance (DynamoDB Local)', () => {
-  afterAll(() => removeOrganizations(seededOrganizations), 300_000);
+  afterAll(() => removeOrganizations(seededOrganizations), 900_000);
 
   it('serves Hoje, Agenda and Reservas under 2 s without other-org data', async () => {
     await ensureTable();
