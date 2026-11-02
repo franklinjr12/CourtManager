@@ -110,7 +110,10 @@ export async function migrateOperationalIndexes(
   }
 
   const putIfChanged = async (index: RecordItem) => {
-    if (isDeepStrictEqual(await repo.get(index), index)) return false;
+    if (
+      isDeepStrictEqual(await repo.get({ PK: index.PK, SK: index.SK }), index)
+    )
+      return false;
     await repo.put(index);
     return true;
   };
