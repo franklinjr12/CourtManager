@@ -1,6 +1,17 @@
 import { expect, it } from 'vitest';
-import { MemoryRepository } from '../db.js';
+import { MemoryRepository, type RecordItem } from '../db.js';
+import {
+  organizationChargeIndex,
+  organizationPaymentIndex,
+} from '../persistence/operational-keys.js';
 import { buildServices } from './index.js';
+
+// Financeiro reads the organization index partitions, so raw seeds write both.
+const putIndexed = async (repo: MemoryRepository, item: RecordItem) => {
+  await repo.put(item);
+  if (item.entity === 'charge') await repo.put(organizationChargeIndex(item));
+  if (item.entity === 'payment') await repo.put(organizationPaymentIndex(item));
+};
 
 const seed = async (repo: MemoryRepository, org: string, suffix = '') => {
   await repo.put({
@@ -38,7 +49,7 @@ const seed = async (repo: MemoryRepository, org: string, suffix = '') => {
     classId: `cl${suffix}`,
     name: `Tênis${suffix}`,
   });
-  await repo.put({
+  await putIndexed(repo, {
     PK: `CHARGE#ch${suffix}`,
     SK: 'META',
     entity: 'charge',
@@ -51,8 +62,8 @@ const seed = async (repo: MemoryRepository, org: string, suffix = '') => {
     amount: 80,
     serviceAt: '2026-10-05T13:00:00.000Z',
     status: 'ACTIVE',
-  });
-  await repo.put({
+  } as RecordItem);
+  await putIndexed(repo, {
     PK: `PAYMENT#pa${suffix}`,
     SK: 'META',
     entity: 'payment',
@@ -61,8 +72,8 @@ const seed = async (repo: MemoryRepository, org: string, suffix = '') => {
     customerId: `cu${suffix}`,
     reservationId: `re${suffix}`,
     amount: 30,
-  });
-  await repo.put({
+  } as RecordItem);
+  await putIndexed(repo, {
     PK: `PAYMENT#pb${suffix}`,
     SK: 'META',
     entity: 'payment',
@@ -71,7 +82,7 @@ const seed = async (repo: MemoryRepository, org: string, suffix = '') => {
     customerId: `cu${suffix}`,
     classId: `cl${suffix}`,
     amount: 20,
-  });
+  } as RecordItem);
 };
 
 it('adds customer, court, time and class names to charges and payments', async () => {
@@ -109,7 +120,7 @@ it('does not use records from another organization for display names', async () 
   await seed(repo, 'org1');
   await seed(repo, 'org2', 'x');
   // org1 payment pointing at org2 ids must not resolve names from org2.
-  await repo.put({
+  await putIndexed(repo, {
     PK: 'PAYMENT#evil',
     SK: 'META',
     entity: 'payment',
