@@ -21,6 +21,15 @@ const dateAfter = (days: number, from = new Date()) => {
   return value.toISOString().slice(0, 10);
 };
 
+// Anchors dates to the first day of next month so a monthly benefit period
+// never straddles a calendar-month boundary regardless of when the test runs.
+const nextMonthDate = (days: number, from = new Date()) => {
+  const value = new Date(
+    Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1 + days),
+  );
+  return value.toISOString().slice(0, 10);
+};
+
 const nextWednesday = () => {
   const today = new Date();
   const day = today.getUTCDay();
@@ -205,11 +214,11 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
       await request(fixture.app, 'POST', '/memberships', fixture.token, {
         customerId: customer.customerId,
         planId: plan.planId,
-        startDate: dateAfter(0),
+        startDate: nextMonthDate(0),
       }),
     );
     for (let index = 1; index <= 8; index += 1) {
-      const classDate = dateAfter(index);
+      const classDate = nextMonthDate(index);
       const [entitlement] =
         await fixture.services.entitlements.getAvailableEntitlements(
           {
@@ -262,8 +271,8 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
           activityId: 'carlos-attendance-9',
           quantity: 1,
           unit: 'SESSION',
-          occurredAt: `${dateAfter(9)}T10:00:00.000Z`,
-          venueDate: dateAfter(9),
+          occurredAt: `${nextMonthDate(9)}T10:00:00.000Z`,
+          venueDate: nextMonthDate(9),
           classType: 'GROUP',
           coveredAmount: 35,
           currency: 'BRL',
@@ -271,7 +280,7 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
       );
     expect(exhausted).toEqual([]);
 
-    const periodKey = benefitPeriodKey('MONTH', dateAfter(1));
+    const periodKey = benefitPeriodKey('MONTH', nextMonthDate(1));
     if (!periodKey) throw new Error('Expected a monthly benefit period key');
     const beforeRenewal =
       await fixture.services.entitlements.getRemainingBalance({
@@ -323,7 +332,7 @@ describe('Phase 3 HTTP workflows on DynamoDB Local', () => {
         fixture.token,
       ),
     );
-    const renewedPeriodKey = benefitPeriodKey('MONTH', dateAfter(31));
+    const renewedPeriodKey = benefitPeriodKey('MONTH', nextMonthDate(31));
     if (!renewedPeriodKey) {
       throw new Error('Expected a renewed monthly benefit period key');
     }

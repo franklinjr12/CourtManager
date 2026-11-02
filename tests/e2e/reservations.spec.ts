@@ -38,7 +38,12 @@ test('new reservation opens, supports quick customer creation, and creates a boo
     `/customers?search=${encodeURIComponent(unique)}`,
   );
   const customer = customers.body.data[0];
-  const reservations = await api(page, '/reservations');
+  // Scope to this test's customer: the shared seed org accumulates
+  // reservations from other specs and the list is paginated.
+  const reservations = await api(
+    page,
+    `/reservations?customerId=${encodeURIComponent(customer.customerId)}`,
+  );
   const reservation = reservations.body.data.find(
     (item: { customerId: string }) => item.customerId === customer.customerId,
   );

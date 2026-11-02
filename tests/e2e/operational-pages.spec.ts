@@ -43,8 +43,11 @@ test('owner operational screens expose workflows instead of placeholders', async
   await expect(
     page.getByRole('heading', { name: /Visao geral|Visão geral/ }),
   ).toBeVisible();
+  // The sidebar and the in-page commercial navigation both link here.
   await expect(
-    page.getByRole('link', { name: 'Mensalidades', exact: true }),
+    page
+      .getByRole('navigation', { name: 'Comercial' })
+      .getByRole('link', { name: 'Mensalidades', exact: true }),
   ).toBeVisible();
   await page.goto('/reports');
   await expect(page.getByRole('heading', { name: 'Relatórios' })).toBeVisible();

@@ -6,6 +6,7 @@ import {
   createIsolatedVenue,
   useEnglish,
 } from './support/venue.js';
+import { currentMonthStartUtc } from './support/commercial.js';
 
 test('invalid commercial forms show validation feedback', async ({ page }) => {
   const venue = await createIsolatedVenue({ prefix: 'validation' });
@@ -71,7 +72,8 @@ test('rapid duplicate renew clicks do not create extra membership periods', asyn
     body: JSON.stringify({
       customerId: customer.body.data.customerId,
       planId: plan.body.data.planId,
-      startDate: '2020-01-01',
+      // Must be current: a 2020 start is auto-expired on read and cannot renew.
+      startDate: currentMonthStartUtc(),
     }),
   });
   const membershipId = membership.body.data.membershipId as string;

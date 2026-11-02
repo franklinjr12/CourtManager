@@ -97,7 +97,8 @@ export async function seedCommercialOverviewVenue() {
     String(activeCustomer.customerId),
     {
       packageDefinitionId: definition.packageDefinitionId,
-      issuedAt: '2099-01-01T12:00:00.000Z',
+      // Issued now so the 10-day validity falls inside the expiring-soon window.
+      issuedAt: new Date().toISOString(),
     },
   );
   await venue.services.fixedCourtAgreements.create(venue.owner, {
