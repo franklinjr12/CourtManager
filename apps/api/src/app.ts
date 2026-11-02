@@ -1114,31 +1114,7 @@ export const createApp = (
       q.date ??
       q.from ??
       dayKeyInTimezone(new Date().toISOString(), String(organization.timezone));
-    const reservations =
-      ctx(c).role === 'COACH'
-        ? []
-        : (
-            await services.reservations.list(
-              ctx(c),
-              { date, limit: ONE_DAY_RESERVATION_LIMIT },
-              { maxLimit: ONE_DAY_RESERVATION_LIMIT },
-            )
-          ).data;
-    const scheduledReservations = reservations.filter(
-      (reservation) => reservation.status !== 'CANCELLED',
-    );
-    const blocks = await services.blocks.list(ctx(c), date);
-    const classes = await services.classes.occurrences(ctx(c), date);
-    const items = [...scheduledReservations, ...blocks, ...classes] as {
-      courtId?: string;
-    }[];
-    const allCourts = await services.courts.list(ctx(c), true);
-    const courts = allCourts.filter(
-      (court) =>
-        (court.active === true && !court.archivedAt) ||
-        items.some((item) => item.courtId === court.courtId),
-    );
-    return c.json(ok({ date, courts, items }));
+    return c.json(ok(await services.scheduleDay.get(ctx(c), date)));
   });
   app.get('/availability', async (c) => {
     const q = c.req.query();

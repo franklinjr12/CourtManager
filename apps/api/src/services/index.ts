@@ -74,6 +74,12 @@ import { PackageService } from './packages.js';
 import { PlanService } from './plans.js';
 import { ReservationEntitlementService } from './reservation-entitlements.js';
 import {
+  ScheduleDayService,
+  blockRows,
+  loadOperationalDay,
+  occurrenceRows,
+} from './operational-day.js';
+import {
   decodeReservationCursor,
   encodeReservationCursor,
   reservationListBounds,
@@ -1104,19 +1110,38 @@ export class ReservationService {
     }
     return data;
   }
+  /** Enriches already-loaded reservation records (e.g. one operational day). */
+  async fromRecords(
+    ctx: AuthContext,
+    rows: RecordItem[],
+    customers?: RecordItem[],
+  ) {
+    return this.enrich(
+      ctx,
+      rows.map((row) => ({
+        ...as<Reservation>(row),
+        status: (row.status === 'CONFIRMED'
+          ? 'BOOKED'
+          : row.status) as Reservation['status'],
+      })),
+      customers,
+    );
+  }
   private async enrich(
     ctx: AuthContext,
     reservations: Reservation[],
+    prefetchedCustomers?: RecordItem[],
   ): Promise<ListedReservation[]> {
     if (!reservations.length) return [];
     const unique = (values: string[]) => [...new Set(values)];
     const [customers, courts, summaries] = await Promise.all([
-      batchGetChunked(
-        this.repo,
-        unique(reservations.map((r) => String(r.customerId))).map(
-          (customerId) => orgKey(ctx.organizationId, 'CUSTOMER', customerId),
+      prefetchedCustomers ??
+        batchGetChunked(
+          this.repo,
+          unique(reservations.map((r) => String(r.customerId))).map(
+            (customerId) => orgKey(ctx.organizationId, 'CUSTOMER', customerId),
+          ),
         ),
-      ),
       this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
         beginsWith: 'COURT#',
       }),
@@ -2655,13 +2680,9 @@ export class BlockService {
     private readonly schedule: ScheduleService,
   ) {}
   async list(ctx: AuthContext, date?: string) {
-    const timezone = await organizationTimezone(this.repo, ctx.organizationId);
+    if (date) return blockRows(await loadOperationalDay(this.repo, ctx, date));
     return withOrg(ctx, 'block', await this.repo.scan())
-      .filter(
-        (x) =>
-          x.active &&
-          (!date || dayKeyInTimezone(String(x.startAt), timezone) === date),
-      )
+      .filter((x) => x.active)
       .map(as);
   }
   async create(ctx: AuthContext, input: Input) {
@@ -2757,37 +2778,7 @@ export class ClassService {
   }
   async occurrences(ctx: AuthContext, date: string) {
     assertRole(ctx, ['OWNER', 'STAFF', 'COACH']);
-    const values = (await this.sessions(ctx)).filter(
-      (x) => String(x.startAt).slice(0, 10) === date,
-    );
-    const result = [] as Record<string, unknown>[];
-    for (const value of values) {
-      const cls = await this.getClass(ctx, String(value.classId));
-      if (ctx.role === 'COACH' && cls.coachId !== ctx.userId) continue;
-      const enrollments = withOrg(
-        ctx,
-        'enrollment',
-        (await this.repo.scan()).filter(
-          (x) => x.classId === value.classId && x.status === 'ACTIVE',
-        ),
-      );
-      const attendance = withOrg(
-        ctx,
-        'attendance',
-        (await this.repo.scan()).filter((x) => x.sessionId === value.sessionId),
-      );
-      result.push({
-        ...as(value),
-        name: cls.name,
-        sport: cls.sport,
-        occupancyType: 'CLASS',
-        enrolled: enrollments.length,
-        checkedIn: attendance.filter((x) =>
-          ['CHECKED_IN', 'COMPLETED'].includes(String(x.status)),
-        ).length,
-      });
-    }
-    return result;
+    return occurrenceRows(await loadOperationalDay(this.repo, ctx, date));
   }
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
@@ -3892,6 +3883,7 @@ export const buildServices = (repo: Repository) => {
     charges: new ChargeService(repo),
     finance: new ChargeService(repo),
     today: new TodayService(repo),
+    scheduleDay: new ScheduleDayService(repo, reservations),
     reports: new ReportService(repo),
     customerProfiles: new CustomerProfileService(
       repo,
