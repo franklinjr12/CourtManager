@@ -22,6 +22,7 @@ import {
   MembershipUpdateInputSchema,
   ok,
   PaginationSchema,
+  ReservationListQuerySchema,
   PaymentInputSchema,
   ReservationInputSchema,
   RequestInputSchema,
@@ -81,6 +82,8 @@ const body = async <T>(
     );
   return parsed.data;
 };
+/** Enough rows for every reservation of one venue day (Agenda, dashboard). */
+const ONE_DAY_RESERVATION_LIMIT = 1000;
 const queryValue = <T>(value: unknown, schema: ZodType<T>) => {
   const parsed = schema.safeParse(value);
   if (!parsed.success)
@@ -1011,14 +1014,9 @@ export const createApp = (
     c.json(ok(await services.customers.duplicates(ctx(c), c.req.query()))),
   );
   app.get('/reservations', async (c) => {
-    const q = c.req.query(),
-      p = PaginationSchema.parse(q);
-    return c.json(
-      collection(
-        (await services.reservations.list(ctx(c), q)).slice(0, p.limit),
-        null,
-      ),
-    );
+    const query = queryValue(c.req.query(), ReservationListQuerySchema);
+    const page = await services.reservations.list(ctx(c), query);
+    return c.json(collection(page.data, page.nextCursor));
   });
   app.post('/reservations', async (c) =>
     c.json(
@@ -1119,7 +1117,13 @@ export const createApp = (
     const reservations =
       ctx(c).role === 'COACH'
         ? []
-        : await services.reservations.list(ctx(c), { date });
+        : (
+            await services.reservations.list(
+              ctx(c),
+              { date, limit: ONE_DAY_RESERVATION_LIMIT },
+              { maxLimit: ONE_DAY_RESERVATION_LIMIT },
+            )
+          ).data;
     const scheduledReservations = reservations.filter(
       (reservation) => reservation.status !== 'CANCELLED',
     );
@@ -1458,7 +1462,13 @@ export const createApp = (
           new Date().toISOString(),
           String(organization.timezone),
         ),
-      reservations = await services.reservations.list(ctx(c), { date }),
+      reservations = (
+        await services.reservations.list(
+          ctx(c),
+          { date, limit: ONE_DAY_RESERVATION_LIMIT },
+          { maxLimit: ONE_DAY_RESERVATION_LIMIT },
+        )
+      ).data,
       requests = await services.requests.list(ctx(c)),
       payments = await services.payments.list(ctx(c));
     const expected = reservations.reduce(
@@ -1484,7 +1494,7 @@ export const createApp = (
     );
   });
   app.get('/reports/summary', async (c) => {
-    const reservations = await services.reservations.list(
+    const reservations = await services.reservations.listPages(
         ctx(c),
         c.req.query(),
       ),
@@ -1524,7 +1534,7 @@ export const createApp = (
         entity === 'customers'
           ? await services.customers.list(ctx(c))
           : entity === 'reservations'
-            ? await services.reservations.list(ctx(c), c.req.query())
+            ? await services.reservations.listPages(ctx(c), c.req.query())
             : entity === 'payments'
               ? await services.payments.list(ctx(c))
               : await services.expenses.list(ctx(c));

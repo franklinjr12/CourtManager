@@ -1,9 +1,14 @@
 import type { RecordItem, Repository } from '../db.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
+import {
+  migrateOperationalIndexes,
+  type OperationalIndexesMigrationResult,
+} from './operational-indexes.js';
 
 export type Phase3MigrationResult = {
   indexesCreated: number;
   financialIndexesCreated: number;
+  operational: OperationalIndexesMigrationResult;
 };
 
 const withoutMetadata = (item: RecordItem) => {
@@ -365,5 +370,7 @@ export async function migratePhase3(
       );
     }
   }
-  return { indexesCreated, financialIndexesCreated };
+  // Front-desk reservation index and payment summaries (CM-017).
+  const operational = await migrateOperationalIndexes(repo, rows);
+  return { indexesCreated, financialIndexesCreated, operational };
 }

@@ -23,6 +23,21 @@ export const ReservationStatusSchema = z.enum([
   'CANCELLED',
   'NO_SHOW',
 ]);
+/**
+ * Staff reservation list filters. `from`/`to` are inclusive venue-local
+ * dates; legacy `date` means from = to = date. Without a range the list starts
+ * at the venue's current date. `cursor` is the opaque `nextCursor` of the
+ * previous page.
+ */
+export const ReservationListQuerySchema = PaginationSchema.extend({
+  date: DateSchema.optional(),
+  from: DateSchema.optional(),
+  to: DateSchema.optional(),
+  status: ReservationStatusSchema.optional(),
+  courtId: IdentifierSchema.optional(),
+  customerId: IdentifierSchema.optional(),
+});
+export type ReservationListQuery = z.infer<typeof ReservationListQuerySchema>;
 export const ReservationSourceSchema = z.enum([
   'STAFF',
   'WHATSAPP',

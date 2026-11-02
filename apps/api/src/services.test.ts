@@ -459,7 +459,7 @@ describe('court archive listing', () => {
     const created = result.created as Record<string, unknown>[];
     expect(created.length).toBeGreaterThan(50);
     expect(
-      (await services.reservations.list(context, {})).filter(
+      (await services.reservations.listPages(context, {})).filter(
         (reservation) => reservation.seriesId === String(result.seriesId),
       ),
     ).toHaveLength(created.length);

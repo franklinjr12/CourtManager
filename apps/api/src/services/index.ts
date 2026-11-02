@@ -73,6 +73,12 @@ import { MembershipService } from './memberships.js';
 import { PackageService } from './packages.js';
 import { PlanService } from './plans.js';
 import { ReservationEntitlementService } from './reservation-entitlements.js';
+import {
+  decodeReservationCursor,
+  encodeReservationCursor,
+  reservationListBounds,
+  reservationListRange,
+} from './reservation-list.js';
 
 type Input = Record<string, unknown>;
 export type ReservationCreateOptions = {
@@ -978,6 +984,24 @@ export class ScheduleService {
   }
 }
 
+export type ListedReservation = Reservation & {
+  customerName?: string;
+  courtName?: string;
+  paidAmount?: number;
+  remainingAmount?: number;
+  paymentStatus?: string;
+};
+const RESERVATION_LIST_MAX_QUERIES = 5;
+/** DynamoDB BatchGetItem accepts at most 100 keys per request. */
+const batchGetChunked = async (repo: Repository, keys: Key[]) =>
+  (
+    await Promise.all(
+      Array.from({ length: Math.ceil(keys.length / 100) }, (_, i) =>
+        repo.batchGet<RecordItem>(keys.slice(i * 100, i * 100 + 100)),
+      ),
+    )
+  ).flat();
+
 export class ReservationService {
   constructor(
     private readonly repo: Repository,
@@ -994,76 +1018,143 @@ export class ReservationService {
     if (r.status === 'CONFIRMED') r.status = 'BOOKED';
     return r;
   }
+  /**
+   * One page of reservations in a venue-local date range, read from the
+   * organization (or customer) reservation index partition with bounded
+   * queries; never scans. status/courtId are applied after each bounded query,
+   * reading at most `RESERVATION_LIST_MAX_QUERIES` pages. Enrichment uses one
+   * court query and batch reads of customers and payment summaries.
+   */
   async list(
     ctx: AuthContext,
     filters: Input,
-  ): Promise<
-    (Reservation & {
-      customerName?: string;
-      courtName?: string;
-      paidAmount?: number;
-      remainingAmount?: number;
-      paymentStatus?: string;
-    })[]
-  > {
+    options: { maxLimit?: number; allTime?: boolean } = {},
+  ): Promise<{ data: ListedReservation[]; nextCursor: string | null }> {
     assertRole(ctx, ['OWNER', 'STAFF']);
+    const maxLimit = options.maxLimit ?? 100;
+    const limit =
+      filters.limit === undefined || filters.limit === ''
+        ? Math.min(50, maxLimit)
+        : Number(filters.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > maxLimit)
+      throw new AppError('VALIDATION_ERROR', 'Invalid page limit.');
+    let startAfter = decodeReservationCursor(filters.cursor);
     const timezone = await organizationTimezone(this.repo, ctx.organizationId);
-    const items = withOrg(ctx, 'reservation', await this.repo.scan());
-    const result = items
-      .filter((x) => !filters.status || x.status === filters.status)
-      .filter((x) => !filters.courtId || x.courtId === filters.courtId)
-      .filter((x) => !filters.customerId || x.customerId === filters.customerId)
-      .filter(
-        (x) =>
-          !filters.date ||
-          dayKeyInTimezone(String(x.startAt), timezone) === filters.date,
-      )
-      .sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)))
-      .map((item) => ({
-        ...as<Reservation>(item),
-        status: (item.status === 'CONFIRMED'
-          ? 'BOOKED'
-          : item.status) as Reservation['status'],
-      }));
-    return Promise.all(
-      result.map(async (reservation) => {
-        const customer = await this.repo.get<RecordItem>(
-          orgKey(
-            ctx.organizationId,
-            'CUSTOMER',
-            String(reservation.customerId),
-          ),
-        );
-        const court = await this.repo.get<RecordItem>(
-          orgKey(ctx.organizationId, 'COURT', String(reservation.courtId)),
-        );
-        const payments = withOrg(
-          ctx,
-          'payment',
-          (await this.repo.scan()).filter(
-            (payment) => payment.reservationId === reservation.reservationId,
-          ),
-        );
-        const paid = payments.reduce(
-          (sum, payment) => sum + Number(payment.amount),
-          0,
-        );
-        return {
-          ...reservation,
-          ...(customer ? { customerName: String(customer.name) } : {}),
-          ...(court ? { courtName: String(court.name) } : {}),
-          paidAmount: paid,
-          remainingAmount: Math.max(
-            0,
-            Number(reservation.expectedAmount) - paid,
-          ),
-          paymentStatus: paymentStatus(
-            Number(reservation.expectedAmount),
-            paid,
-          ),
-        };
+    const between = reservationListBounds(
+      reservationListRange(filters, timezone, {
+        openStart: options.allTime === true || Boolean(filters.customerId),
       }),
+      timezone,
     );
+    const pk = filters.customerId
+      ? phase2Keys.customerReservations(
+          ctx.organizationId,
+          String(filters.customerId),
+        ).PK
+      : operationalKeys.organizationReservations(ctx.organizationId).PK;
+    const matches: Reservation[] = [];
+    let nextCursor: string | null = null;
+    for (let page = 0; page < RESERVATION_LIST_MAX_QUERIES; page += 1) {
+      const rows = await this.repo.query<RecordItem>(pk, {
+        between,
+        limit,
+        ...(startAfter ? { startAfter } : {}),
+      });
+      for (const row of rows) {
+        startAfter = row.SK;
+        if (row.organizationId !== ctx.organizationId) continue;
+        const reservation = {
+          ...as<Reservation>(row),
+          status: (row.status === 'CONFIRMED'
+            ? 'BOOKED'
+            : row.status) as Reservation['status'],
+        };
+        if (filters.status && reservation.status !== filters.status) continue;
+        if (filters.courtId && reservation.courtId !== filters.courtId)
+          continue;
+        matches.push(reservation);
+        if (matches.length === limit) break;
+      }
+      const exhausted = rows.length < limit && startAfter === rows.at(-1)?.SK;
+      if (exhausted || rows.length === 0) {
+        nextCursor = null;
+        break;
+      }
+      nextCursor = encodeReservationCursor(String(startAfter));
+      if (matches.length === limit) break;
+    }
+    return { data: await this.enrich(ctx, matches), nextCursor };
+  }
+  /**
+   * Bounded multi-page read for internal summaries/exports: at most
+   * `maxPages` pages of 100, all-time unless a range is given.
+   */
+  async listPages(ctx: AuthContext, filters: Input, maxPages = 20) {
+    const data: ListedReservation[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < maxPages; page += 1) {
+      const result = await this.list(
+        ctx,
+        { ...filters, limit: 100, ...(cursor ? { cursor } : {}) },
+        { allTime: true },
+      );
+      data.push(...result.data);
+      cursor = result.nextCursor;
+      if (!cursor) break;
+    }
+    return data;
+  }
+  private async enrich(
+    ctx: AuthContext,
+    reservations: Reservation[],
+  ): Promise<ListedReservation[]> {
+    if (!reservations.length) return [];
+    const unique = (values: string[]) => [...new Set(values)];
+    const [customers, courts, summaries] = await Promise.all([
+      batchGetChunked(
+        this.repo,
+        unique(reservations.map((r) => String(r.customerId))).map(
+          (customerId) => orgKey(ctx.organizationId, 'CUSTOMER', customerId),
+        ),
+      ),
+      this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
+        beginsWith: 'COURT#',
+      }),
+      batchGetChunked(
+        this.repo,
+        unique(reservations.map((r) => String(r.reservationId))).map(
+          operationalKeys.reservationPaymentSummary,
+        ),
+      ),
+    ]);
+    const customerNames = new Map(
+      customers
+        .filter((c) => c.organizationId === ctx.organizationId)
+        .map((c) => [String(c.customerId), String(c.name)]),
+    );
+    const courtNames = new Map(
+      courts
+        .filter((c) => c.courtId !== undefined)
+        .map((c) => [String(c.courtId), String(c.name)]),
+    );
+    const paidAmounts = new Map(
+      summaries
+        .filter((s) => s.organizationId === ctx.organizationId)
+        .map((s) => [String(s.reservationId), Number(s.paidAmount ?? 0)]),
+    );
+    return reservations.map((reservation) => {
+      const paid = paidAmounts.get(reservation.reservationId) ?? 0;
+      const customerName = customerNames.get(String(reservation.customerId));
+      const courtName = courtNames.get(String(reservation.courtId));
+      return {
+        ...reservation,
+        ...(customerName !== undefined ? { customerName } : {}),
+        ...(courtName !== undefined ? { courtName } : {}),
+        paidAmount: paid,
+        remainingAmount: Math.max(0, Number(reservation.expectedAmount) - paid),
+        paymentStatus: paymentStatus(Number(reservation.expectedAmount), paid),
+      };
+    });
   }
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
