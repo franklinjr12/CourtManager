@@ -2041,6 +2041,8 @@ export type EntityType =
   | 'customerActivity'
   | 'customerReservationIndex'
   | 'organizationReservationIndex'
+  | 'organizationOpenRequestIndex'
+  | 'organizationChargeIndex'
   | 'reservationPaymentSummary'
   | 'customerReservationHistoryIndex'
   | 'customerReservationRequestIndex'

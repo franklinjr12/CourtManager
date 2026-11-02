@@ -37,12 +37,22 @@ describe('Phase 3 migration', () => {
     expect(await migratePhase3(repo)).toEqual({
       indexesCreated: 2,
       financialIndexesCreated: 2,
-      operational: { reservationIndexesWritten: 0, paymentSummariesWritten: 0 },
+      operational: {
+        reservationIndexesWritten: 0,
+        paymentSummariesWritten: 0,
+        openRequestIndexesWritten: 0,
+        chargeIndexesWritten: 1,
+      },
     });
     expect(await migratePhase3(repo)).toEqual({
       indexesCreated: 0,
       financialIndexesCreated: 0,
-      operational: { reservationIndexesWritten: 0, paymentSummariesWritten: 0 },
+      operational: {
+        reservationIndexesWritten: 0,
+        paymentSummariesWritten: 0,
+        openRequestIndexesWritten: 0,
+        chargeIndexesWritten: 0,
+      },
     });
     expect(
       await repo.get(

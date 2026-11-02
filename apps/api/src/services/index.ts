@@ -35,7 +35,12 @@ import {
 } from '../domain.js';
 import { AppError } from '../errors.js';
 import { classCatalogKey } from '../persistence/class-keys.js';
-import { operationalKeys } from '../persistence/operational-keys.js';
+import {
+  openRequestIndex,
+  openRequestKey,
+  operationalKeys,
+  organizationChargeIndex,
+} from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
 import { Phase3Repository } from '../persistence/phase3-repository.js';
@@ -76,6 +81,7 @@ import { ReservationEntitlementService } from './reservation-entitlements.js';
 import {
   ScheduleDayService,
   blockRows,
+  isActiveEnrollment,
   loadOperationalDay,
   occurrenceRows,
 } from './operational-day.js';
@@ -1270,6 +1276,7 @@ export class ReservationService {
           ? [
               { type: 'put' as const, item: charge },
               { type: 'put' as const, item: customerChargeIndex(charge) },
+              { type: 'put' as const, item: organizationChargeIndex(charge) },
             ]
           : []),
         {
@@ -1319,6 +1326,10 @@ export class ReservationService {
                   type: 'put' as const,
                   item: customerChargeIndex(coveredCharge),
                 },
+                {
+                  type: 'put' as const,
+                  item: organizationChargeIndex(coveredCharge),
+                },
               ];
             })()
           : []),
@@ -1343,7 +1354,15 @@ export class ReservationService {
             { type: 'delete', key: record },
             { type: 'delete', key: customerReservationIndex(record) },
             { type: 'delete', key: organizationReservationIndex(record) },
-            ...(charge ? [{ type: 'delete' as const, key: charge }] : []),
+            ...(charge
+              ? [
+                  { type: 'delete' as const, key: charge },
+                  {
+                    type: 'delete' as const,
+                    key: organizationChargeIndex(charge),
+                  },
+                ]
+              : []),
             {
               type: 'delete',
               key: reservationActivity(as<Reservation>(record), court),
@@ -1373,6 +1392,7 @@ export class ReservationService {
     );
     await this.repo.put(updatedCharge);
     await this.repo.put(customerChargeIndex(updatedCharge));
+    await this.repo.put(organizationChargeIndex(updatedCharge));
   }
   async update(ctx: AuthContext, reservationId: string, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
@@ -1549,6 +1569,10 @@ export class ReservationService {
                     type: 'put' as const,
                     item: customerChargeIndex(voidedCharge),
                   },
+                  {
+                    type: 'put' as const,
+                    item: organizationChargeIndex(voidedCharge),
+                  },
                 ];
               })()
             : []),
@@ -1662,6 +1686,10 @@ export class ReservationService {
                 {
                   type: 'put' as const,
                   item: customerChargeIndex(voidedCharge),
+                },
+                {
+                  type: 'put' as const,
+                  item: organizationChargeIndex(voidedCharge),
                 },
               ];
             })()
@@ -1963,8 +1991,11 @@ export class RequestService {
       'META',
       'request',
     );
-    await this.repo.put(value);
-    await this.repo.put(customerReservationRequestIndex(value));
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: customerReservationRequestIndex(value) },
+      { type: 'put', item: openRequestIndex(value) },
+    ]);
     return as(value);
   }
   async createForCustomer(
@@ -2036,9 +2067,18 @@ export class RequestService {
       'META',
       'request',
     );
-    await this.repo.put(value);
-    if (value.linkedCustomerId)
-      await this.repo.put(customerReservationRequestIndex(value));
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: openRequestIndex(value) },
+      ...(value.linkedCustomerId
+        ? [
+            {
+              type: 'put' as const,
+              item: customerReservationRequestIndex(value),
+            },
+          ]
+        : []),
+    ]);
     return as(value);
   }
   async list(ctx: AuthContext) {
@@ -2072,7 +2112,10 @@ export class RequestService {
       request.SK,
       'request',
     );
-    await this.repo.put(value);
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'delete', key: openRequestKey(request) },
+    ]);
     return as(value);
   }
   async confirm(ctx: AuthContext, requestId: string, customerId?: string) {
@@ -2120,6 +2163,7 @@ export class RequestService {
       [
         ...(customerId ? [] : [{ type: 'put' as const, item: customerRecord }]),
         { type: 'put', item: value },
+        { type: 'delete', key: openRequestKey(request) },
         ...(request.linkedCustomerId
           ? [
               {
@@ -3205,6 +3249,7 @@ export class ClassService {
       );
       await this.repo.put(voidedCharge);
       await this.repo.put(customerChargeIndex(voidedCharge));
+      await this.repo.put(organizationChargeIndex(voidedCharge));
     }
     if (issueMakeupCredits) {
       const enrollments = withOrg(
@@ -3281,63 +3326,106 @@ export class ClassService {
   }
 }
 
+/**
+ * Hoje (front-desk day) read model. Every read is bounded by the requesting
+ * organization and the venue-local day:
+ * - the day's reservations, sessions, blocks, classes, enrollments and
+ *   attendance come from `loadOperationalDay` (schedule ITEM queries plus
+ *   batched reads);
+ * - pending requests from the `ORG#<org>#OPEN_REQUESTS` lookup;
+ * - the day's charges from the `ORG#<org>#CHARGES` lookup (`CHARGE#<date>`);
+ * - paid amounts from reservation `PAYMENT_SUMMARY` items, plus one customer
+ *   payment-partition query per distinct customer with a non-reservation
+ *   charge that day (bounded by the day's charges, run concurrently).
+ * No table scans and no per-item reads in a loop.
+ */
 export class TodayService {
   constructor(private readonly repo: Repository) {}
   async get(ctx: AuthContext, instant = new Date()) {
-    const organization = await this.repo.get<RecordItem>(
-      key('organization', ctx.organizationId),
-    );
+    const org = ctx.organizationId;
+    const coach = ctx.role === 'COACH';
+    const organization = await this.repo.get<RecordItem>({
+      PK: `ORG#${org}`,
+      SK: 'META',
+    });
     const timezone = String(organization?.timezone ?? 'UTC');
     const date = dayKeyInTimezone(instant.toISOString(), timezone);
-    const courts = (
-      await this.repo.query<RecordItem>(`ORG#${ctx.organizationId}`, {
-        beginsWith: 'COURT#',
-      })
-    ).filter((x) => x.active === true && !x.archivedAt);
-    const reservations =
-      ctx.role === 'COACH'
+    const [day, requestRows, chargeRows] = await Promise.all([
+      loadOperationalDay(this.repo, ctx, date),
+      coach
         ? []
-        : withOrg(ctx, 'reservation', await this.repo.scan()).filter(
-            (x) =>
-              dayKeyInTimezone(String(x.startAt), timezone) === date &&
-              x.status !== 'CANCELLED',
-          );
-    const sessions = withOrg(
-      ctx,
-      'classSession',
-      await this.repo.scan(),
-    ).filter(
+        : this.repo.query<RecordItem>(
+            operationalKeys.organizationOpenRequests(org).PK,
+            { beginsWith: 'REQUEST#' },
+          ),
+      coach
+        ? []
+        : this.repo.query<RecordItem>(
+            operationalKeys.organizationCharges(org).PK,
+            { beginsWith: `CHARGE#${date}` },
+          ),
+    ]);
+    const courts = day.courts.filter((x) => x.active === true && !x.archivedAt);
+    const { reservations, sessions, blocks } = day;
+    const classRecords = day.classes;
+    const enrollments = [...day.enrollments].flatMap(([classId, rows]) =>
+      rows.filter(isActiveEnrollment).map((row) => ({
+        ...row,
+        classId,
+        customerId: String(row.SK).slice('CUSTOMER#'.length),
+      })),
+    );
+    const attendance = [...day.attendance.values()].flat();
+    const charges = chargeRows.filter(
       (x) =>
-        dayKeyInTimezone(String(x.startAt), timezone) === date &&
-        x.status !== 'CANCELLED' &&
-        (ctx.role !== 'COACH' || x.coachId === ctx.userId),
+        x.organizationId === org &&
+        x.entity === 'organizationChargeIndex' &&
+        x.status === 'ACTIVE',
     );
-    const blocks =
-      ctx.role === 'COACH'
-        ? []
-        : withOrg(ctx, 'block', await this.repo.scan()).filter(
-            (x) =>
-              x.active === true &&
-              dayKeyInTimezone(String(x.startAt), timezone) === date,
-          );
-    const customers = new Map(
-      withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [
-        String(x.customerId),
-        x,
-      ]),
+    const missingCustomers = [
+      ...new Set([...enrollments, ...charges].map((x) => String(x.customerId))),
+    ].filter((customerId) => !day.customers.has(customerId));
+    const reservationCharges = charges.filter((x) => x.reservationId);
+    const paymentCustomers = [
+      ...new Set(
+        charges
+          .filter((x) => !x.reservationId)
+          .map((x) => String(x.customerId)),
+      ),
+    ];
+    const [customerRows, summaries, payments] = await Promise.all([
+      batchGetChunked(
+        this.repo,
+        missingCustomers.map((customerId) =>
+          orgKey(org, 'CUSTOMER', customerId),
+        ),
+      ),
+      batchGetChunked(
+        this.repo,
+        reservationCharges.map((x) =>
+          operationalKeys.reservationPaymentSummary(String(x.reservationId)),
+        ),
+      ),
+      Promise.all(
+        paymentCustomers.map((customerId) =>
+          this.repo.query<RecordItem>(
+            phase3Keys.customerPayments(org, customerId).PK,
+            { beginsWith: 'PAYMENT#' },
+          ),
+        ),
+      ).then((groups) =>
+        groups.flat().filter((x) => x.organizationId === org && x.paymentId),
+      ),
+    ]);
+    const customers = new Map(day.customers);
+    for (const row of customerRows)
+      if (row.organizationId === org)
+        customers.set(String(row.customerId), row);
+    const paidByReservation = new Map(
+      summaries
+        .filter((x) => x.organizationId === org)
+        .map((x) => [String(x.reservationId), Number(x.paidAmount ?? 0)]),
     );
-    const classRecords = new Map(
-      withOrg(ctx, 'class', await this.repo.scan()).map((x) => [
-        String(x.classId),
-        x,
-      ]),
-    );
-    const enrollments = withOrg(
-      ctx,
-      'enrollment',
-      await this.repo.scan(),
-    ).filter((x) => x.status === 'ACTIVE');
-    const attendance = withOrg(ctx, 'attendance', await this.repo.scan());
     const activity = (
       [
         ...reservations.map((x) => ({ ...x, kind: 'RESERVATION' })),
@@ -3438,38 +3526,28 @@ export class TodayService {
           customerId: e.customerId,
         })),
     );
-    const pendingRequests =
-      ctx.role === 'COACH'
-        ? []
-        : withOrg(ctx, 'request', await this.repo.scan())
-            .filter((x) => x.status === 'REQUESTED')
-            .map(as);
-    const charges =
-      ctx.role === 'COACH'
-        ? []
-        : withOrg(ctx, 'charge', await this.repo.scan()).filter(
-            (x) =>
-              x.status === 'ACTIVE' &&
-              String(x.serviceAt).slice(0, 10) === date,
-          );
-    const payments =
-      ctx.role === 'COACH'
-        ? []
-        : withOrg(ctx, 'payment', await this.repo.scan());
+    const pendingRequests = requestRows
+      .filter(
+        (x) =>
+          x.organizationId === org &&
+          x.entity === 'organizationOpenRequestIndex' &&
+          x.status === 'REQUESTED',
+      )
+      .map(as);
+    const paidFor = (charge: RecordItem) =>
+      charge.reservationId
+        ? (paidByReservation.get(String(charge.reservationId)) ?? 0)
+        : payments
+            .filter(
+              (payment) =>
+                payment.chargeId === charge.chargeId ||
+                (!payment.chargeId &&
+                  charge.classId &&
+                  payment.classId === charge.classId),
+            )
+            .reduce((n, payment) => n + Number(payment.amount), 0);
     const paymentAttention = charges
-      .filter((charge) => {
-        const paid = payments
-          .filter(
-            (payment) =>
-              payment.chargeId === charge.chargeId ||
-              (!payment.chargeId &&
-                ((charge.reservationId &&
-                  payment.reservationId === charge.reservationId) ||
-                  (charge.classId && payment.classId === charge.classId))),
-          )
-          .reduce((n, payment) => n + Number(payment.amount), 0);
-        return paid < Number(charge.amount);
-      })
+      .filter((charge) => paidFor(charge) < Number(charge.amount))
       .map((charge) => ({
         type: 'OUTSTANDING_TODAY_PAYMENT',
         label: `${String(customers.get(String(charge.customerId))?.name ?? 'Customer')} has an outstanding balance`,
