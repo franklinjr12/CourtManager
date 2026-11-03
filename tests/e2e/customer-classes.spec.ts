@@ -40,7 +40,10 @@ test('customer discovers paid class, enrolls, leaves, and sees full-class waitli
     page.getByText('Joined waitlist.', { exact: true }),
   ).toBeVisible();
   await page.getByRole('link', { name: 'Waitlists', exact: true }).click();
-  await expect(page.getByText(`Class ${classId}`)).toBeVisible();
+  await expect(
+    page.getByText('Class Customer Tennis', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(classId)).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Enroll', exact: true }),
   ).toHaveCount(0);

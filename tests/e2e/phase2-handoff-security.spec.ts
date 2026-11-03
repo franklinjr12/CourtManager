@@ -11,6 +11,7 @@ import {
   uniqueName,
   uniquePhone,
 } from './support/identity.js';
+import { utcSlotStart } from './support/time.js';
 import { useEnglish } from './support/locale.js';
 import {
   addOwnerLogin,
@@ -144,6 +145,7 @@ test('pending requests can be withdrawn and cutoff blocks late cancels', async (
 
   const cutoffVenue = await createIsolatedVenue({
     prefix: 'cutoff',
+    timezone: 'UTC',
     bookingPolicy: {
       ...AUTO_CONFIRM_POLICY,
       cancellationCutoffHours: 168,
@@ -159,8 +161,7 @@ test('pending requests can be withdrawn and cutoff blocks late cancels', async (
       password: PORTAL_PASSWORD,
     },
   );
-  const start = new Date(Date.now() + 24 * 3600000);
-  start.setUTCMinutes(0, 0, 0);
+  const start = utcSlotStart(new Date(), 2, 12);
   await cutoffVenue.services.reservations.create(cutoffVenue.owner, {
     courtId: cutoffVenue.court.courtId,
     customerId: cutoff.customer.customerId,
