@@ -20,7 +20,13 @@ import type { Key, RecordItem } from '../db.js';
  *
  * `organizationCharge` is a denormalized copy of each charge sorted by
  * `serviceAt`, rewritten wherever the customer charge index is written, so
- * Hoje reads one day's charges with a `CHARGE#<date>` prefix Query.
+ * Hoje reads one day's charges with a `CHARGE#<date>` prefix Query. It also
+ * serves Financeiro.
+ *
+ * `organizationPayment` (sorted by `paidAt`, falling back to `createdAt`) and
+ * `organizationExpense` (sorted by `date`) are denormalized copies of each
+ * payment/expense, written and deleted in the same transaction as the source
+ * record, so Financeiro reads one tenant's date range with a bounded Query.
  */
 export const operationalKeys = {
   organizationReservations: (organizationId: string): Key => ({
@@ -63,6 +69,30 @@ export const operationalKeys = {
     PK: `ORG#${organizationId}#CHARGES`,
     SK: `CHARGE#${serviceAt}#${chargeId}`,
   }),
+  organizationPayments: (organizationId: string): Key => ({
+    PK: `ORG#${organizationId}#PAYMENTS`,
+    SK: 'PAYMENT#',
+  }),
+  organizationPayment: (
+    organizationId: string,
+    paidAt: string,
+    paymentId: string,
+  ): Key => ({
+    PK: `ORG#${organizationId}#PAYMENTS`,
+    SK: `PAYMENT#${paidAt}#${paymentId}`,
+  }),
+  organizationExpenses: (organizationId: string): Key => ({
+    PK: `ORG#${organizationId}#EXPENSES`,
+    SK: 'EXPENSE#',
+  }),
+  organizationExpense: (
+    organizationId: string,
+    date: string,
+    expenseId: string,
+  ): Key => ({
+    PK: `ORG#${organizationId}#EXPENSES`,
+    SK: `EXPENSE#${date}#${expenseId}`,
+  }),
 };
 
 const copy = (source: Record<string, unknown>, key: Key, entity: string) =>
@@ -94,3 +124,19 @@ export const organizationChargeIndex = (charge: Record<string, unknown>) =>
     ),
     'organizationChargeIndex',
   );
+export const organizationPaymentKey = (payment: Record<string, unknown>) =>
+  operationalKeys.organizationPayment(
+    String(payment.organizationId),
+    String(payment.paidAt ?? payment.createdAt),
+    String(payment.paymentId),
+  );
+export const organizationPaymentIndex = (payment: Record<string, unknown>) =>
+  copy(payment, organizationPaymentKey(payment), 'organizationPaymentIndex');
+export const organizationExpenseKey = (expense: Record<string, unknown>) =>
+  operationalKeys.organizationExpense(
+    String(expense.organizationId),
+    String(expense.date ?? ''),
+    String(expense.expenseId),
+  );
+export const organizationExpenseIndex = (expense: Record<string, unknown>) =>
+  copy(expense, organizationExpenseKey(expense), 'organizationExpenseIndex');

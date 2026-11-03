@@ -36,10 +36,20 @@ import {
 import { AppError } from '../errors.js';
 import { classCatalogKey } from '../persistence/class-keys.js';
 import {
+  loadOrganizationCharges,
+  loadOrganizationCustomers,
+  loadOrganizationExpenses,
+  loadOrganizationPayments,
+} from '../persistence/finance-access.js';
+import {
   openRequestIndex,
   openRequestKey,
   operationalKeys,
   organizationChargeIndex,
+  organizationExpenseIndex,
+  organizationExpenseKey,
+  organizationPaymentIndex,
+  organizationPaymentKey,
 } from '../persistence/operational-keys.js';
 import { phase2Keys } from '../persistence/phase2-keys.js';
 import { phase3Keys } from '../persistence/phase3-keys.js';
@@ -2342,11 +2352,17 @@ export class StaffService {
 export class ChargeService {
   constructor(private readonly repo: Repository) {}
   async list(ctx: AuthContext, filters: Input = {}) {
+    return (await this.listWithPayments(ctx, filters)).rows;
+  }
+  private async listWithPayments(ctx: AuthContext, filters: Input = {}) {
     assertRole(ctx, ['OWNER', 'STAFF']);
     const from = filters.from ? String(filters.from) : undefined,
       to = filters.to ? String(filters.to) : undefined;
-    const payments = withOrg(ctx, 'payment', await this.repo.scan());
-    const rows = withOrg(ctx, 'charge', await this.repo.scan())
+    const [payments, charges] = await Promise.all([
+      loadOrganizationPayments(this.repo, ctx.organizationId),
+      loadOrganizationCharges(this.repo, ctx.organizationId, { from, to }),
+    ]);
+    const rows = withOrg(ctx, 'charge', charges)
       .filter(
         (charge) =>
           (!filters.customerId || charge.customerId === filters.customerId) &&
@@ -2368,7 +2384,10 @@ export class ChargeService {
           this.paidFor(charge, payments),
         ),
       }));
-    return withFinanceDisplay(this.repo, ctx.organizationId, rows);
+    return {
+      rows: await withFinanceDisplay(this.repo, ctx.organizationId, rows),
+      payments,
+    };
   }
   private paidFor(charge: RecordItem, payments: RecordItem[]) {
     return paidAmountForCharge(charge, payments);
@@ -2377,7 +2396,10 @@ export class ChargeService {
     const charge = await this.repo.get<RecordItem>(key('charge', chargeId));
     if (!charge || charge.organizationId !== ctx.organizationId)
       throw new AppError('NOT_FOUND', 'Charge was not found.');
-    const payments = withOrg(ctx, 'payment', await this.repo.scan());
+    const payments = await loadOrganizationPayments(
+      this.repo,
+      ctx.organizationId,
+    );
     return {
       ...as<Record<string, unknown>>(charge),
       paidAmount: this.paidFor(charge, payments),
@@ -2392,15 +2414,23 @@ export class ChargeService {
     };
   }
   async summary(ctx: AuthContext, filters: Input = {}) {
-    const charges = (await this.list(ctx, filters)) as Array<
-        Record<string, unknown> & {
-          paidAmount: number;
-          outstanding: number;
-          paymentStatus: string;
-        }
-      >,
-      expenses = withOrg(ctx, 'expense', await this.repo.scan());
-    const payments = withOrg(ctx, 'payment', await this.repo.scan())
+    const listed = await this.listWithPayments(ctx, filters);
+    const charges = listed.rows as Array<
+      Record<string, unknown> & {
+        paidAmount: number;
+        outstanding: number;
+        paymentStatus: string;
+      }
+    >;
+    const expenses = withOrg(
+      ctx,
+      'expense',
+      await loadOrganizationExpenses(this.repo, ctx.organizationId, {
+        from: filters.from ? String(filters.from) : undefined,
+        to: filters.to ? String(filters.to) : undefined,
+      }),
+    );
+    const payments = listed.payments
       .filter(
         (p) =>
           !filters.from ||
@@ -2437,10 +2467,9 @@ export class ChargeService {
         }
       >,
       customers = new Map(
-        withOrg(ctx, 'customer', await this.repo.scan()).map((x) => [
-          String(x.customerId),
-          x,
-        ]),
+        (await loadOrganizationCustomers(this.repo, ctx.organizationId)).map(
+          (x) => [String(x.customerId), x],
+        ),
       );
     const result = new Map<
       string,
@@ -2556,6 +2585,7 @@ export class PaymentService {
       this.repo.transactWrite([
         { type: 'put', item: value },
         { type: 'put', item: customerFinancialPaymentIndex(value) },
+        { type: 'put', item: organizationPaymentIndex(value) },
         ...(reservationId
           ? [
               {
@@ -2582,6 +2612,7 @@ export class PaymentService {
           condition: 'attribute_exists(PK)',
         },
         { type: 'delete', key: customerFinancialPaymentIndex(p) },
+        { type: 'delete', key: organizationPaymentKey(p) },
         ...(p.reservationId
           ? [
               {
@@ -2673,7 +2704,7 @@ export class PaymentService {
     }
   }
   async list(ctx: AuthContext, filters: Input = {}) {
-    const rows = withOrg(ctx, 'payment', await this.repo.scan())
+    const rows = (await loadOrganizationPayments(this.repo, ctx.organizationId))
       .filter(
         (payment) =>
           !filters.customerId || payment.customerId === filters.customerId,
@@ -2686,7 +2717,9 @@ export class ExpenseService {
   constructor(private readonly repo: Repository) {}
   async list(ctx: AuthContext) {
     assertRole(ctx, ['OWNER', 'STAFF']);
-    return withOrg(ctx, 'expense', await this.repo.scan()).map(as);
+    return (await loadOrganizationExpenses(this.repo, ctx.organizationId)).map(
+      as,
+    );
   }
   async create(ctx: AuthContext, input: Input) {
     assertRole(ctx, ['OWNER', 'STAFF']);
@@ -2703,7 +2736,10 @@ export class ExpenseService {
         'META',
         'expense',
       );
-    await this.repo.put(value);
+    await this.repo.transactWrite([
+      { type: 'put', item: value },
+      { type: 'put', item: organizationExpenseIndex(value) },
+    ]);
     return as(value);
   }
   async remove(ctx: AuthContext, expenseId: string) {
@@ -2713,7 +2749,10 @@ export class ExpenseService {
       throw new AppError('NOT_FOUND', 'Expense was not found.');
     if (ctx.role !== 'OWNER')
       throw new AppError('FORBIDDEN', 'Only owners can correct expenses.');
-    await this.repo.delete(key('expense', expenseId));
+    await this.repo.transactWrite([
+      { type: 'delete', key: key('expense', expenseId) },
+      { type: 'delete', key: organizationExpenseKey(expense) },
+    ]);
   }
 }
 

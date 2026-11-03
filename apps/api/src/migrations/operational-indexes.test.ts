@@ -70,6 +70,20 @@ const legacyCharge = (
   status: 'ACTIVE',
 });
 
+const legacyExpense = (
+  organizationId: string,
+  expenseId: string,
+  date: string,
+) => ({
+  PK: `EXPENSE#${expenseId}`,
+  SK: 'META',
+  entity: 'expense' as const,
+  organizationId,
+  expenseId,
+  amount: 15,
+  date,
+});
+
 async function legacyRepo() {
   const repo = new MemoryRepository();
   await repo.put(legacyReservation('org-1', 'r-1', '2026-09-10T10:00:00Z'));
@@ -83,6 +97,7 @@ async function legacyRepo() {
   await repo.put(legacyRequest('org-2', 'q-3', 'REQUESTED'));
   await repo.put(legacyCharge('org-1', 'c-1', '2026-09-10T10:00:00.000Z'));
   await repo.put(legacyCharge('org-2', 'c-2', '2026-09-10T12:00:00.000Z'));
+  await repo.put(legacyExpense('org-1', 'e-1', '2026-09-09'));
   return repo;
 }
 
@@ -101,6 +116,8 @@ describe('operational indexes migration', () => {
       paymentSummariesWritten: 2,
       openRequestIndexesWritten: 2,
       chargeIndexesWritten: 2,
+      paymentIndexesWritten: 3,
+      expenseIndexesWritten: 1,
     });
 
     expect(await orgIndex(repo, 'org-1')).toMatchObject([
@@ -159,7 +176,36 @@ describe('operational indexes migration', () => {
       }),
     ).toMatchObject([{ chargeId: 'c-2', organizationId: 'org-2' }]);
     // Only index items, summaries and lookups were added; nothing removed.
-    expect((await repo.scan()).length).toBe(before + 9);
+    expect((await repo.scan()).length).toBe(before + 13);
+  });
+
+  it('backfills payment and expense indexes into per-organization partitions', async () => {
+    const repo = await legacyRepo();
+    await migrateOperationalIndexes(repo);
+    const payments = (org: string) =>
+      repo.query(operationalKeys.organizationPayments(org).PK, {
+        beginsWith: 'PAYMENT#',
+      });
+
+    expect((await payments('org-1')).map((row) => row.SK)).toEqual([
+      'PAYMENT#2026-09-10T09:00:00.000Z#p-1',
+      'PAYMENT#2026-09-10T09:00:00.000Z#p-2',
+    ]);
+    expect(await payments('org-2')).toMatchObject([
+      { SK: 'PAYMENT#2026-09-10T09:00:00.000Z#p-3', amount: 80 },
+    ]);
+    expect(
+      await repo.query(operationalKeys.organizationExpenses('org-1').PK, {
+        beginsWith: 'EXPENSE#',
+      }),
+    ).toMatchObject([
+      { SK: 'EXPENSE#2026-09-09#e-1', entity: 'organizationExpenseIndex' },
+    ]);
+    expect(
+      await repo.query(operationalKeys.organizationExpenses('org-2').PK, {
+        beginsWith: 'EXPENSE#',
+      }),
+    ).toEqual([]);
   });
 
   it('is idempotent and repairs a stale summary from payment records', async () => {
@@ -172,6 +218,8 @@ describe('operational indexes migration', () => {
       paymentSummariesWritten: 0,
       openRequestIndexesWritten: 0,
       chargeIndexesWritten: 0,
+      paymentIndexesWritten: 0,
+      expenseIndexesWritten: 0,
     });
     expect(await repo.scan()).toEqual(snapshot);
 
@@ -184,6 +232,8 @@ describe('operational indexes migration', () => {
       paymentSummariesWritten: 1,
       openRequestIndexesWritten: 0,
       chargeIndexesWritten: 0,
+      paymentIndexesWritten: 0,
+      expenseIndexesWritten: 0,
     });
     expect(
       await repo.get(operationalKeys.reservationPaymentSummary('r-1')),
@@ -197,12 +247,16 @@ describe('operational indexes migration', () => {
       paymentSummariesWritten: 2,
       openRequestIndexesWritten: 2,
       chargeIndexesWritten: 2,
+      paymentIndexesWritten: 3,
+      expenseIndexesWritten: 1,
     });
     expect((await migratePhase3(repo)).operational).toEqual({
       reservationIndexesWritten: 0,
       paymentSummariesWritten: 0,
       openRequestIndexesWritten: 0,
       chargeIndexesWritten: 0,
+      paymentIndexesWritten: 0,
+      expenseIndexesWritten: 0,
     });
   });
 });
