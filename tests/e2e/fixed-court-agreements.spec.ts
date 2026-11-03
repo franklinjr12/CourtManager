@@ -32,8 +32,14 @@ test('staff can create and inspect a fixed recurring court agreement', async ({
   await expect(page.getByText('Fixed court agreement created.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Details' })).toBeVisible();
   await page.getByRole('button', { name: 'Details' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText(/2027/)).toBeVisible();
+  const details = page.getByRole('dialog');
+  await expect(details).toBeVisible();
+  // The details dialog lists every recurring occurrence (Jan 6, 13 and 20).
+  for (const date of ['01/06/2027', '01/13/2027', '01/20/2027']) {
+    await expect(
+      details.getByRole('cell', { name: date, exact: true }),
+    ).toBeVisible();
+  }
   const billing = page
     .getByRole('dialog')
     .getByText(/600\.00/)
@@ -41,7 +47,7 @@ test('staff can create and inspect a fixed recurring court agreement', async ({
   await expect(billing).toContainText(/Unpaid/);
   await page.getByRole('button', { name: 'Record payment' }).click();
   const payment = page.getByRole('dialog');
-  await expect(payment.getByLabel('Price')).toHaveValue('600');
+  await expect(payment.getByLabel('Amount')).toHaveValue('600');
   await payment.getByRole('button', { name: 'Record payment' }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   await page.goto('/commercial/fixed-courts');

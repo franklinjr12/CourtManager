@@ -350,3 +350,26 @@ balance filters. Credit balances are queried from the package entitlement
 partition, while `GET /customer-packages/:id/transactions` exposes the durable
 credit history used by the package detail screen. These records remain tenant
 scoped through the authenticated staff context.
+
+## Front-desk access patterns (Hoje, Agenda, Reservas)
+
+These screens never scan the table and never read per item in a loop. Each reads one organization's data for a date or range.
+
+| Access pattern                     | Key                                                                           | Source of truth                        |
+| ---------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| Org reservation index (Reservas)   | `ORG#<orgId>#RESERVATIONS / RESERVATION#<startAt>#<reservationId>`            | `RESERVATION#<id> / META`              |
+| Reservation payment summary        | `RESERVATION#<id> / PAYMENT_SUMMARY` (`paidAmount`, payment count)            | `PAYMENT#` records                     |
+| Open public requests (Hoje)        | `ORG#<orgId>#OPEN_REQUESTS / REQUEST#<createdAt>#<requestId>`                 | `REQUEST#<id>` record                  |
+| Charges by service date (Hoje)     | `ORG#<orgId>#CHARGES / CHARGE#<serviceAt>#<chargeId>`                         | `CHARGE#<id>` record                   |
+| Payments by paid date (Financeiro) | `ORG#<orgId>#PAYMENTS / PAYMENT#<paidAt or createdAt>#<paymentId>`            | `PAYMENT#<id> / META`                  |
+| Expenses by date (Financeiro)      | `ORG#<orgId>#EXPENSES / EXPENSE#<date>#<expenseId>`                           | `EXPENSE#<id> / META`                  |
+| Operational day (Agenda and Hoje)  | `SCHEDULE#<org>#<court>#<date> / ITEM#...` queried per court, then `BatchGet` | Reservation, block and session records |
+
+- **Org reservation index:** a denormalized copy of the reservation, written in the same transaction as the source record (and rewritten when time, status or customer changes). `GET /reservations` Queries it with SK bounds derived from the venue-local `from`/`to` dates and returns a page (default 50, max 100). The cursor is an opaque base64url string holding the last returned SK; it is validated against `RESERVATION#<ISO startAt>#<id>` and passed as the Query start key, so it cannot point into another partition.
+- **Payment summary:** paid amounts come from this one item instead of reading payments per reservation, and are fetched with `BatchGet`. Payment create/remove updates the summary in the same transaction as the payment, with an `attribute_exists`/expected-value check so a retried removal cannot subtract twice.
+- **Open requests:** written with the request, deleted in the same write that moves it out of `REQUESTED`. Hoje counts them with one Query.
+- **Charges by service date:** rewritten wherever the customer charge index is written, including class charge updates. Hoje Queries one venue-local day with a `CHARGE#<date>` prefix.
+- **Financeiro indexes:** the `ORG#<orgId>#CHARGES` index also serves Financeiro. Payment and expense copies are put in the same transaction as the source record and deleted in the same transaction on removal (payments are keyed by `paidAt`, falling back to `createdAt`; expenses by `date`), so finance reads are bounded Queries on one organization partition.
+- **Operational day loader** (`services/operational-day.ts`): every court occupancy writes a schedule `ITEM` record, so one day is one Query per court followed by chunked `BatchGet` of blocks, class sessions, classes and customers. The day's reservations are instead read with one bounded Query on the `ORG#<org>#RESERVATIONS` index (venue-local day SK bounds), because released (NO_SHOW/CANCELLED) reservations no longer have schedule ITEM refs but NO_SHOW, CHECKED_IN and COMPLETED must stay on the Agenda (only CANCELLED is hidden). Class sessions are keyed by venue-local date. Results are capped (1000 rows).
+
+Migration: run `corepack pnpm migrate:phase3` **before deploying** the code that reads these indexes, so existing data is backfilled. It backfills the reservation index, payment summaries, open-request index, charge index and the payment and expense indexes additively and idempotently (it writes only missing or differing items, never deletes, and re-running it is safe). Until it runs, historical reservations will not appear in Reservas.

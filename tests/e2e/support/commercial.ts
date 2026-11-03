@@ -84,20 +84,14 @@ export async function seedCommercialOverviewVenue() {
       startDate: currentMonthStartUtc(),
     },
   );
-  await venue.services.payments.create(venue.owner, {
-    chargeId: `membership-${overdueMembership.currentPeriodId}`,
-    customerId: String(overdueCustomer.customerId),
-    amount: 0,
-    method: 'OTHER',
-    paidAt: `${currentMonthStartUtc()}T12:00:00.000Z`,
-  });
   const definition = await issueCourtHourPackage(venue, { validityDays: 10 });
   await venue.services.packages.issue(
     venue.owner,
     String(activeCustomer.customerId),
     {
       packageDefinitionId: definition.packageDefinitionId,
-      issuedAt: '2099-01-01T12:00:00.000Z',
+      // Issued now so the 10-day validity falls inside the expiring-soon window.
+      issuedAt: new Date().toISOString(),
     },
   );
   await venue.services.fixedCourtAgreements.create(venue.owner, {

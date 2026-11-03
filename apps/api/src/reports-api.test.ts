@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { MemoryRepository } from './db.js';
+import {
+  organizationChargeIndex,
+  organizationPaymentIndex,
+} from './persistence/operational-keys.js';
 import { hashPassword } from './security.js';
 
 describe('commercial reporting API', () => {
@@ -113,11 +117,8 @@ describe('commercial reporting API', () => {
       active: true,
       passwordHash: await hashPassword('password'),
     });
-    const charge = (id: string, amount: number, serviceAt: string) =>
-      repo.put({
-        PK: `CHARGE#${id}`,
-        SK: 'META',
-        entity: 'charge',
+    const charge = async (id: string, amount: number, serviceAt: string) => {
+      const value = {
         organizationId: 'org-j4',
         customerId: 'customer-j4',
         chargeId: id,
@@ -126,24 +127,37 @@ describe('commercial reporting API', () => {
         status: 'ACTIVE',
         amount,
         serviceAt,
+      };
+      await repo.put({
+        PK: `CHARGE#${id}`,
+        SK: 'META',
+        entity: 'charge',
+        ...value,
       });
-    const payment = (
+      await repo.put(organizationChargeIndex(value));
+    };
+    const payment = async (
       id: string,
       chargeId: string,
       amount: number,
       paidAt: string,
-    ) =>
-      repo.put({
-        PK: `PAYMENT#${id}`,
-        SK: 'META',
-        entity: 'payment',
+    ) => {
+      const value = {
         organizationId: 'org-j4',
         customerId: 'customer-j4',
         paymentId: id,
         chargeId,
         amount,
         paidAt,
+      };
+      await repo.put({
+        PK: `PAYMENT#${id}`,
+        SK: 'META',
+        entity: 'payment',
+        ...value,
       });
+      await repo.put(organizationPaymentIndex(value));
+    };
     await charge('j4', 160, '2026-10-15T13:00:00.000Z');
     await payment('pay-before', 'j4', 80, '2026-09-20T12:00:00.000Z');
     await charge('other', 100, '2026-09-10T13:00:00.000Z');

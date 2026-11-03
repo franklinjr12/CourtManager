@@ -124,6 +124,92 @@ describe('DynamoDB error mapping', () => {
     expect(payload.error.code).toBe('INTERNAL_ERROR');
     expect(payload.error.message).not.toContain('DynamoDB');
   });
+
+  it('does not report a rejected membership pause as a 100-action error', async () => {
+    const repo = new MemoryRepository();
+    await repo.put({
+      PK: 'ORG#org-err2',
+      SK: 'META',
+      entity: 'organization',
+      organizationId: 'org-err2',
+      name: 'Arena',
+      currency: 'BRL',
+      timezone: 'UTC',
+    });
+    await repo.put({
+      PK: 'ORG#org-err2',
+      SK: 'USER#staff-err2',
+      entity: 'user',
+      userId: 'staff-err2',
+      organizationId: 'org-err2',
+      name: 'Staff',
+      email: 'staff-err2@arena.test',
+      role: 'OWNER',
+      active: true,
+      passwordHash: await hashPassword('password'),
+    });
+    const app = createApp(repo);
+    const login = await app.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'staff-err2@arena.test',
+        password: 'password',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const token = (await login.json()) as { data: { token: string } };
+    const headers = {
+      Authorization: `Bearer ${token.data.token}`,
+      'Content-Type': 'application/json',
+    };
+    const post = async (path: string, body: unknown) =>
+      (await (
+        await app.request(path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        })
+      ).json()) as { data: Record<string, string> };
+    const customer = await post('/customers', {
+      name: 'Maria',
+      phone: '41999990000',
+    });
+    const plan = await post('/plans', {
+      name: 'Monthly',
+      basePrice: 300,
+      benefits: [
+        {
+          type: 'CLASS_ATTENDANCE',
+          period: 'MONTH',
+          quantityType: 'FINITE',
+          quantity: 8,
+          unit: 'SESSION',
+        },
+      ],
+    });
+    const membership = await post('/memberships', {
+      customerId: customer.data.customerId,
+      planId: plan.data.planId,
+      startDate: new Date().toISOString().slice(0, 10),
+    });
+    vi.spyOn(repo, 'transactWrite').mockRejectedValue(
+      Object.assign(new Error('Transaction request is invalid'), {
+        name: 'ValidationException',
+      }),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const response = await app.request(
+      `/memberships/${membership.data.membershipId}/pause`,
+      { method: 'POST', headers },
+    );
+    expect(response.status).toBe(500);
+    const payload = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(payload.error.code).toBe('INTERNAL_ERROR');
+    expect(payload.error.message).not.toContain('DynamoDB');
+    expect(payload.error.message).not.toContain('100 actions');
+  });
 });
 
 describe('payment amount validation', () => {

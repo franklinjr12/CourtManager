@@ -92,5 +92,9 @@ test('staff can assign and pause a customer membership', async ({ page }) => {
   const pauseResult = await pauseResponse;
   expect(pauseResult.status(), await pauseResult.text()).toBe(200);
   await page.reload();
-  await expect(page.getByText('Paused', { exact: true })).toBeVisible();
+  const row = page.locator('table tbody tr', {
+    hasText: 'Membership Customer',
+  });
+  await expect(row.locator('.status-badge')).toHaveText('Paused');
+  await expect(row.getByRole('button', { name: 'Resume' })).toBeVisible();
 });

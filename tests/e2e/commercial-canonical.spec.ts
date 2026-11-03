@@ -89,8 +89,15 @@ test('canonical package expiry remains visible but cannot cover new bookings', a
   expect(expired.status).toBe('EXPIRED');
 
   await customerSignIn(page, venue.slug, customer.email);
+  // The credits list only shows available balances; the expired package stays
+  // visible on its detail page with its status and history.
   await page.goto(`/portal/${venue.slug}/credits`);
-  await expect(page.getByText(definition.name, { exact: false })).toBeVisible();
+  await expect(page.getByText('No available credits.')).toBeVisible();
+  await page.goto(`/portal/${venue.slug}/packages/${issued.customerPackageId}`);
+  await expect(
+    page.getByRole('heading', { name: definition.name }),
+  ).toBeVisible();
+  await expect(page.locator('.status-badge.status-EXPIRED')).toBeVisible();
   await page.goto(`/portal/${venue.slug}/book`);
   await selectFirstSlot(page, venue.slug, futureDate(7));
   await expect(page.locator('#portal-booking-confirm')).toBeEnabled();
@@ -118,10 +125,12 @@ test('commercial overview reflects prepared operational data', async ({
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({
     timeout: 15000,
   });
+  // With data present the label also appears as a section heading, so assert
+  // on the summary metric links.
   await expect(
-    page.getByText('Active memberships', { exact: false }),
+    page.getByRole('link', { name: /^Active memberships \d+$/ }),
   ).toBeVisible();
   await expect(
-    page.getByText('Packages expiring soon', { exact: false }),
+    page.getByRole('link', { name: /^Packages expiring soon \d+$/ }),
   ).toBeVisible();
 });

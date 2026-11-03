@@ -38,7 +38,12 @@ test('new reservation opens, supports quick customer creation, and creates a boo
     `/customers?search=${encodeURIComponent(unique)}`,
   );
   const customer = customers.body.data[0];
-  const reservations = await api(page, '/reservations');
+  // Scope to this test's customer: the shared seed org accumulates
+  // reservations from other specs and the list is paginated.
+  const reservations = await api(
+    page,
+    `/reservations?customerId=${encodeURIComponent(customer.customerId)}`,
+  );
   const reservation = reservations.body.data.find(
     (item: { customerId: string }) => item.customerId === customer.customerId,
   );
@@ -95,7 +100,7 @@ test('paid reservation can be rescheduled after confirmation', async ({
   });
 
   try {
-    await page.goto('/reservations');
+    await page.goto(`/reservations?from=${base}&to=${base}`);
     const row = page.getByRole('row').filter({ hasText: unique });
     await row.getByRole('button', { name: 'Abrir' }).click();
     const dialog = page.getByRole('dialog');
@@ -151,7 +156,7 @@ test('staff moves a booked reservation and sees a conflict on an occupied slot',
   };
 
   try {
-    await page.goto('/reservations');
+    await page.goto(`/reservations?from=${day}&to=${day}`);
     await page
       .getByRole('row')
       .filter({ hasText: unique })
@@ -195,6 +200,63 @@ test('staff moves a booked reservation and sees a conflict on an occupied slot',
           method: 'POST',
         },
       );
+    await api(page, `/customers/${customerId}/archive`, { method: 'POST' });
+  }
+});
+
+test('staff reaches a future reservation through the date range filter', async ({
+  page,
+}) => {
+  await login(page);
+  const courts = await api(page, '/courts');
+  const court = courts.body.data[0] as { courtId: string };
+  const unique = `PW Range ${Date.now()}`;
+  const customer = await api(page, '/customers', {
+    method: 'POST',
+    body: JSON.stringify({ name: unique, phone: '41999995555' }),
+  });
+  const customerId = customer.body.data.customerId as string;
+  const day = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
+  const created = await api(page, '/reservations', {
+    method: 'POST',
+    body: JSON.stringify({
+      courtId: court.courtId,
+      customerId,
+      startAt: `${day}T14:00:00.000Z`,
+      endAt: `${day}T15:00:00.000Z`,
+      expectedAmount: 80,
+      source: 'STAFF',
+    }),
+  });
+  expect(created.status).toBe(201);
+
+  try {
+    await page.goto('/reservations');
+    await expect(page.getByLabel('De')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+    await page.getByLabel('De').fill(day);
+    await page.getByLabel('Até').fill(day);
+    await page.getByRole('button', { name: 'Aplicar filtros' }).click();
+    await expect(page).toHaveURL(new RegExp(`from=${day}&to=${day}`));
+    await expect(
+      page.getByRole('row').filter({ hasText: unique }),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByLabel('De')).toHaveValue(day);
+    await expect(
+      page.getByRole('row').filter({ hasText: unique }),
+    ).toBeVisible();
+
+    await page.getByLabel('De').fill('2000-01-01');
+    await page.getByLabel('Até').fill('2000-01-02');
+    await page.getByRole('button', { name: 'Aplicar filtros' }).click();
+    await expect(
+      page.getByText('Nenhuma reserva neste período.'),
+    ).toBeVisible();
+  } finally {
+    await api(page, `/reservations/${created.body.data.reservationId}/cancel`, {
+      method: 'POST',
+    });
     await api(page, `/customers/${customerId}/archive`, { method: 'POST' });
   }
 });

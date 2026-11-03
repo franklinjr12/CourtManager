@@ -16,6 +16,10 @@ import type {
 } from '@court-manager/contracts';
 import type { Key, RecordItem, Repository, Write } from '../db.js';
 import { AppError } from '../errors.js';
+import {
+  organizationChargeIndex,
+  organizationPaymentIndex,
+} from './operational-keys.js';
 import { phase3Keys } from './phase3-keys.js';
 
 type OrganizationRecord = { organizationId: string };
@@ -1129,6 +1133,7 @@ export class Phase3Repository implements Phase3Persistence {
         condition: 'attribute_not_exists(PK)',
       },
       { type: 'put', item: chargeIndex },
+      { type: 'put', item: organizationChargeIndex(chargeSource) },
     ]);
   }
 
@@ -2470,6 +2475,7 @@ export class Phase3Repository implements Phase3Persistence {
         ),
       ),
     );
+    await this.repo.put(organizationChargeIndex(item));
   }
 
   async indexPayment(payment: Payment | IndexedRecord) {
@@ -2485,6 +2491,7 @@ export class Phase3Repository implements Phase3Persistence {
         ),
       ),
     );
+    await this.repo.put(organizationPaymentIndex(item));
   }
 }
 

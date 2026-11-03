@@ -1,5 +1,7 @@
 # Pilot readiness check (CM-002 / Epic 4 TASK-001)
 
+Latest result: see [Final gate 2026-11-03](#final-gate-2026-11-03-node-22-clean-and-warm-db) at the end of this file.
+
 - Date: 2026-10-30
 - Commit: `a76d9957c07f141dd91169942ba3f459dd554073`
   (`a76d995 Merge pull request #5 from franklinjr12/fix/integration-test-isolation`)
@@ -426,3 +428,278 @@ timezone). Minors: J-6 to J-12 (copy, raw IDs, accents, form defaults).
 Not run: the gates were not re-run on Node 22; `test:phase3:all` only ran
 partially (G-4); exact-boundary cancellation cutoff; account `DISABLED`; agreement
 pause/change/cancel; the en-US locale walk.
+
+## Re-run 2026-11-01 (Node 22)
+
+- Date: 2026-11-01 (gates executed on the machine date 2026-11-02, UTC).
+- Commit tested: `f7c406d2fe10bc674456b036e816f81fca21ff82`
+  (`f7c406d CM-008: test(e2e): fix remaining e2e and phase3 e2e failures (G-3, G-4)`).
+- Test-side commits under test (no app code was changed):
+  - `4f46fd9` G-2: monthly class membership integration test no longer
+    depends on the month boundary;
+  - `6b4c145` G-3: e2e dev seed and stale fixtures in the e2e setup;
+  - `f7c406d` G-3/G-4: `reservations.spec.ts` looks up its own booking with
+    `?customerId=`.
+- Scope: automated gates only, re-run on Node 22. No test was skipped,
+  disabled or changed to get a result; no app code was changed.
+
+### Environment
+
+| Item           | Value                                                                  |
+| -------------- | ---------------------------------------------------------------------- |
+| Node           | v22.23.4 (linux arm64, production target)                              |
+| pnpm           | 9.15.5 (via corepack)                                                  |
+| Docker         | 29.1.3 (`docker --version`)                                            |
+| Playwright     | 1.62.1 (chromium)                                                      |
+| DynamoDB Local | `docker compose up -d dynamodb` on :8120                               |
+| Env vars       | Values of `.env.example` exported into the shell of every gate command |
+
+### Gates
+
+Order: `reset:dev`, `check`, `test:integration`, `test:phase3:all`,
+`reset:dev` again, `test:e2e`, `build`. Gate 3b (the e2e step of gate 3, run
+separately) was run last, also after a fresh `reset:dev`. Every number below comes from a complete, uninterrupted run.
+
+| Gate | Command                                                        | Result | Summary                                                                                                                                                                                                |
+| ---- | -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | `corepack pnpm reset:dev`                                      | PASS   | exit 0; 2s                                                                                                                                                                                             |
+| 1    | `corepack pnpm check`                                          | PASS   | exit 0; lint (import/order warnings only), typecheck, format:check and `test`: 76 files / 276 tests passed; 156s                                                                                       |
+| 2    | `corepack pnpm test:integration`                               | PASS   | exit 0; 10 files / 19 tests passed; 19s                                                                                                                                                                |
+| 3    | `corepack pnpm test:phase3:all`                                | FAIL   | exit 1; `test:phase3` 31 files / 78 tests passed; `test:phase3:integration` 4 files / 12 tests passed; `test:phase3:e2e` step stopped in Playwright global setup, before any test ran (see below); 60s |
+| 3b   | `corepack pnpm reset:dev` then `corepack pnpm test:phase3:e2e` | FAIL   | exit 1; 17 passed, 1 failed (`memberships.spec.ts:10`); 90s                                                                                                                                            |
+| 4    | `corepack pnpm reset:dev` then `corepack pnpm test:e2e`        | FAIL   | exit 1; 64 passed, 1 failed (65 tests, chromium); 245s (4.1m). The failure is the same `memberships.spec.ts:10`                                                                                        |
+| 5    | `corepack pnpm build`                                          | PASS   | exit 0; API/contracts build and Vite build OK (`dist/assets/index-*.js` 247.89 kB, gzip 56.80 kB); 8s                                                                                                  |
+
+Gate 3 detail: the e2e step of the `&&` chain ran right after
+`test:integration` and `test:phase3:integration`, which leave other
+organizations in the shared local table. Playwright global setup then threw
+`e2e setup: development seed owner owner@arena.test is missing because local
+DynamoDB already holds other organizations` (`tests/e2e/support/global-setup.ts:22`)
+and no test ran. This is the local-table ordering problem described in
+"Running e2e" below, so the e2e tests of the chain were run separately as
+gate 3b from a fresh `reset:dev`.
+
+### Remaining failures
+
+| Gate | Spec:line                    | Test title                                       | Symptom                                                                                                                                                                                                                                  | Row                 |
+| ---- | ---------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| 3b   | `memberships.spec.ts:10`     | staff can assign and pause a customer membership | Pause returns HTTP 400 `VALIDATION_ERROR` "A DynamoDB transaction cannot contain more than 100 actions" (`memberships.spec.ts:93`, expected 200). Same duplicate `membershipByCustomer` key as in f7c406d; hits pause, cancel and expire | CM-016              |
+| 4    | `memberships.spec.ts:10`     | staff can assign and pause a customer membership | Identical error and assertion to gate 3b (same test, same cause)                                                                                                                                                                         | CM-016              |
+| 3    | `support/global-setup.ts:22` | (global setup, no test ran)                      | `owner@arena.test` missing because earlier gates left other organizations in the shared table. Environment ordering, not an app or test defect. Avoided by `reset:dev` immediately before e2e                                            | Unmapped (ordering) |
+
+There are no CM-017 or CM-018 failures in this run: the scan-based endpoints
+(`/today`, `/schedule`, `/reservations`, `/finance/summary`, `/charges`) did not
+cause a timeout when the e2e suites started from a fresh `reset:dev`. The
+specs named in f7c406d for those rows (`operational-pages.spec.ts:10`,
+`phase2-account-lifecycle.spec.ts:224`, `reservations.spec.ts:55`,
+`responsive.spec.ts:16`, `commercial-canonical.spec.ts:125`,
+`fixed-court-agreements.spec.ts:36`) all passed here. The underlying
+whole-table scans are not fixed, so those rows (CM-017 for Hoje/Agenda/Reservas,
+CM-018 for finance summary/charges) remain open and the failures return as the
+local table grows. None of the failing tests was flaky: the one failure
+reproduced in both suites.
+
+### Status of G-1..G-4 compared with 2026-10-30
+
+| ID  | 2026-10-30 (Node 26)                             | 2026-11-01 (Node 22)                                                                                                                                         |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G-1 | `check`: 16 web tests failed on `localStorage`   | Resolved: `check` is green on Node 22 (76 files / 276 tests). The failure was Node 26 specific                                                               |
+| G-2 | monthly class membership integration test failed | Resolved by `4f46fd9`: `test:integration` 19/19 and `test:phase3:integration` 12/12 pass                                                                     |
+| G-3 | `test:e2e` 44 of 65 failed, phase3 e2e 12 of 18  | Resolved by `6b4c145` and `f7c406d` except one test: `test:e2e` 64/65, `test:phase3:e2e` 17/18. The remaining failure reduces to the app defect CM-016       |
+| G-4 | `test:phase3:all` chain incomplete               | Partly resolved: unit and integration steps pass; the e2e step of the chain still needs a fresh `reset:dev` (gate 3) and then fails only on CM-016 (gate 3b) |
+
+The remaining red is app-side: CM-016 (membership pause/cancel/expire) is the
+only failing test. CM-017 and CM-018 are latent scan defects that this run did
+not trip because it started from `reset:dev`. The final all-green run is
+CM-019.
+
+### Running e2e
+
+Always run `corepack pnpm reset:dev` immediately before
+`corepack pnpm test:e2e` and before `corepack pnpm test:phase3:e2e` (and
+`test:phase3:all`). The local DynamoDB table is shared by all gates and grows
+with every run, and the scan-based endpoints (CM-017, CM-018) get slower as it
+grows, so a run that does not start from `reset:dev` has more timeouts. Other
+organizations left by integration tests also stop Playwright global setup
+(gate 3). The 2026-10-30 run did not follow this rule.
+
+## Final gate 2026-11-03 (Node 22, clean and warm DB)
+
+- Date: 2026-11-03 (gates ran 01:03-01:25 UTC, manual walk 01:27-01:36 UTC;
+  venue time `America/Sao_Paulo` was therefore 22:xx on 2026-11-02).
+- Commit tested: `07f3d04f924a4da912667a37db3e9152255c9273`
+  (`07f3d04 Merge CM-018: TASK-017 [Epic 4 Pilot Readiness - fixes]: Fast finance summary...`),
+  which includes CM-008..CM-018 (branch `task/CM-019-hermes-software-exec-cm`).
+- Scope: evidence only. No app, test, config or script file was changed and no
+  test was skipped, disabled or weakened. Every number below comes from a
+  command that ran to completion; logs were kept in `/tmp/cm019`.
+
+### Environment
+
+| Item           | Value                                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Node           | v22.23.4 (linux arm64, official tarball in `/tmp/node22`; the default `node` on the machine is v26.12.1 and was not used) |
+| pnpm           | 9.15.5 (via corepack), `pnpm install --frozen-lockfile` ran first                                                         |
+| Docker         | 29.1.3                                                                                                                    |
+| Playwright     | 1.62.1 (chromium, 1 worker)                                                                                               |
+| DynamoDB Local | `docker compose up -d dynamodb` on :8120 (project `courtmanager-cm-019`)                                                  |
+| Env vars       | Values of `.env.example` exported into the shell of every gate command                                                    |
+
+Notes:
+
+- Port 8120 was held by a stale container of another worktree
+  (`courtmanager-cm-008-dynamodb-1`). The first `reset:dev` exited 0 but the
+  new container failed with `Bind for 0.0.0.0:8120 failed: port is already
+allocated` (`reset-dev.mjs` ignores the failure), so that attempt was
+  discarded. I ran `docker stop courtmanager-cm-008-dynamodb-1` (container and
+  volume kept) and repeated `reset:dev`, which then started a fresh table. The
+  cm-008 container could not be started again afterwards because the port is
+  now used by the cm-019 container. A second attempt of the gate script was also
+  killed by mistake (my own `pkill`), so the whole G0-G6 sequence was re-run
+  from the start; only the complete re-run is reported.
+- All gates were run under `flock /workspace/hermes-work/state/verify.lock`
+  (waiting for the lock is not included in the times).
+
+### Gates
+
+| Gate | Command                                             | Result  | Summary                                                                                                                                                 | Time |
+| ---- | --------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| G0   | `corepack pnpm reset:dev`                           | PASS    | exit 0; fresh container on :8120                                                                                                                        | 2s   |
+| G1   | `corepack pnpm check`                               | PASS    | exit 0; lint 0 errors / 18 `import/order` warnings, typecheck, format:check, `test`: 93 files / 380 tests passed                                        | 281s |
+| G2   | `corepack pnpm test:integration`                    | PASS    | exit 0; 13 files / 25 tests passed                                                                                                                      | 242s |
+| G3   | `corepack pnpm test:phase3:all`                     | FAIL    | exit 1; `test:phase3` 31 files / 83 tests passed; `test:phase3:integration` 4 files / 12 tests passed; `test:phase3:e2e` 17 passed, 1 failed (FG-1)     | 138s |
+| G3b  | `reset:dev` then `test:phase3:e2e`                  | NOT RUN | Not needed: Playwright global setup did not stop this time (no "development seed owner ... is missing"), so G3 is a real failure, not the ordering item | -    |
+| G4   | `corepack pnpm reset:dev && corepack pnpm test:e2e` | FAIL    | exit 1; e2e run #1 (clean DB): 63 passed, 4 failed (67 tests, chromium); FG-1..FG-4                                                                     | 257s |
+| G5   | `corepack pnpm build`                               | PASS    | exit 0; API/contracts and Vite build OK (`dist/assets/index-*.js` 258.62 kB, gzip 59.91 kB)                                                             | 4s   |
+| G6   | `corepack pnpm test:e2e` (no reset)                 | FAIL    | exit 1; e2e run #2 (warm DB after G2-G5): 63 passed, 4 failed (67 tests); the same four tests as G4; 0 `Test timeout`                                   | 351s |
+
+### Clean vs warm e2e (G4 vs G6)
+
+| Run | DB state                                    | Passed | Failed | Playwright time | Timeouts | Sum of test times | Slowest test |
+| --- | ------------------------------------------- | ------ | ------ | --------------- | -------- | ----------------- | ------------ |
+| G4  | `reset:dev` just before                     | 63     | 4      | 4.2m            | 0        | 231s              | 10.2s        |
+| G6  | no reset, after G2/G3/G4/G5 left their data | 63     | 4      | 5.8m            | 0        | 334s              | 15.5s        |
+
+The set of failing tests is identical in both runs and no test timed out
+(the scan-driven timeouts described on 2026-11-01 did not appear). The warm run
+was not faster: it took about 38% longer in total, spread over the portal
+booking flows (for example `phase2-smoke.spec.ts:62` 8.5s to 15.5s,
+`phase2-smoke-v2.spec.ts:211` 6.3s to 11.4s, `public-requests.spec.ts:7` 5.6s to
+10.3s). The machine was shared with other jobs, so part of this may be load
+rather than data volume; this was not isolated (see FG-7).
+
+Failing tests (all four failed in G4, in G6 and again when re-run alone with
+`corepack pnpm exec playwright test tests/e2e/<spec>:<line>` on the warm DB, so
+none is flaky); `memberships.spec.ts:10` also failed in G3:
+
+| Spec:line                             | Test title                                                                          | Symptom                                                                                                                                                                                         | Failure ID |
+| ------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `memberships.spec.ts:10`              | staff can assign and pause a customer membership                                    | Pause now returns 200 (`:93` passes). `:95` `getByText('Paused', { exact: true })` hits 2 elements: `<option value="PAUSED">` of the status filter and the status badge (strict mode violation) | FG-1       |
+| `customer-classes.spec.ts:7`          | customer discovers paid class, enrolls, leaves, and sees full-class waitlist action | `:43` `getByText('Class <classId>')` not found on the portal Waitlists page                                                                                                                     | FG-2       |
+| `phase2-handoff-security.spec.ts:117` | pending requests can be withdrawn and cutoff blocks late cancels                    | `AppError: Time is outside court opening hours or slot boundaries` from `ScheduleService.occupyMany` called by `reservations.create` at `:164`                                                  | FG-3       |
+| `reservation-api.spec.ts:6`           | browser API workflow covers conflicts, recurring reservations, and court blocks     | `:86` expected the NO_SHOW reservation in `GET /schedule?date=<base>` (`true`), received `false`                                                                                                | FG-4       |
+
+### Manual pt-BR re-walk
+
+Local stack from `corepack pnpm dev` on a fresh `reset:dev`; organization
+"Arena Piloto" created with `bootstrap:owner` (`owner@pilot.test`), employee Ana
+(STAFF), courts Quadra 1/2, customers and a portal account for Carla created
+by API (set-up only). Chromium driven by throwaway scripts in `/tmp/cm019/walk`
+(not committed), `locale: 'pt-BR'`, browser timezone `UTC` unless stated, venue
+`America/Sao_Paulo`. Every repro action itself was done in the UI. The dev server
+was stopped afterwards.
+
+| Repro                                                     | Result                          | What I saw                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| J-1 pay a fixed-court agreement charge                    | PASS                            | Owner created the agreement (Davi Dois, Quadra 2, Quarta-feira 19:00, 60 min, 04/11-25/11/2026, R$ 400). Financeiro > Registrar pagamento now has "Cobrança em aberto"; chose the agreement charge, R$ 400, Transferência bancária: "Pagamento registrado.". `GET /charges`: `paidAmount 400, outstanding 0, PAID`; `GET /finance/balances`: Davi `charges 400, payments 400, outstanding 0`. Minor: the charge label is partly English ("Fixed recurring court agreement") |
+| J-2 edit a reservation time (Reservas)                    | PASS                            | Ana > Reservas > Abrir (10/11/2026 10:00) > Início 11:00, Fim 12:00 > Salvar horário: `PATCH` 200, "Reserva atualizada.", the list shows 11:00-12:00                                                                                                                                                                                                                                                                                                                        |
+| J-3 complete / no-show a checked-in reservation           | PASS (note)                     | Check-in ("Fazer check-in desta reserva?" confirm) gives "Check-in feito"; reopening shows Concluir and Registrar pagamento; Concluir ("Concluir reserva?") `POST /complete` 200, row "Concluída". Não compareceu is not offered once checked in (by design, it is offered on Agendada: tested on another reservation, `POST /no-show` 200, row "Não compareceu"). Concluir is no longer shown on an Agendada reservation                                                   |
+| J-4 Relatórios "Em aberto" after a payment                | PASS                            | Two R$ 80 reservations (20/11 and 21/11/2026) for one customer; R$ 80 recorded in Financeiro (today, before the service dates). Relatórios 20/11-21/11: Reservas 2, Receita prevista R$ 160,00, Em aberto R$ 80,00 (expected), plus a new "Pagamentos registrados no período" R$ 0,00 (payment is outside the period, as expected)                                                                                                                                          |
+| J-5 times in venue time with a different browser timezone | PASS                            | Carla booked Quadra 1 14/11/2026 07:00 in the portal with the browser in UTC: Atividades shows 14/11/2026 07:00 and "Cancelamento disponível até 14/11/2026 01:00."; identical with the browser in Asia/Tokyo; staff Reservas shows 07:00-08:00; agreement Detalhes shows 19:00-20:00 for all 4 linked reservations. The waitlist entry time was NOT RUN (needs a fully booked day or classes enabled)                                                                      |
+| Membership pause (+ cancel)                               | PASS for pause, FAIL for cancel | Ana > Mensalidades > Adicionar mensalidade (Mensal Aulas, R$ 270): create, Renovar (200), Pausar (200, status Pausada, no 100-action error), Retomar (200), Renovar (200). Pausar on a fresh membership also 200. Cancelar from the UI returns 400 `Cancellation effective date is before the current period.` on every membership I tried (see FG-5)                                                                                                                       |
+
+### Failures
+
+- **FG-1** (`tests/e2e/memberships.spec.ts:95`, Mensalidades; blocks G3, G4, G6)
+  - Repro: `corepack pnpm exec playwright test tests/e2e/memberships.spec.ts:10`
+    (needs `.env.example` exported and DynamoDB Local up).
+  - Observed: the pause request returns 200 and the status badge reads
+    "Paused", but `getByText('Paused', { exact: true })` also matches the
+    `<option>` "Paused" of the Status filter, so the assertion fails with a
+    strict mode violation. Expected: the assertion identifies the badge.
+  - The app behaviour is correct (the CM-016 defect is fixed); the spec locator
+    is ambiguous. Severity: major (gate red); product impact none.
+- **FG-2** (`tests/e2e/customer-classes.spec.ts:43`, portal Listas de espera;
+  blocks G4, G6)
+  - Repro: `corepack pnpm exec playwright test tests/e2e/customer-classes.spec.ts:7`.
+  - Observed: the waitlist card no longer shows `Class <classId>`. CM-015
+    (`230d1fe`, J-7) now shows the class name (see
+    `customer-portal.test.ts` "shows the class and court names on waitlist
+    cards, not ids"), and the spec was not updated. Expected: spec asserts the
+    class name. Severity: major (gate red, stale test); product impact none.
+- **FG-3** (`tests/e2e/phase2-handoff-security.spec.ts:164`; blocks G4, G6)
+  - Repro: `corepack pnpm exec playwright test tests/e2e/phase2-handoff-security.spec.ts:117`.
+  - Observed: the test creates a reservation at `now + 24h` truncated to the hour
+    and `ScheduleService.occupyMany` rejects it with "Time is outside court
+    opening hours or slot boundaries". It passed on 2026-11-01. Unverified
+    hypothesis: it depends on the time of day (it ran at 01:xx UTC / 22:xx
+    venue time, and the isolated venue has opening hours 07:00-23:00). Not
+    diagnosed. Expected: the test passes at any time of day. Severity: major
+    (gate red); product impact unknown until diagnosed.
+- **FG-4** (`tests/e2e/reservation-api.spec.ts:86`; blocks G4, G6)
+  - Repro: `corepack pnpm exec playwright test tests/e2e/reservation-api.spec.ts:6`.
+  - Observed: after `POST /reservations/:id/no-show` (200), `GET
+/schedule?date=<base>` does not contain the reservation with status
+    `NO_SHOW`. It passed on 2026-11-01 (before CM-017 changed the schedule
+    loader and before CM-018). Expected: the historical schedule keeps showing
+    no-show reservations. Not diagnosed; could be a CM-017 regression or a
+    time-of-day effect. Severity: major (gate red, possible real regression
+    on the Agenda; the manual no-show above did update the Reservas list).
+- **FG-5** (Mensalidades, staff Cancelar; new, found by the manual walk)
+  - Repro: at a moment when the UTC date is already one day ahead of the venue
+    date (21:00-24:00 in `America/Sao_Paulo`; I ran at 22:36), log in as staff
+    in pt-BR, Comercial > Mensalidades > Adicionar mensalidade (start date left
+    at the default), then Cancelar on the new row.
+  - Observed: `POST /memberships/:id/cancel` returns 400 `VALIDATION_ERROR`
+    "Cancellation effective date is before the current period." The same
+    request with `{"effectiveDate":"2026-11-03"}` succeeds. The create form
+    defaults the start date to the UTC date (`apps/web/src/screens/memberships.ts:37`,
+    `new Date().toISOString().slice(0, 10)`) so the period starts on 2026-11-03,
+    while the API's cancel default uses the venue date (2026-11-02).
+    `fixed-court-agreements.ts:56` has the same helper. Same result with the
+    browser in `America/Sao_Paulo`. Expected: staff can cancel a membership
+    created today. Untested during daytime hours. Severity: major (workaround:
+    cancel the next day or use the API).
+- **FG-6** (Mensalidades list; new)
+  - Repro: with the browser in `America/Sao_Paulo`, open Comercial >
+    Mensalidades for a membership whose period starts on 2026-11-03.
+  - Observed: "02/11/2026 - 01/12/2026" (renewal 02/12/2026). With the browser
+    in UTC it shows 03/11/2026 - 02/12/2026 (matches the API). `formatDate`
+    (`apps/web/src/i18n.ts:1787`) does `new Date('2026-11-03')` (UTC midnight)
+    and formats it in the browser timezone, so date-only values show one day
+    early in browsers behind UTC, which includes the pilot users' devices.
+    Expected: the date as stored. Not checked on other screens that call
+    `formatDate` with date-only values. Severity: major.
+- **FG-7** (warm e2e run slower; new)
+  - Repro: `corepack pnpm reset:dev && corepack pnpm test:e2e`, then
+    `corepack pnpm test:e2e` again without a reset.
+  - Observed: 4.2m vs 5.8m, longest test 10.2s vs 15.5s, no timeouts, no new
+    failures; the slowdown is mostly in customer-portal booking flows. The
+    machine was shared, so load may explain part of it (not isolated).
+    Expected: no meaningful change. Severity: minor.
+
+Not run: G3b (not needed); portal waitlist entry time (part of J-5); account
+`DISABLED`, agreement pause/change/cancel and the en-US locale walk (as before);
+membership expire (no UI).
+
+**Pilot-ready: NO**
+
+The automated gates are red on both e2e runs: `test:e2e` fails the same four
+tests on the clean DB and on the grown DB (63 of 67 pass) and `test:phase3:all`
+fails on one of them, while `check` (380 tests), `test:integration` (25 tests) and
+`build` pass on Node 22. Two of the four failures are spec defects (FG-1,
+FG-2); FG-3 and FG-4 are not diagnosed and FG-4 could be a real Agenda
+regression. All CM-002 repros J-1..J-5 and the membership pause now pass in the
+pt-BR UI and the old 100-action error is gone, but the walk found two new
+major defects (FG-5 membership cancel in the evening, FG-6 date-only values
+shown a day early in Brazilian browsers) that would affect staff on day one.

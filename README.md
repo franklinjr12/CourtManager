@@ -44,6 +44,8 @@ Court Manager now includes a timezone-aware Today front desk, staff and coach wo
 
 Run `corepack pnpm migrate:phase1` once when upgrading legacy data; it is idempotent. For Phase 2 production upgrades, run `corepack pnpm migrate:phase2` after deployment. Existing class data may also require the write-paused `corepack pnpm migrate:class-discovery` backfill. For Phase 3, deploy the commercial code and run the additive, idempotent `corepack pnpm migrate:phase3`; use `corepack pnpm reconcile:commercial` to materialize expired memberships, packages, and remaining credit expiry in bulk. Neither command invents commercial records for existing Phase 2 customers or activities.
 
+`migrate:phase3` also backfills the front-desk access records (organization reservation index, payment summaries, open-request and charge indexes) that keep Hoje, Agenda and Reservas fast; run it after deploying, it is additive and idempotent. The Reservas screen filters by a date range (`from`/`to`, kept in the URL) and loads further pages with a "next page" button, so any reservation can be reached.
+
 ## Quality gates
 
 There is no hosted CI; run the checks locally before opening or merging a PR:
@@ -74,6 +76,14 @@ corepack pnpm test:phase3:all
 ```
 
 See [docs/testing/phase3-coverage.md](docs/testing/phase3-coverage.md) for the coverage matrix, fixtures, and canonical scenarios.
+
+Playwright suites (`test:e2e`, `test:phase3:e2e`, `test:phase3:all`) must start from a fresh local table, because the local DynamoDB table is shared by all gates and later runs get slower (more timeouts) as it grows. Run `corepack pnpm reset:dev` immediately before them:
+
+```bash
+corepack pnpm reset:dev && corepack pnpm test:e2e
+```
+
+See [docs/testing/pilot-readiness-check.md](docs/testing/pilot-readiness-check.md) for the latest gate results.
 
 The first four run fast domain, service, repository, DOM, and browser-router tests. Integration tests use the same repository contract and can be run against DynamoDB Local. E2E uses Playwright Chromium and the Docker development environment.
 

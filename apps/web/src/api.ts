@@ -18,6 +18,17 @@ export class ApiClient {
     private readonly onUnauthorized: () => void = () => {},
   ) {}
   async request<T>(path: string, init: RequestInit = {}) {
+    return (await this.send<T>(path, init)).data as T;
+  }
+  /** Like request, but keeps the collection cursor of paged endpoints. */
+  async requestPage<T>(path: string, init: RequestInit = {}) {
+    const payload = await this.send<T[]>(path, init);
+    return {
+      data: payload.data ?? [],
+      nextCursor: payload.nextCursor ?? null,
+    };
+  }
+  private async send<T>(path: string, init: RequestInit) {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
@@ -29,6 +40,7 @@ export class ApiClient {
     });
     const payload = (await response.json().catch(() => ({}))) as {
       data?: T;
+      nextCursor?: string | null;
       error?: { code?: string; message?: string };
     };
     if (response.status === 401) {
@@ -40,7 +52,7 @@ export class ApiClient {
         payload.error?.code,
         response.status,
       );
-    return payload.data as T;
+    return payload;
   }
   get<T>(path: string, signal?: AbortSignal) {
     return this.request<T>(path, signal ? { signal } : {});
