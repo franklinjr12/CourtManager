@@ -89,6 +89,69 @@ describe('loadOperationalDay', () => {
     expect(loaded.sessions).toEqual([]);
   });
 
+  it('keeps NO_SHOW, CHECKED_IN and COMPLETED reservations, hides CANCELLED', async () => {
+    const { repo, services, owner, book } = await setup();
+    const [noShow, checkedIn, completed, cancelled] = [
+      await book(8),
+      await book(11),
+      await book(12),
+      await book(14),
+    ];
+    const id = (r: { reservationId?: unknown }) => String(r.reservationId);
+    await services.reservations.transition(owner, id(noShow), 'NO_SHOW');
+    await services.reservations.transition(owner, id(checkedIn), 'CHECKED_IN');
+    await services.reservations.transition(owner, id(completed), 'CHECKED_IN');
+    await services.reservations.transition(owner, id(completed), 'COMPLETED');
+    await services.reservations.transition(owner, id(cancelled), 'CANCELLED');
+    const scan = vi.spyOn(repo, 'scan');
+    const loaded = await loadOperationalDay(repo, owner, day);
+    expect(loaded.reservations.map((r) => [r.reservationId, r.status])).toEqual(
+      [
+        [id(noShow), 'NO_SHOW'],
+        [id(checkedIn), 'CHECKED_IN'],
+        [id(completed), 'COMPLETED'],
+      ],
+    );
+    const schedule = await services.scheduleDay.get(owner, day);
+    // 3 reservations + the fixture class session.
+    expect(schedule.items).toHaveLength(4);
+    expect(schedule.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reservationId: id(noShow),
+          status: 'NO_SHOW',
+          customerName: 'Walk In',
+        }),
+      ]),
+    );
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('places a late-evening reservation on its venue-local date', async () => {
+    const { repo, owner, courtId, customer, services } = await setup();
+    // 22:00-03:00 on `day` is 01:00Z the next UTC date.
+    const late = await services.reservations.create(owner, {
+      courtId,
+      customerId: customer.customerId,
+      startAt: `${day}T22:00:00-03:00`,
+      endAt: `${day}T23:00:00-03:00`,
+      source: 'STAFF',
+    });
+    await services.reservations.transition(
+      owner,
+      String(late.reservationId),
+      'NO_SHOW',
+    );
+    expect(
+      (await loadOperationalDay(repo, owner, day)).reservations.map(
+        (r) => r.reservationId,
+      ),
+    ).toEqual([late.reservationId]);
+    expect(
+      (await loadOperationalDay(repo, owner, '2099-01-06')).reservations,
+    ).toEqual([]);
+  });
+
   it('excludes another organization and hides non-coach items from coaches', async () => {
     const { repo, owner, services, book } = await setup();
     await book(14);

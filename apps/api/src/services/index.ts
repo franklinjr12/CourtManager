@@ -3369,8 +3369,8 @@ export class ClassService {
  * Hoje (front-desk day) read model. Every read is bounded by the requesting
  * organization and the venue-local day:
  * - the day's reservations, sessions, blocks, classes, enrollments and
- *   attendance come from `loadOperationalDay` (schedule ITEM queries plus
- *   batched reads);
+ *   attendance come from `loadOperationalDay` (org reservation index and
+ *   schedule ITEM queries plus batched reads);
  * - pending requests from the `ORG#<org>#OPEN_REQUESTS` lookup;
  * - the day's charges from the `ORG#<org>#CHARGES` lookup (`CHARGE#<date>`);
  * - paid amounts from reservation `PAYMENT_SUMMARY` items, plus one customer
@@ -3467,7 +3467,10 @@ export class TodayService {
     );
     const activity = (
       [
-        ...reservations.map((x) => ({ ...x, kind: 'RESERVATION' })),
+        // Released (NO_SHOW/COMPLETED) reservations no longer occupy the court.
+        ...reservations
+          .filter((x) => ['BOOKED', 'CHECKED_IN'].includes(String(x.status)))
+          .map((x) => ({ ...x, kind: 'RESERVATION' })),
         ...sessions.map((x) => ({ ...x, kind: 'CLASS' })),
         ...blocks.map((x) => ({ ...x, kind: 'BLOCK' })),
       ] as (RecordItem & { kind: string })[]

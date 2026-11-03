@@ -1,13 +1,18 @@
 import type { AuthContext } from '@court-manager/contracts';
 import type { Key, RecordItem, Repository } from '../db.js';
 import { classEnrollmentKey } from '../persistence/class-keys.js';
+import { operationalKeys } from '../persistence/operational-keys.js';
+import { reservationListBounds } from './reservation-list.js';
 
 /**
  * Bounded read model of one venue-local day for the daily front-desk screens.
  *
- * Every court occupancy writes a `SCHEDULE#<org>#<court>#<date>` / `ITEM#...`
- * meta item, so the day is found with one Query per court, followed by batched
- * reads of the owning records. No table scan and no per-item reads.
+ * Blocks and class sessions are found through the `SCHEDULE#<org>#<court>#<date>`
+ * / `ITEM#...` meta items (one Query per court) followed by batched reads of
+ * the owning records. Reservations come from the `ORG#<org>#RESERVATIONS`
+ * index instead, because releasing a slot (CANCELLED / NO_SHOW) deletes the
+ * schedule ITEM while the reservation must stay visible on the Agenda. No
+ * table scan and no per-item reads.
  */
 export type OperationalDay = {
   date: string;
@@ -40,12 +45,48 @@ const idsOf = (refs: RecordItem[], type: string) =>
     .map((ref) => String(ref.SK))
     .filter((sk) => sk.startsWith(`ITEM#${type}#`))
     .map((sk) => sk.slice(`ITEM#${type}#`.length));
+/**
+ * A venue day holds far fewer reservations than this; the cap (5 pages of
+ * 200) only bounds the work of one request.
+ */
+const RESERVATION_PAGE_SIZE = 200;
+const RESERVATION_MAX_PAGES = 5;
 const own = (ctx: AuthContext, rows: RecordItem[]) =>
   rows.filter((row) => row.organizationId === ctx.organizationId);
 
 export const isActiveEnrollment = (row: RecordItem) => row.status === 'ACTIVE';
 export const isAttended = (row: RecordItem) =>
   ['CHECKED_IN', 'COMPLETED'].includes(String(row.status));
+
+/** Reservations starting on the venue-local `date`, from the org index. */
+async function queryDayReservations(
+  repo: Repository,
+  org: string,
+  date: string,
+) {
+  const organization = await repo.get<RecordItem>({
+    PK: `ORG#${org}`,
+    SK: 'META',
+  });
+  const between = reservationListBounds(
+    { from: date, to: date },
+    String(organization?.timezone ?? 'UTC'),
+  );
+  const pk = operationalKeys.organizationReservations(org).PK;
+  const rows: RecordItem[] = [];
+  let startAfter: string | undefined;
+  for (let page = 0; page < RESERVATION_MAX_PAGES; page += 1) {
+    const chunk = await repo.query<RecordItem>(pk, {
+      between,
+      limit: RESERVATION_PAGE_SIZE,
+      ...(startAfter ? { startAfter } : {}),
+    });
+    rows.push(...chunk);
+    if (chunk.length < RESERVATION_PAGE_SIZE) break;
+    startAfter = String(chunk.at(-1)?.SK);
+  }
+  return rows;
+}
 
 export async function loadOperationalDay(
   repo: Repository,
@@ -54,9 +95,10 @@ export async function loadOperationalDay(
 ): Promise<OperationalDay> {
   const org = ctx.organizationId;
   const coach = ctx.role === 'COACH';
-  const courts = await repo.query<RecordItem>(`ORG#${org}`, {
-    beginsWith: 'COURT#',
-  });
+  const [courts, indexed] = await Promise.all([
+    repo.query<RecordItem>(`ORG#${org}`, { beginsWith: 'COURT#' }),
+    coach ? [] : queryDayReservations(repo, org, date),
+  ]);
   const refs = (
     await Promise.all(
       courts.map((court) =>
@@ -70,25 +112,23 @@ export async function loadOperationalDay(
   const sources = await batchGetChunked(repo, [
     ...(coach
       ? []
-      : [
-          ...idsOf(refs, 'RESERVATION').map((id) => ({
-            PK: `RESERVATION#${id}`,
-            SK: 'META',
-          })),
-          ...idsOf(refs, 'BLOCK').map((id) => ({
-            PK: `BLOCK#${id}`,
-            SK: 'META',
-          })),
-        ]),
+      : idsOf(refs, 'BLOCK').map((id) => ({
+          PK: `BLOCK#${id}`,
+          SK: 'META',
+        }))),
     ...idsOf(refs, 'CLASS').map((id) => ({
       PK: `CLASS_SESSION#${id}`,
       SK: 'META',
     })),
   ]);
   const owned = own(ctx, sources);
-  const reservations = owned.filter(
-    (row) => row.entity === 'reservation' && row.status !== 'CANCELLED',
-  );
+  const reservations = own(ctx, indexed)
+    .filter((row) => row.status !== 'CANCELLED')
+    .map((row): RecordItem => ({
+      ...row,
+      entity: 'reservation',
+      status: row.status === 'CONFIRMED' ? 'BOOKED' : row.status,
+    }));
   const blocks = owned.filter(
     (row) => row.entity === 'block' && row.active === true,
   );
