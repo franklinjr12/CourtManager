@@ -25,7 +25,16 @@ export const timeValue = (date: string) =>
 export const localDateKey = (date: string) =>
   dateKey(date, getAppContext().timezone());
 export const dateValue = (date: string) =>
-  formatDate(new Date(date), getAppContext().timezone());
+  formatDate(date, getAppContext().timezone());
 export const dateTimeValue = (date: string) =>
   formatDateTime(date, getAppContext().timezone());
 export const errorMessage = (error: unknown) => translateError(error);
+
+/** Current venue wall-clock time for a datetime-local input. */
+export const nowInputValue = () =>
+  `${today()}T${timeValue(new Date().toISOString())}`;
+/** Interprets a datetime-local value in the venue zone. */
+export const isoFromWallClock = (value: string) => {
+  const [date = '', time = ''] = value.split('T');
+  return isoFromInputs(date, time);
+};

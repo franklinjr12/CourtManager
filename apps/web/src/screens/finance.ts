@@ -2,6 +2,7 @@ import { dateValue, timeValue, errorMessage } from '../core/presentation.js';
 import type { Payment } from '../core/types.js';
 import { button } from '../dom.js';
 import {
+  chargeDescriptionLabel,
   chargeSourceLabel,
   formatMoney,
   paymentMethodLabel,
@@ -23,7 +24,7 @@ const paymentTarget = (
   if (payment.className) return payment.className;
   const charge = charges.find((item) => item.chargeId === payment.chargeId);
   if (charge)
-    return `${chargeSourceLabel(String(charge.sourceType))} · ${String(charge.description)}`;
+    return `${chargeSourceLabel(String(charge.sourceType))} · ${chargeDescriptionLabel(String(charge.description))}`;
   return payment.chargeId ? t('finance.chargeLabel') : '—';
 };
 export async function finance() {

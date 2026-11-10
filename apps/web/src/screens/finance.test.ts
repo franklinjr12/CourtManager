@@ -31,6 +31,8 @@ vi.mock('../ui/modal.js', () => ({
 vi.mock('../core/presentation.js', () => ({
   dateValue: () => '2026-10-05',
   timeValue: () => '10:00',
+  nowInputValue: () => '2026-10-05T10:00',
+  isoFromWallClock: (value: string) => `${value}:00.000Z`,
   errorMessage: String,
 }));
 vi.mock('../ui/feedback.js', () => ({ toast: vi.fn() }));
@@ -93,6 +95,20 @@ beforeEach(() => {
       return [{ customerId: 'c1', name: 'Davi' }];
     if (path.startsWith('/charges')) return charges;
     return {};
+  });
+});
+
+describe('charge description', () => {
+  it('translates the fixed agreement description in pt-BR', () => {
+    setLocale('pt-BR');
+    expect(
+      chargeOptionLabel(
+        charge({
+          sourceType: 'FIXED_COURT',
+          description: 'Fixed recurring court agreement',
+        }),
+      ),
+    ).toContain('Contrato fixo de quadra recorrente');
   });
 });
 

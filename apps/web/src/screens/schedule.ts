@@ -78,7 +78,7 @@ export async function schedule() {
       })
       .join('');
 
-    return `<div class="toolbar"><div><h2>${t('schedule.title')}</h2><p class="muted">${escapeText(formatDate(`${date}T12:00:00`, scheduleZone))}</p></div><div class="row-actions"><button class="button" id="previous-day">${t('common.previousDay')}</button><button class="button" id="today">${t('dashboard.today')}</button><button class="button" id="next-day">${t('common.nextDay')}</button><button class="button" id="block-court">${t('schedule.blockCourt')}</button><button class="button primary" id="new-booking">${t('reservations.new')}</button></div></div><div class="schedule-grid${timeline ? ' schedule-timeline' : ''}"${timelineStyle}>${courts || `<p class="empty">${t('schedule.createCourtHint')}</p>`}</div>`;
+    return `<div class="toolbar"><div><h2>${t('schedule.title')}</h2><p class="muted">${escapeText(formatDate(date))}</p></div><div class="row-actions"><button class="button" id="previous-day">${t('common.previousDay')}</button><button class="button" id="today">${t('dashboard.today')}</button><button class="button" id="next-day">${t('common.nextDay')}</button><button class="button" id="block-court">${t('schedule.blockCourt')}</button><button class="button primary" id="new-booking">${t('reservations.new')}</button></div></div><div class="schedule-grid${timeline ? ' schedule-timeline' : ''}"${timelineStyle}>${courts || `<p class="empty">${t('schedule.createCourtHint')}</p>`}</div>`;
   });
   screen()
     ?.querySelector('#new-booking')

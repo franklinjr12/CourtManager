@@ -5,7 +5,12 @@ import type {
   PackageDefinition,
 } from '@court-manager/contracts';
 import type { Customer } from '../core/types.js';
-import { dateTimeValue, dateValue } from '../core/presentation.js';
+import {
+  dateTimeValue,
+  dateValue,
+  isoFromWallClock,
+  nowInputValue,
+} from '../core/presentation.js';
 import { formatMoney, t } from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
@@ -299,7 +304,7 @@ function openIssueModal(
       )
       .join(
         '',
-      )}</select></label><label>${t('packages.definition')}<select name="packageDefinitionId" required>${active.map((item) => `<option value="${escapeText(item.packageDefinitionId)}">${escapeText(item.name)} · ${escapeText(formatMoney(item.price, item.currency))}</option>`).join('')}</select></label><label>${t('packages.issuedAt')}<input name="issuedAt" type="datetime-local" required value="${new Date().toISOString().slice(0, 16)}"></label><label class="full">${t('packages.idempotencyKey')} <span class="muted">(${t('common.optional')})</span><input name="idempotencyKey" maxlength="128"></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('packages.issue')}</button></div></form>`,
+      )}</select></label><label>${t('packages.definition')}<select name="packageDefinitionId" required>${active.map((item) => `<option value="${escapeText(item.packageDefinitionId)}">${escapeText(item.name)} · ${escapeText(formatMoney(item.price, item.currency))}</option>`).join('')}</select></label><label>${t('packages.issuedAt')}<input name="issuedAt" type="datetime-local" required value="${nowInputValue()}"></label><label class="full">${t('packages.idempotencyKey')} <span class="muted">(${t('common.optional')})</span><input name="idempotencyKey" maxlength="128"></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('packages.issue')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#issue-package-form');
   form?.querySelector('[data-close]')?.addEventListener('click', closeModal);
@@ -312,7 +317,7 @@ function openIssueModal(
         method: 'POST',
         body: JSON.stringify({
           packageDefinitionId: values.packageDefinitionId,
-          issuedAt: new Date(String(values.issuedAt)).toISOString(),
+          issuedAt: isoFromWallClock(String(values.issuedAt)),
           idempotencyKey: values.idempotencyKey || undefined,
         }),
       });
