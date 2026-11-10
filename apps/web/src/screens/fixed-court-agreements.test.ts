@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FixedCourtAgreement } from '@court-manager/contracts';
 import type { CustomerCharge } from '../core/types.js';
 import { setLocale } from '../i18n.js';
+import { shell } from '../ui/shell.js';
 import {
   agreementLatestCharge,
   agreementOpenCharge,
+  fixedCourtAgreements,
   openRichDetails,
 } from './fixed-court-agreements.js';
 
@@ -32,6 +34,9 @@ vi.mock('../core/presentation.js', async () => {
   return {
     dateValue: () => '2026-10-05',
     timeValue: (iso: string) => dates.timeValue(iso, 'America/Sao_Paulo'),
+    today: () => dates.today(() => 'America/Sao_Paulo'),
+    nowInputValue: () => '2026-10-05T10:00',
+    isoFromWallClock: (value: string) => `${value}:00.000Z`,
     errorMessage: String,
   };
 });
@@ -208,5 +213,25 @@ describe('agreement details linked reservations', () => {
     const row = document.querySelector('tbody tr')!.textContent!;
     expect(row).toContain('07:00–08:00');
     expect(row).not.toContain('10:00');
+  });
+});
+
+describe('agreement create form', () => {
+  it('defaults the start date to the venue date at 22:30 in Sao Paulo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T01:30:00Z'));
+    vi.mocked(shell).mockImplementation(async (render, onMount) => {
+      document.body.innerHTML = await render();
+      onMount?.();
+    });
+    mocks.request.mockResolvedValue([]);
+    await fixedCourtAgreements();
+    document.querySelector<HTMLButtonElement>('#add-fixed-agreement')?.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector<HTMLInputElement>('[name="startDate"]')?.value,
+      ).toBe('2026-11-03'),
+    );
+    vi.useRealTimers();
   });
 });

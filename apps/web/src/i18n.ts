@@ -49,6 +49,10 @@ const enUS = {
   'common.search': 'Search',
   'common.noNotes': 'No notes.',
   'common.description': 'Description',
+  'chargeDescription.fixedCourtAgreement': 'Fixed recurring court agreement',
+  'chargeDescription.courtReservation': 'Court reservation',
+  'chargeDescription.membershipRenewal': 'Membership renewal: ',
+  'chargeDescription.packagePurchase': 'Package purchase: ',
   'common.language': 'Language',
   'common.portugueseBrazil': 'Português (Brasil)',
   'common.englishUS': 'English (US)',
@@ -907,6 +911,10 @@ const ptBR: Record<keyof typeof enUS, string> = {
   'common.search': 'Buscar',
   'common.noNotes': 'Sem observações.',
   'common.description': 'Descrição',
+  'chargeDescription.fixedCourtAgreement': 'Contrato fixo de quadra recorrente',
+  'chargeDescription.courtReservation': 'Reserva de quadra',
+  'chargeDescription.membershipRenewal': 'Renovação de mensalidade: ',
+  'chargeDescription.packagePurchase': 'Compra de pacote: ',
   'common.language': 'Idioma',
   'common.portugueseBrazil': 'Português (Brasil)',
   'common.englishUS': 'English (US)',
@@ -1785,12 +1793,32 @@ export function formatMoney(value: number, currency = 'BRL'): string {
 }
 
 export function formatDate(value: string | Date, timeZone?: string): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value))
+    return formatCalendarDate(value);
   return new Intl.DateTimeFormat(getLocale(), {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     ...(timeZone ? { timeZone } : {}),
   }).format(new Date(value));
+}
+
+export function chargeDescriptionLabel(description: string): string {
+  if (description === 'Fixed recurring court agreement')
+    return t('chargeDescription.fixedCourtAgreement');
+  if (description === 'Court reservation')
+    return t('chargeDescription.courtReservation');
+  if (description.startsWith('Membership renewal: '))
+    return (
+      t('chargeDescription.membershipRenewal') +
+      description.slice('Membership renewal: '.length)
+    );
+  if (description.startsWith('Package purchase: '))
+    return (
+      t('chargeDescription.packagePurchase') +
+      description.slice('Package purchase: '.length)
+    );
+  return description;
 }
 
 export function formatCalendarDate(value: string): string {
