@@ -703,3 +703,128 @@ regression. All CM-002 repros J-1..J-5 and the membership pause now pass in the
 pt-BR UI and the old 100-action error is gone, but the walk found two new
 major defects (FG-5 membership cancel in the evening, FG-6 date-only values
 shown a day early in Brazilian browsers) that would affect staff on day one.
+
+## Final gate (re-run) 2026-11-10 (Node 22, clean and warm DB)
+
+- Date: 2026-11-10 (gates ran 15:31-15:49 UTC, manual walk about 15:50-16:00
+  UTC; venue time `America/Sao_Paulo` was 12:31-12:49 for the gates, i.e.
+  daytime; the evening window was only exercised in the FG-5 walk, see below).
+- Commit tested: `9f68d7df38cd0b3b537468cf823bfcf40709f713`
+  (`9f68d7d Merge CM-022: TASK-021 [Epic 4 Pilot Readiness - fixes]: Date-only
+values`), which includes CM-020..CM-022 (branch
+  `task/CM-023-hermes-software-exec-cm`).
+- Scope: evidence only. No app, test, config or script file was changed and no
+  test was skipped, disabled or weakened. Every number below comes from a
+  command that ran to completion; logs were kept in `/tmp/cm023`.
+
+### Environment
+
+| Item           | Value                                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Node           | v22.23.4 (linux arm64, official tarball in `/tmp/node22`; the default `node` on the machine is v26 and was not used) |
+| pnpm           | 9.15.5 (via corepack), `pnpm install --frozen-lockfile` ran first                                                    |
+| Playwright     | chromium, 1 worker                                                                                                   |
+| DynamoDB Local | `docker compose up -d dynamodb` on :8120 (project `courtmanager-cm-023`, container `courtmanager-cm-023-dynamodb-1`) |
+| Env vars       | Values of `.env.example` exported into the shell of every gate command                                               |
+| Locking        | All gates ran under `flock /workspace/hermes-work/state/verify.lock` (waiting time not included in the durations)    |
+
+Notes:
+
+- Port 8120 was held by `courtmanager-cm-020-dynamodb-1` (another worktree).
+  I ran `docker stop courtmanager-cm-020-dynamodb-1` only (container and
+  volume kept). Nothing listened on :5173 or :8787 before the gates, so
+  Playwright started this worktree's servers.
+- After both `reset:dev` calls (G0 and before G4) `docker ps --filter
+publish=8120` showed `courtmanager-cm-023-dynamodb-1` "Up 5 seconds
+  (healthy)", so the stale-container problem of CM-019 did not recur. The
+  walk's `reset:dev` showed the same.
+- G3b was not needed (see table).
+
+### Gates
+
+| Gate | Command                                             | Result  | Summary                                                                                                              | Time |
+| ---- | --------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- | ---- |
+| G0   | `corepack pnpm reset:dev`                           | PASS    | exit 0; new cm-023 container on :8120                                                                                | 2s   |
+| G1   | `corepack pnpm check`                               | PASS    | exit 0; lint 0 errors / 22 warnings, typecheck, format:check, `test`: 93 files / 391 tests passed                    | 236s |
+| G2   | `corepack pnpm test:integration`                    | PASS    | exit 0; 13 files / 25 tests passed                                                                                   | 150s |
+| G3   | `corepack pnpm test:phase3:all`                     | PASS    | exit 0; `test:phase3` 31 files / 84 tests; `test:phase3:integration` 4 files / 12 tests; `test:phase3:e2e` 18 passed | 129s |
+| G3b  | `reset:dev` then `test:phase3:e2e`                  | NOT RUN | Not needed: global setup did not stop with "development seed owner ... is missing"                                   | -    |
+| G4   | `corepack pnpm reset:dev && corepack pnpm test:e2e` | PASS    | exit 0; e2e run #1 (clean DB): 67 passed, 0 failed (chromium)                                                        | 230s |
+| G5   | `corepack pnpm build`                               | PASS    | exit 0; API/contracts and Vite build OK (`dist/assets/index-*.js` 259.34 kB, gzip 60.13 kB)                          | 5s   |
+| G6   | `corepack pnpm test:e2e` (no reset)                 | PASS    | exit 0; e2e run #2 (warm DB after G2-G5): 67 passed, 0 failed; 0 `Test timeout`                                      | 343s |
+
+### Clean vs warm e2e (G4 vs G6)
+
+| Run | UTC / venue start | DB state                         | Passed | Failed | Playwright time | Timeouts | Sum of test times | Slowest test |
+| --- | ----------------- | -------------------------------- | ------ | ------ | --------------- | -------- | ----------------- | ------------ |
+| G4  | 15:39 / 12:39     | `reset:dev` just before          | 67     | 0      | 3.8m            | 0        | 213s              | 10.6s        |
+| G6  | 15:43 / 12:43     | no reset, after G2/G3/G4/G5 data | 67     | 0      | 5.7m            | 0        | 333s              | 15.1s        |
+
+The four tests that failed on 2026-11-03 now pass on both runs:
+`memberships.spec.ts:10` (FG-1), `customer-classes.spec.ts:7` (FG-2),
+`phase2-handoff-security.spec.ts` "pending requests can be withdrawn..."
+(FG-3, now at line 118) and `reservation-api.spec.ts:6` (FG-4). Both runs
+happened at venue time 12:xx, so FG-3's suspected time-of-day dependence
+(it failed at 22:xx venue time) was not re-tested at night; the e2e suite was
+not run inside the 21:00-24:00 window. The warm run is again about 55% slower
+in total (see FG-7).
+
+### Manual pt-BR re-walk
+
+Local stack from `corepack pnpm dev` on a fresh `reset:dev`; organization
+"Arena Piloto" created with `bootstrap:owner` (`owner@pilot.test`), employee Ana
+(STAFF), coach Rui, courts Quadra 1/2, customers, a plan and a portal account
+for Carla created by API (set-up only). Chromium driven by throwaway scripts in
+`/tmp/cm023/walk` (not committed), `locale: 'pt-BR'`, browser timezone
+`America/Sao_Paulo` unless stated, venue `America/Sao_Paulo`. Every repro
+action itself was done in the UI. The dev server was stopped afterwards.
+
+| Repro                                                  | Result | What I saw                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FG-4 no-show stays on the Agenda                       | PASS   | Ana > Reservas > Abrir (Maria Silva, 17/11/2026 10:00) > Não compareceu (confirm): `POST /no-show` 200, row "Não compareceu". Agenda `/schedule?date=2026-11-17` still shows "10:00-11:00 - Maria Silva / Reserva · Maria Silva · Não compareceu · Não pago" on Quadra 1                                                                                                                                                                                                                      |
+| FG-5 create and cancel a membership in the venue night | PASS   | Real clock was 12:5x venue time, so both clocks were shifted to the same instant **2026-11-11T00:30Z (21:30 on 2026-11-10 in America/Sao_Paulo)**: API with `NODE_OPTIONS=--import /tmp/cm023/shift-date.mjs` (offsets `Date`; new records got `createdAt 2026-11-11T00:30:23Z`) and browser with Playwright `page.clock`. Add form default start date was 2026-11-10 (venue date). Create 201, then Cancelar on the new row: 200, status "Cancelada", `cancellationEffectiveDate 2026-11-10` |
+| FG-6 membership period dates vs API                    | PASS   | Browser in `America/Sao_Paulo`: new membership shows "10/11/2026 - 09/12/2026", next renewal 10/12/2026; API `currentPeriodStart 2026-11-10`, `currentPeriodEnd 2026-12-09`, `nextRenewalDate 2026-12-10`. Renovar (200): UI "10/12/2026 - 09/01/2027", renewal 10/01/2027 = API `2026-12-10`, `2027-01-09`, `2027-01-10`. No one-day-early shift                                                                                                                                             |
+| J-1 pay a fixed-court agreement charge                 | PASS   | Owner created the agreement (Davi Dois, Quadra 2, Quarta-feira 19:00, 60 min, 11/11-02/12/2026, R$ 400). Financeiro > Registrar pagamento > Cobrança em aberto "Horário fixo · Contrato fixo de quadra recorrente · R$ 400,00" (now fully pt-BR), default amount 400, Transferência bancária: Davi Dois Previsto R$ 400,00 / Pago R$ 400,00 / Em aberto R$ 0,00                                                                                                                               |
+| J-2 edit a reservation time                            | PASS   | Ana > Reservas > Abrir (Gil Cinco, 26/11/2026 10:00) > Início 11:00, Fim 12:00 > Salvar horário: `PATCH` 200, "Reserva atualizada.", list shows 11:00-12:00                                                                                                                                                                                                                                                                                                                                   |
+| J-3 complete / no-show a checked-in reservation        | PASS   | Pedro Souza 18/11: Check-in (confirm) gives "Check-in feito", dialog offers Concluir and Registrar pagamento; Concluir `POST /complete` 200, row "Concluída". Lia Teste 19/11: after check-in Não compareceu is not offered (by design; it is offered on Agendada, see FG-4), row "Check-in feito"                                                                                                                                                                                            |
+| J-4 Relatórios "Em aberto" after a payment             | PASS   | Eva Quatro has two R$ 80 reservations (24/11 and 25/11); R$ 80 recorded for 24/11 in Financeiro ("Pagamento registrado."). Relatórios 24/11-25/11: Reservas 3, Receita prevista R$ 160,00, Em aberto R$ 80,00 (expected), "Pagamentos registrados no período" R$ 0,00 (payment dated 10/11, outside the period)                                                                                                                                                                               |
+| J-5 venue times, browser timezone differs              | PASS   | Carla booked Quadra 1 21/11/2026 07:00 in the portal: Atividades "21/11/2026 07:00", "Cancelamento disponível até 21/11/2026 01:00." with the browser in `America/Sao_Paulo` and in `Asia/Tokyo`; staff Reservas (Tokyo browser) 07:00-08:00; agreement occurrences 19:00-20:00                                                                                                                                                                                                               |
+| J-5 portal waitlist entry time (NOT RUN in CM-019)     | PASS   | Classes enabled, coach Rui, class "Tênis Iniciante" capacity 1 on 27/11, Maria enrolled by staff (class full). Carla clicked "Entrar na lista de espera" (201, `joinedAt 2026-11-10T15:56:26Z`). Portal Listas de espera card "Aula Tênis Iniciante - Entrada em 10/11/2026 12:56" in the `America/Sao_Paulo` browser **and** in the `Asia/Tokyo` browser (not 00:56 on 11/11). Staff Listas de espera (Tokyo browser) also shows 10/11/2026 12:56                                            |
+
+### Status of the 2026-11-03 failures
+
+- **FG-1** (memberships spec locator): fixed, `memberships.spec.ts:10` passes in G3, G4 and G6.
+- **FG-2** (stale waitlist assertion): fixed, `customer-classes.spec.ts:7` passes in G4 and G6.
+- **FG-3** (handoff spec failing at 22:xx venue time): `phase2-handoff-security.spec.ts:118` passes in G3/G4/G6, but all runs were at 12:xx venue time, so the time-of-day hypothesis is neither confirmed nor ruled out.
+- **FG-4** (no-show missing from schedule): fixed, `reservation-api.spec.ts:6` passes and the Agenda shows "Não compareceu" in the UI.
+- **FG-5** (membership cancel in the 21:00-24:00 venue window): fixed, verified with shifted clocks (method above).
+- **FG-6** (date-only values one day early): fixed for Mensalidades period and renewal dates in a `America/Sao_Paulo` browser; other screens were not audited.
+- **FG-7** (warm e2e run slower): still present, 3.8m vs 5.7m, no timeouts, no failures; the machine was shared, so load was not isolated. Minor.
+
+### Failures
+
+No gate failed and no walk item failed, so there is no new failure ID.
+Observations, not failures:
+
+- OBS-1 (minor, unverified): when I repeated my payment script for Eva
+  Quatro's 24/11 reservation (already fully paid, default amount 0), Financeiro
+  accepted another R$ 80 payment ("Pagamento registrado."). I did not check
+  whether over-payment is intended.
+- OBS-2 (minor): `lint` reports 22 `import/order` warnings (18 on 2026-11-03),
+  0 errors.
+
+### Not run
+
+G3b (not needed); `test:e2e` inside the 21:00-24:00 venue window (FG-3
+time-of-day); account `DISABLED`, agreement pause/change/cancel and the en-US
+locale walk (as before); membership expire (no UI); other screens that format
+date-only values.
+
+**Pilot-ready: YES**
+
+All gates pass on both e2e runs (`check` 391 tests, `test:integration` 25,
+`test:phase3:all`, `test:e2e` 67 of 67 clean and warm, `build`) on Node 22 with
+this worktree's DynamoDB container confirmed. The pt-BR walk passed for FG-4,
+FG-5 (clock shifted into the venue night), FG-6, J-1..J-5 and the portal
+waitlist entry time in both São Paulo and Tokyo browsers. Residual risk: FG-3's
+time-of-day dependence and other screens' date-only handling were not tested.
