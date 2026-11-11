@@ -1,6 +1,12 @@
-import { dateValue, timeValue } from '../core/presentation.js';
+import {
+  dateValue,
+  isoFromWallClock,
+  nowInputValue,
+  timeValue,
+} from '../core/presentation.js';
 import type { Customer, CustomerCharge, Reservation } from '../core/types.js';
 import {
+  chargeDescriptionLabel,
   chargeSourceLabel,
   formatMoney,
   paymentMethodLabel,
@@ -15,7 +21,7 @@ import { app, escapeText, renderRoute, request } from './runtime.js';
 type TargetType = 'reservation' | 'charge';
 
 export const chargeOptionLabel = (charge: CustomerCharge) =>
-  `${chargeSourceLabel(charge.sourceType)} · ${charge.description} · ${formatMoney(charge.outstanding)}`;
+  `${chargeSourceLabel(charge.sourceType)} · ${chargeDescriptionLabel(charge.description)} · ${formatMoney(charge.outstanding)}`;
 
 export function paymentRequestBody(values: Record<string, unknown>) {
   const idKey = values.targetType === 'charge' ? 'chargeId' : 'reservationId';
@@ -24,7 +30,7 @@ export function paymentRequestBody(values: Record<string, unknown>) {
     [idKey]: values.targetId,
     amount: Number(values.amount),
     method: values.method,
-    paidAt: new Date(String(values.paidAt)).toISOString(),
+    paidAt: isoFromWallClock(String(values.paidAt)),
     notes: values.notes || undefined,
   };
 }
@@ -57,7 +63,7 @@ export async function openPaymentModal(
     : (reservation?.remainingAmount ?? '');
   openModal(
     t('finance.record'),
-    `<form id="payment-form" class="form-grid"><label>${t('common.customer')}<select name="customerId" required><option value=""></option>${customerOptions(customers, initialCustomer)}</select></label><label>${t('finance.payFor')}<select name="targetType"><option value="reservation"${initialType === 'reservation' ? ' selected' : ''}>${t('finance.payForReservation')}</option><option value="charge"${initialType === 'charge' ? ' selected' : ''}>${t('finance.payForCharge')}</option></select></label><label class="full">${t('finance.target')}<select name="targetId" required></select></label><p class="muted full" data-target-empty hidden></p><label>${t('common.amount')}<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeText(initialAmount)}"></label><label>${t('common.payment')}<select name="method">${['PIX', 'CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'OTHER'].map((m) => `<option value="${m}">${paymentMethodLabel(m)}</option>`).join('')}</select></label><label>${t('finance.paidAt')}<input name="paidAt" type="datetime-local" required value="${escapeText(new Date().toISOString().slice(0, 16))}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('finance.record')}</button></div></form>`,
+    `<form id="payment-form" class="form-grid"><label>${t('common.customer')}<select name="customerId" required><option value=""></option>${customerOptions(customers, initialCustomer)}</select></label><label>${t('finance.payFor')}<select name="targetType"><option value="reservation"${initialType === 'reservation' ? ' selected' : ''}>${t('finance.payForReservation')}</option><option value="charge"${initialType === 'charge' ? ' selected' : ''}>${t('finance.payForCharge')}</option></select></label><label class="full">${t('finance.target')}<select name="targetId" required></select></label><p class="muted full" data-target-empty hidden></p><label>${t('common.amount')}<input name="amount" type="number" min="0.01" step="0.01" required value="${escapeText(initialAmount)}"></label><label>${t('common.payment')}<select name="method">${['PIX', 'CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'BANK_TRANSFER', 'OTHER'].map((m) => `<option value="${m}">${paymentMethodLabel(m)}</option>`).join('')}</select></label><label>${t('finance.paidAt')}<input name="paidAt" type="datetime-local" required value="${escapeText(nowInputValue())}"></label><label class="full">${t('common.notes')}<textarea name="notes"></textarea></label><p class="form-error" role="alert"></p><div class="form-actions full"><button type="button" class="button" data-close>${t('common.cancel')}</button><button class="button primary">${t('finance.record')}</button></div></form>`,
   );
   const form = app.querySelector<HTMLFormElement>('#payment-form');
   if (!form) return;

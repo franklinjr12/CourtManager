@@ -4,6 +4,7 @@ import {
   LOCALE_STORAGE_KEY,
   SUPPORTED_LOCALES,
   blockReasonLabel,
+  chargeDescriptionLabel,
   formatCalendarDate,
   formatDate,
   formatMoney,
@@ -114,5 +115,51 @@ describe('localization', () => {
     expect(t('common.price')).toBe('Price');
     expect(paymentStatusLabel('OVERPAID')).toBe('Overpaid');
     expect(t('staff.roles.COACH')).toBe('Coach');
+  });
+});
+
+describe('date-only formatting', () => {
+  it('shows YYYY-MM-DD exactly regardless of zone', () => {
+    setLocale('pt-BR');
+    expect(formatDate('2026-11-03')).toBe('03/11/2026');
+    expect(formatDate('2026-11-03', 'America/Sao_Paulo')).toBe('03/11/2026');
+    expect(formatDate('2026-11-03', 'Pacific/Kiritimati')).toBe('03/11/2026');
+  });
+
+  it('still formats datetimes in the given zone', () => {
+    setLocale('pt-BR');
+    expect(formatDate('2026-11-04T01:30:00Z', 'America/Sao_Paulo')).toBe(
+      '03/11/2026',
+    );
+    expect(formatDate('2026-11-04T01:30:00Z', 'UTC')).toBe('04/11/2026');
+  });
+});
+
+describe('chargeDescriptionLabel', () => {
+  it('translates known API descriptions in pt-BR', () => {
+    setLocale('pt-BR');
+    expect(chargeDescriptionLabel('Fixed recurring court agreement')).toBe(
+      'Contrato fixo de quadra recorrente',
+    );
+    expect(chargeDescriptionLabel('Court reservation')).toBe(
+      'Reserva de quadra',
+    );
+    expect(chargeDescriptionLabel('Membership renewal: Gold')).toBe(
+      'Renovação de mensalidade: Gold',
+    );
+    expect(chargeDescriptionLabel('Package purchase: 10 aulas')).toBe(
+      'Compra de pacote: 10 aulas',
+    );
+    expect(chargeDescriptionLabel('Custom text')).toBe('Custom text');
+  });
+
+  it('keeps English text in en-US', () => {
+    setLocale('en-US');
+    expect(chargeDescriptionLabel('Membership renewal: Gold')).toBe(
+      'Membership renewal: Gold',
+    );
+    expect(chargeDescriptionLabel('Fixed recurring court agreement')).toBe(
+      'Fixed recurring court agreement',
+    );
   });
 });

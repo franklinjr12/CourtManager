@@ -26,6 +26,7 @@ import {
   reservationStatusLabel,
   t,
 } from '../i18n.js';
+import { today as venueToday } from '../core/dates.js';
 import { formData, setBusy } from '../ui/forms.js';
 import {
   languageSelector,
@@ -686,7 +687,7 @@ async function wireBooking(slug: string) {
       policy.reservationMode === 'REQUEST_APPROVAL'
         ? t('portal.requestBooking')
         : t('portal.confirmBooking');
-    date.min = new Date().toISOString().slice(0, 10);
+    date.min = venueToday(() => venue.timezone);
     date.value = rebookDraft?.date ?? date.min;
     const policyDurations = Array.from(
       {

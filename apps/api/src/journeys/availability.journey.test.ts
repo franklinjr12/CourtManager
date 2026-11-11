@@ -143,9 +143,11 @@ describe('journey: customer availability search', () => {
 
     const today = (await query(dateAhead(0))).body.data
       .courts as AvailabilityCourt[];
+    // The service compares minute-truncated local times with ">=", so a slot
+    // starting in the current minute is still offered.
     const nowTime = new Date().toISOString().slice(11, 16);
     for (const time of today[0]?.available ?? [])
-      expect(time > nowTime).toBe(true);
+      expect(time >= nowTime).toBe(true);
 
     const patched = await call(
       app,

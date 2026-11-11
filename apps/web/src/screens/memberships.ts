@@ -4,6 +4,7 @@ import type {
   Plan,
 } from '@court-manager/contracts';
 import type { Customer } from '../core/types.js';
+import { today } from '../core/presentation.js';
 import { formatDate, formatMoney, t } from '../i18n.js';
 import { toast } from '../ui/feedback.js';
 import { formData, setBusy, showFormError } from '../ui/forms.js';
@@ -34,7 +35,6 @@ type ChargeRow = {
   paidAmount: number;
   paymentStatus: string;
 };
-const today = () => new Date().toISOString().slice(0, 10);
 const statusBadge = (status: Membership['status']) =>
   `<span class="status-badge status-${escapeText(status)}">${escapeText(t(`memberships.status.${status}` as never))}</span>`;
 const option = (value: string, label: string, selected?: string) =>

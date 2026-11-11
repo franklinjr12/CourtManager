@@ -4,6 +4,7 @@ import type {
   Membership,
 } from '@court-manager/contracts';
 import type { Customer } from '../core/types.js';
+import { today as venueToday } from '../core/presentation.js';
 import { formatDate, formatMoney, t, weekdayLabel } from '../i18n.js';
 import { shell } from '../ui/shell.js';
 import { escapeText, request } from './runtime.js';
@@ -18,11 +19,10 @@ type StaffPackage = CustomerPackage & {
 
 type FinanceSummary = { outstanding: number };
 
-const dateKey = (date = new Date()) => date.toISOString().slice(0, 10);
-const addDays = (date: Date, days: number) => {
-  const result = new Date(date);
+const addDays = (date: string, days: number) => {
+  const result = new Date(`${date}T12:00:00Z`);
   result.setUTCDate(result.getUTCDate() + days);
-  return dateKey(result);
+  return result.toISOString().slice(0, 10);
 };
 
 export const commercialOverviewMetrics = ({
@@ -78,8 +78,8 @@ const packageRemaining = (item: StaffPackage) => {
 };
 
 export async function commercialOverview() {
-  const today = dateKey();
-  const renewalTo = addDays(new Date(), 30);
+  const today = venueToday();
+  const renewalTo = addDays(today, 30);
   const [
     memberships,
     renewals,
